@@ -10,9 +10,9 @@
  * Designed to run as a systemd user timer (every 60 s).
  */
 
-import { Database } from "bun:sqlite";
-import { readFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { SQL } from "bun";
 
 // ── configuration ────────────────────────────────────────────────────
 const SYSFS = "/sys/class/power_supply/BAT0";
@@ -223,71 +223,40 @@ function readBattery(): BatterySample {
 }
 
 // ── store ────────────────────────────────────────────────────────────
-const SCHEMA = /* sql */ `
-  CREATE TABLE IF NOT EXISTS samples (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts              TEXT    NOT NULL,
-    percentage      REAL,
-    status          TEXT,
-    energy_wh       REAL,
-    energy_full_wh  REAL,
-    energy_design   REAL,
-    power_w         REAL,
-    voltage_v       REAL,
-    voltage_design  REAL,
-    cycle_count     INTEGER,
-    temperature_c   REAL,
-    capacity_pct    REAL,
-    is_charging     INTEGER,
-    is_present      INTEGER,
-    time_to_empty_s INTEGER,
-    time_to_full_s  INTEGER,
-    cpu_temp_c      REAL,
-    gpu_temp_c      REAL,
-    nvme_temp_c     REAL
-  );
-  CREATE INDEX IF NOT EXISTS idx_ts ON samples(ts);
-`;
-
-function store(s: BatterySample): void {
+async function store(s: BatterySample): Promise<void> {
 	mkdirSync(DB_DIR, { recursive: true });
-	const db = new Database(DB_PATH, { create: true });
-	db.exec("PRAGMA journal_mode = WAL;");
-	db.exec("PRAGMA busy_timeout = 5000;");
-	db.exec(SCHEMA);
-	db.prepare(`
-    INSERT INTO samples
-      (ts, percentage, status, energy_wh, energy_full_wh,
-       energy_design, power_w, voltage_v, voltage_design,
-       cycle_count, temperature_c, capacity_pct,
-       is_charging, is_present, time_to_empty_s, time_to_full_s,
-       cpu_temp_c, gpu_temp_c, nvme_temp_c)
-    VALUES
-      ($ts,$pct,$st,$enow,$efull,$edes,$pw,$volt,$vdes,
-       $cyc,$temp,$cap,$chg,$pres,$tte,$ttf,
-       $cpu,$gpu,$nvme)
-  `).run({
-		$ts: s.ts,
-		$pct: s.percentage,
-		$st: s.status,
-		$enow: s.energy_wh,
-		$efull: s.energy_full_wh,
-		$edes: s.energy_design,
-		$pw: s.power_w,
-		$volt: s.voltage_v,
-		$vdes: s.voltage_design,
-		$cyc: s.cycle_count,
-		$temp: s.temperature_c,
-		$cap: s.capacity_pct,
-		$chg: s.is_charging ? 1 : 0,
-		$pres: s.is_present ? 1 : 0,
-		$tte: s.time_to_empty_s,
-		$ttf: s.time_to_full_s,
-		$cpu: s.cpu_temp_c,
-		$gpu: s.gpu_temp_c,
-		$nvme: s.nvme_temp_c,
-	});
-	db.close();
+	const sql = new SQL(`sqlite://${DB_PATH}`);
+
+	await sql`PRAGMA journal_mode = WAL;`;
+	await sql`PRAGMA busy_timeout = 5000;`;
+	await sql`
+		CREATE TABLE IF NOT EXISTS samples (
+			id              INTEGER PRIMARY KEY AUTOINCREMENT,
+			ts              TEXT    NOT NULL,
+			percentage      REAL,
+			status          TEXT,
+			energy_wh       REAL,
+			energy_full_wh  REAL,
+			energy_design   REAL,
+			power_w         REAL,
+			voltage_v       REAL,
+			voltage_design  REAL,
+			cycle_count     INTEGER,
+			temperature_c   REAL,
+			capacity_pct    REAL,
+			is_charging     INTEGER,
+			is_present      INTEGER,
+			time_to_empty_s INTEGER,
+			time_to_full_s  INTEGER,
+			cpu_temp_c      REAL,
+			gpu_temp_c      REAL,
+			nvme_temp_c     REAL
+		);
+	`;
+	await sql`CREATE INDEX IF NOT EXISTS idx_ts ON samples(ts);`;
+
+	await sql`INSERT INTO samples ${sql(s)}`;
+	await sql.close();
 }
 
 // ── alerts ───────────────────────────────────────────────────────────
@@ -326,7 +295,7 @@ function alert(s: BatterySample): void {
 try {
 	const sample = readBattery();
 	if (!sample.is_present) process.exit(0);
-	store(sample);
+	await store(sample);
 	alert(sample);
 } catch (err) {
 	console.error("batmon:", err);
