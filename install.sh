@@ -24,6 +24,7 @@ fi
 
 # ── install source ────────────────────────────────────────────────────
 mkdir -p "$INSTALL_DIR"
+rm -rf "$INSTALL_DIR/src"
 cp -r "$SCRIPT_DIR/src" "$INSTALL_DIR/"
 echo "    source → $INSTALL_DIR/src/"
 
@@ -46,10 +47,11 @@ EOF
 cp "$SCRIPT_DIR/systemd/batmon.timer" "$SYSTEMD_DIR/batmon.timer"
 echo "    units  → $SYSTEMD_DIR/"
 
-# ── enable ────────────────────────────────────────────────────────────
+# ── enable & restart ──────────────────────────────────────────────────
 systemctl --user daemon-reload
 systemctl --user enable --now batmon.timer
-echo "    timer  → enabled (every 60 s)"
+systemctl --user restart batmon.timer
+echo "    timer  → enabled & restarted (every 60 s)"
 
 # ── verify ────────────────────────────────────────────────────────────
 echo ""
