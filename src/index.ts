@@ -21,7 +21,10 @@ const DB_PATH = join(DB_DIR, "battery.db");
 
 const TEMP_WARN = 45; // °C – battery temp (if sensor exists)
 const TEMP_CRIT = 50; // °C
-const CAP_WARN = 80; // % of design capacity
+const CAP_WARN = 80; // % of design capacity (battery health wear)
+const CHARGE_HIGH_WARN = 80; // % – unplug reminder
+const CHARGE_LOW_WARN = 20; // % – plug-in reminder
+const CHARGE_CRIT_WARN = 10; // % – critical low battery
 const CPU_HOT_CHARGING = 85; // °C – warn if charging while system is hot
 // ─────────────────────────────────────────────────────────────────────
 
@@ -223,7 +226,7 @@ function readBattery(): BatterySample {
 }
 
 // ── store ────────────────────────────────────────────────────────────
-async function store(s: BatterySample): Promise<void> {
+async function store(s: BatterySample): Promise<BatterySample | null> {
 	mkdirSync(DB_DIR, { recursive: true });
 	const sql = new SQL(`sqlite://${DB_PATH}`);
 
@@ -255,31 +258,73 @@ async function store(s: BatterySample): Promise<void> {
 	`;
 	await sql`CREATE INDEX IF NOT EXISTS idx_ts ON samples(ts);`;
 
+	const rows = await sql`SELECT * FROM samples ORDER BY id DESC LIMIT 1;`;
+	const prev = rows.length > 0 ? (rows[0] as unknown as BatterySample) : null;
+
 	await sql`INSERT INTO samples ${sql(s)}`;
 	await sql.close();
+
+	return prev;
 }
 
 // ── alerts ───────────────────────────────────────────────────────────
-function alert(s: BatterySample): void {
+function alert(curr: BatterySample, prev: BatterySample | null): void {
 	const msgs: string[] = [];
 
-	if (s.temperature_c !== null) {
-		if (s.temperature_c >= TEMP_CRIT)
+	const prevCharging = prev !== null ? Boolean(prev.is_charging) : null;
+	const prevPct = prev !== null ? prev.percentage : null;
+
+	if (curr.is_charging && curr.percentage >= CHARGE_HIGH_WARN) {
+		const justCrossed =
+			prevPct === null || prevCharging === false || prevPct < CHARGE_HIGH_WARN;
+		if (justCrossed) {
 			msgs.push(
-				`🔴 CRITICAL: battery ${s.temperature_c.toFixed(1)} °C – unplug NOW`,
+				`🔋 Battery reached ${curr.percentage}% – unplug charger to preserve health`,
 			);
-		else if (s.temperature_c >= TEMP_WARN)
-			msgs.push(`🟠 WARNING: battery ${s.temperature_c.toFixed(1)} °C`);
+		}
 	}
-	if (s.capacity_pct < CAP_WARN)
-		msgs.push(`🟡 Battery health ${s.capacity_pct.toFixed(1)}% of design`);
-	if (s.is_charging && s.voltage_v > s.voltage_design * 1.15)
+
+	if (!curr.is_charging && curr.percentage <= CHARGE_LOW_WARN) {
+		const justCrossed =
+			prevPct === null || prevCharging === true || prevPct > CHARGE_LOW_WARN;
+		if (justCrossed) {
+			msgs.push(
+				`🪫 Low battery: ${curr.percentage}% remaining – plug in charger`,
+			);
+		}
+	}
+
+	if (!curr.is_charging && curr.percentage <= CHARGE_CRIT_WARN) {
+		const justCrossed =
+			prevPct === null || prevCharging === true || prevPct > CHARGE_CRIT_WARN;
+		if (justCrossed) {
+			msgs.push(
+				`🔴 CRITICAL: battery ${curr.percentage}% – connect charger immediately`,
+			);
+		}
+	}
+
+	if (curr.temperature_c !== null) {
+		if (curr.temperature_c >= TEMP_CRIT)
+			msgs.push(
+				`🔴 CRITICAL: battery ${curr.temperature_c.toFixed(1)} °C – unplug NOW`,
+			);
+		else if (curr.temperature_c >= TEMP_WARN)
+			msgs.push(`🟠 WARNING: battery ${curr.temperature_c.toFixed(1)} °C`);
+	}
+	if (curr.capacity_pct < CAP_WARN)
+		msgs.push(`🟡 Battery health ${curr.capacity_pct.toFixed(1)}% of design`);
+	if (curr.is_charging && curr.voltage_v > curr.voltage_design * 1.15)
 		msgs.push(
-			`🟠 Voltage ${s.voltage_v.toFixed(2)} V well above design ${s.voltage_design} V`,
+			`🟠 Voltage ${curr.voltage_v.toFixed(2)} V well above design ${curr.voltage_design} V`,
 		);
-	if (s.is_charging && s.cpu_temp_c !== null && s.cpu_temp_c > CPU_HOT_CHARGING)
+	if (
+		curr.is_charging &&
+		curr.cpu_temp_c !== null &&
+		curr.cpu_temp_c > CPU_HOT_CHARGING
+	)
 		msgs.push(
-			`🟠 Charging while CPU at ${s.cpu_temp_c.toFixed(0)} °C – heat-soak risk`,
+			`🟠 Charging while CPU at ${curr.cpu_temp_c.toFixed(0)} °C – heat-soak risk`,
 		);
 
 	for (const m of msgs) {
@@ -295,8 +340,8 @@ function alert(s: BatterySample): void {
 try {
 	const sample = readBattery();
 	if (!sample.is_present) process.exit(0);
-	await store(sample);
-	alert(sample);
+	const prev = await store(sample);
+	alert(sample, prev);
 } catch (err) {
 	console.error("batmon:", err);
 	process.exit(1);
