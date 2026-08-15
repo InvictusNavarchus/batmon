@@ -1,0 +1,13 @@
+{
+  "name": "batmon",
+  "version": "0.1.0",
+  "description": "Battery health monitor → SQLite. Logs UPower/sysfs telemetry every 60s via systemd.",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "install-service": "./install.sh",
+    "uninstall-service": "./uninstall.sh"
+  },
+  "keywords": ["battery", "linux", "monitoring", "sqlite", "upower", "health"],
+  "license": "UNLICENSED"
+}

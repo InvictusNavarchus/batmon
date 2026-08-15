@@ -1,0 +1,8 @@
+[Unit]
+Description=batmon – battery health logger (sysfs → SQLite)
+Documentation=https://github.com/YOUR_USER/batmon
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/bun run %h/.local/share/batmon/src/index.ts
+Nice=10

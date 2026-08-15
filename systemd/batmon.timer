@@ -1,0 +1,11 @@
+[Unit]
+Description=batmon – log battery every 60 s
+
+[Timer]
+OnCalendar=*:0/1
+Persistent=true
+RandomizedDelaySec=2
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
