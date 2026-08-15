@@ -1,6 +1,6 @@
 [Unit]
 Description=batmon – battery health logger (sysfs → SQLite)
-Documentation=https://github.com/YOUR_USER/batmon
+Documentation=https://github.com/InvictusNavarchus/batmon
 
 [Service]
 Type=oneshot
