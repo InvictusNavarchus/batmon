@@ -150,7 +150,8 @@ export function readBattery(): BatterySample {
 		power_w: Math.round(powerW * 1000) / 1000,
 		voltage_v: voltageV,
 		voltage_design: voltDesign,
-		cycle_count: readOpt("cycle_count") ?? 0,
+		cycle_count: readOpt("cycle_count"),
+		estimated_cycle_count: 0,
 		temperature_c: battTemp,
 		capacity_pct:
 			energy.design > 0

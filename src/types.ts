@@ -8,7 +8,8 @@ export interface BatterySample {
 	power_w: number;
 	voltage_v: number;
 	voltage_design: number;
-	cycle_count: number;
+	cycle_count: number | null;
+	estimated_cycle_count: number;
 	temperature_c: number | null;
 	capacity_pct: number;
 	is_charging: boolean;
