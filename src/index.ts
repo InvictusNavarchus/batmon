@@ -64,22 +64,31 @@ interface SystemTemps {
   nvme_c: number | null;
 }
 
+/** Shape of `sensors -j` output */
+interface SensorsData {
+  [adapter: string]: {
+    [feature: string]: {
+      [subfeature: string]: number;
+    };
+  };
+}
+
 function readSystemTemps(): SystemTemps {
   try {
     const { stdout, exitCode } = Bun.spawnSync(["sensors", "-j"]);
     if (exitCode !== 0) return { cpu_c: null, gpu_c: null, nvme_c: null };
-    const data = JSON.parse(stdout.toString());
+    const data: SensorsData = JSON.parse(stdout.toString());
 
-    const find = (prefix: string) =>
-      Object.entries(data).find(([k]) => k.startsWith(prefix));
+    const find = (prefix: string): SensorsData[string] | undefined =>
+      Object.entries(data).find(([k]) => k.startsWith(prefix))?.[1];
 
-    const cpu  = find("k10temp")?.[1]?.["Tctl"]?.["temp1_input"]
-              ?? find("coretemp")?.[1]?.["Package id 0"]?.["temp1_input"]
+    const cpu  = find("k10temp")?.["Tctl"]?.["temp1_input"]
+              ?? find("coretemp")?.["Package id 0"]?.["temp1_input"]
               ?? null;
-    const gpu  = find("amdgpu")?.[1]?.["edge"]?.["temp1_input"]
-              ?? find("i915")?.[1]?.["temp1"]?.["temp1_input"]
+    const gpu  = find("amdgpu")?.["edge"]?.["temp1_input"]
+              ?? find("i915")?.["temp1"]?.["temp1_input"]
               ?? null;
-    const nvme = find("nvme")?.[1]?.["Composite"]?.["temp1_input"] ?? null;
+    const nvme = find("nvme")?.["Composite"]?.["temp1_input"] ?? null;
 
     return { cpu_c: cpu, gpu_c: gpu, nvme_c: nvme };
   } catch {
