@@ -57,7 +57,7 @@ echo "==> Running first sample…"
 if "$BUN_PATH" run "$INSTALL_DIR/src/index.ts"; then
   echo "    ✓ first sample stored"
   echo ""
-  echo "    Check data:"
+  echo "    Check data (if sqlite3 CLI is installed):"
   echo "      sqlite3 $INSTALL_DIR/battery.db 'SELECT * FROM samples ORDER BY id DESC LIMIT 1;'"
   echo ""
   echo "    Check timer:"

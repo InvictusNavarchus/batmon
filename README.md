@@ -22,9 +22,9 @@ Auto-detects `energy_*` (µWh) vs `charge_*` (µAh) batteries.
 ## Requirements
 
 - Linux with systemd (tested on Fedora 44)
-- [Bun](https://bun.sh) runtime
+- [Bun](https://bun.sh) runtime (includes built-in SQLite)
 - `lm_sensors` (optional, for system temps): `sudo dnf install lm_sensors`
-- `sqlite3` CLI (for querying): `sudo dnf install sqlite`
+- `sqlite3` CLI (optional, for inspecting the DB): `sudo dnf install sqlite`
 
 ## Install
 
