@@ -9,5 +9,8 @@
     "uninstall-service": "./uninstall.sh"
   },
   "keywords": ["battery", "linux", "monitoring", "sqlite", "upower", "health"],
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/bun": "^1.3.14"
+  }
 }
