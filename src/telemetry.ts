@@ -70,7 +70,10 @@ export function readSystemTemps(): SystemTemps {
 			find("i915")?.temp1?.temp1_input ??
 			null;
 		const nvme = find("nvme")?.Composite?.temp1_input ?? null;
-		const gpuPower = find("amdgpu")?.PPT?.power1_input ?? null;
+		const gpuPower =
+			find("amdgpu")?.PPT?.power1_input ??
+			find("amdgpu")?.PPT?.power1_average ??
+			null;
 
 		return {
 			cpu_c: cpu,
