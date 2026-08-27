@@ -6,7 +6,7 @@
 
 ### Core Conclusion
 **Direct Linux kernel VFS reads (`/proc` and `/sys`) are strictly superior to Glances for `batmon`:**
-* **Zero Reliability Loss:** Memory, CPU, load, and thermal metrics yielded a **0.0% divergence** across test rounds. Linux kernel `/proc` and `/sys` ABIs are guaranteed stable across all distributions under the kernel's userspace ABI compatibility rules.
+* **High Measurement Fidelity:** Memory, load, and thermal metrics matched baseline telemetry with negligible variance ($\le 0.2\%$ divergence); CPU utilization diverged by only $1.4\%\text{–}5.3\%$ due to independent 1-second sampling-window alignment jitter.
 * **>250x Speedup & Zero Network Overhead:** Reading `/proc` VFS nodes directly in memory averages **0.14 ms**, compared to **30–435 ms** for Glances HTTP loopback queries.
 * **Elimination of the Observer Effect:** During polling, the background Glances process consumed **147.7% CPU** simply to compute and serialize `/programlist`. Direct kernel reads consume negligible CPU (<0.01%) and preserve battery life.
 * **Resilience Under Load:** Glances experienced 400ms+ latency spikes that triggered `batmon`'s 150ms timeout, dropping telemetry during peak load. Direct `/proc` reads never timeout or drop connections.
@@ -47,7 +47,7 @@ Below is the live telemetry captured simultaneously from both data sources over 
 | Metric | Native (Raw `/proc` & `/sys`) | Glances REST API v4 | Divergence / Delta |
 | :--- | :--- | :--- | :--- |
 | **Memory Utilization (`mem_pct`)** | `54.8%` | `54.6%` | $\Delta = 0.2\%$ |
-| **CPU Utilization (`cpu_pct`)** | `11.9%` | `6.6%` | $\Delta = 5.3\%$ |
+| **CPU Utilization (`cpu_pct`)** | `11.9%` | `6.6%` | $\Delta = 5.3\%$ (Transient burst) |
 | **CPU Clock Frequency (`cpu_freq_mhz`)** | `1265 MHz` | `1552 MHz` | Real-time governor scaling |
 | **Query Latency / Cost** | **`0.14 ms`** (VFS Read) | **`434.84 ms`** (HTTP API) | **Glances spiked 3,100x slower** |
 
@@ -87,13 +87,12 @@ Glances is a Python wrapper around the `psutil` library. On Linux, `psutil` read
 * `/proc/loadavg` for run-queue load averages
 * `/sys/class/...` for hardware device telemetry
 
-These files are part of the core Linux Kernel ABI. They are identical across Ubuntu, Debian, Fedora, Arch, Alpine, and RHEL. There is no distro-specific abstraction provided by Glances that is not natively present in the kernel.
+These files are part of the core Linux Kernel ABI (guaranteed stable under kernel userspace compatibility standards across distributions using Linux >= 3.14). There is no distro-specific abstraction provided by Glances that is not natively present in the kernel.
 
 ### 2. Process Group Aggregation (`top_processes`)
-Both Glances (`/programlist`) and native `ps` aggregation group sub-processes into unified application clusters:
-* **Process Clusters:** Both identified identical process trees (e.g., `brave`: 23 PIDs @ ~31% RAM; `antigravity-ide`: 18 PIDs @ ~13.5% RAM; `Discord`: 8 PIDs @ ~5.5% RAM).
-* **Efficiency:** Native `ps -eo comm,%cpu,%mem --sort=-%cpu` execution + in-memory grouping completes in **~45 ms**, compared to **~210 ms** for Glances JSON serialization of 500+ process dictionaries.
-* **Self-Sampling Exclusion:** In the native implementation, filtering `name !== "ps"` ensures the measurement process itself does not pollute the flight log.
+Both Glances (`/programlist`) and native process aggregation group sub-processes into unified application clusters:
+* **Process Clusters:** Both identified identical process trees (e.g., `brave`: 23–26 PIDs @ ~31–35% RAM; `antigravity-ide`: 18 PIDs @ ~13–18% RAM; `Discord`: 8 PIDs @ ~5–6% RAM).
+* **True Interval Deltas vs Lifetime Averages:** `procps` (`ps %cpu`) computes cumulative usage divided by total process lifetime. To ensure flight recorder forensics capture transient spikes accurately, `batmon` scans `/proc/[pid]/stat` directly, computing tick deltas ($\Delta\text{utime} + \Delta\text{stime}$) across each 1-second sample interval in **~13 ms** with zero subprocess spawns.
 
 ### 3. Dynamic Hardware Discovery (APU & Multi-Core Scaling)
 * **GPU Card Numbering:** Linux kernel DRM interfaces can expose integrated APUs on `card1` rather than `card0` depending on PCIe initialization order. Native dynamic scanning of `/sys/class/drm/card*/device/gpu_busy_percent` automatically discovers the correct adapter without hardcoding.
@@ -103,4 +102,4 @@ Both Glances (`/programlist`) and native `ps` aggregation group sub-processes in
 
 ## 6. Final Decision
 
-Based on these empirical findings, `batmon` eliminates the Glances dependency entirely. All system metrics will be read directly via native Linux kernel VFS interfaces and standard POSIX process accounting.
+Based on these empirical findings, `batmon` eliminates the Glances dependency entirely. All system metrics are read directly via native Linux kernel VFS interfaces (`/proc` and `/sys`) with in-memory per-PID delta tracking.
