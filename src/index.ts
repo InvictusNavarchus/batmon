@@ -23,17 +23,17 @@ import {
 	store,
 	storeDebug,
 } from "./db";
-import { readBattery } from "./telemetry";
-import type { BatterySample } from "./types";
+import { readTelemetry } from "./telemetry";
+import type { TelemetrySample } from "./types";
 
-let prevHistorical: BatterySample | null = null;
+let prevHistorical: TelemetrySample | null = null;
 let tickCount = 0;
 let isRunning = true;
 let isTicking = false;
 
 async function runTick(): Promise<void> {
 	try {
-		const sample = await readBattery();
+		const sample = await readTelemetry();
 		if (!sample.is_present) return;
 
 		if (prevHistorical === null) {
@@ -77,7 +77,7 @@ async function executeTick(): Promise<void> {
 }
 
 async function runOneshot(): Promise<void> {
-	const sample = await readBattery();
+	const sample = await readTelemetry();
 	if (!sample.is_present) process.exit(0);
 	const prev = await store(sample);
 	await storeDebug(sample);

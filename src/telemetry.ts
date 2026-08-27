@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { SYSFS } from "./config";
 import { readGlances } from "./glances";
-import type { BatterySample, SensorsData, SystemTemps } from "./types";
+import type { SensorsData, SystemTemps, TelemetrySample } from "./types";
 
 // ── sysfs helpers ────────────────────────────────────────────────────
 function sysfsPath(name: string): string {
@@ -162,7 +162,7 @@ export function upowerProp(prop: string): number | null {
 }
 
 // ── read ─────────────────────────────────────────────────────────────
-export async function readBattery(): Promise<BatterySample> {
+export async function readTelemetry(): Promise<TelemetrySample> {
 	const status = read("status");
 	const energy = readEnergy();
 	const powerW = readPower();
@@ -216,3 +216,5 @@ export async function readBattery(): Promise<BatterySample> {
 		load1,
 	};
 }
+
+export const readBattery = readTelemetry;

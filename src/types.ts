@@ -1,4 +1,4 @@
-export interface BatterySample {
+export interface TelemetrySample {
 	ts: string;
 	percentage: number;
 	status: string;
@@ -27,6 +27,8 @@ export interface BatterySample {
 	gpu_power_w: number | null;
 	load1: number | null;
 }
+
+export type BatterySample = TelemetrySample;
 
 export interface TopProcessGroup {
 	name: string;
