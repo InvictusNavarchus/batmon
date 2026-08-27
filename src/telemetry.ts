@@ -1,7 +1,8 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { SYSFS } from "./config";
-import type { BatterySample, SensorsData, SystemTemps } from "./types";
+import { readGlances } from "./glances";
+import type { SensorsData, SystemTemps, TelemetrySample } from "./types";
 
 // ── sysfs helpers ────────────────────────────────────────────────────
 function sysfsPath(name: string): string {
@@ -49,11 +50,12 @@ export function readBatteryTemp(): number | null {
 	return null;
 }
 
-// ── system temps via `sensors -j` (thermal environment proxy) ────────
+// ── system temps & power via `sensors -j` (thermal environment proxy) ─
 export function readSystemTemps(): SystemTemps {
 	try {
 		const { stdout, exitCode } = Bun.spawnSync(["sensors", "-j"]);
-		if (exitCode !== 0) return { cpu_c: null, gpu_c: null, nvme_c: null };
+		if (exitCode !== 0)
+			return { cpu_c: null, gpu_c: null, nvme_c: null, gpu_power_w: null };
 		const data: SensorsData = JSON.parse(stdout.toString());
 
 		const find = (prefix: string): SensorsData[string] | undefined =>
@@ -68,11 +70,48 @@ export function readSystemTemps(): SystemTemps {
 			find("i915")?.temp1?.temp1_input ??
 			null;
 		const nvme = find("nvme")?.Composite?.temp1_input ?? null;
+		const gpuPower =
+			find("amdgpu")?.PPT?.power1_input ??
+			find("amdgpu")?.PPT?.power1_average ??
+			null;
 
-		return { cpu_c: cpu, gpu_c: gpu, nvme_c: nvme };
+		return {
+			cpu_c: cpu,
+			gpu_c: gpu,
+			nvme_c: nvme,
+			gpu_power_w: gpuPower !== null ? Math.round(gpuPower * 100) / 100 : null,
+		};
 	} catch {
-		return { cpu_c: null, gpu_c: null, nvme_c: null };
+		return { cpu_c: null, gpu_c: null, nvme_c: null, gpu_power_w: null };
 	}
+}
+
+// ── native sysfs fallbacks for clock & load ──────────────────────────
+function readSysfsCpuFreq(): number | null {
+	try {
+		const p = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq";
+		if (existsSync(p)) {
+			const khz = Number(readFileSync(p, "utf-8").trim());
+			return Number.isFinite(khz) && khz > 0 ? Math.round(khz / 1000) : null;
+		}
+	} catch {
+		/* no cpufreq sysfs */
+	}
+	return null;
+}
+
+function readSysfsLoad1(): number | null {
+	try {
+		const p = "/proc/loadavg";
+		if (existsSync(p)) {
+			const [l1] = readFileSync(p, "utf-8").trim().split(" ");
+			const num = Number(l1);
+			return Number.isFinite(num) ? Math.round(num * 100) / 100 : null;
+		}
+	} catch {
+		/* no /proc/loadavg */
+	}
+	return null;
 }
 
 // ── energy: auto-detect energy_* (µWh) vs charge_* (µAh) ────────────
@@ -123,7 +162,7 @@ export function upowerProp(prop: string): number | null {
 }
 
 // ── read ─────────────────────────────────────────────────────────────
-export function readBattery(): BatterySample {
+export async function readTelemetry(): Promise<TelemetrySample> {
 	const status = read("status");
 	const energy = readEnergy();
 	const powerW = readPower();
@@ -132,6 +171,7 @@ export function readBattery(): BatterySample {
 	const isCharging = status === "Charging";
 	const sysTemps = readSystemTemps();
 	const battTemp = readBatteryTemp();
+	const glances = await readGlances();
 
 	let tte = upowerProp("TimeToEmpty");
 	let ttf = upowerProp("TimeToFull");
@@ -139,6 +179,9 @@ export function readBattery(): BatterySample {
 		tte = Math.round((energy.now / powerW) * 3600);
 	if (ttf === null && isCharging && powerW > 0.5)
 		ttf = Math.round(((energy.full - energy.now) / powerW) * 3600);
+
+	const cpuFreq = glances.cpu_freq_mhz ?? readSysfsCpuFreq();
+	const load1 = readSysfsLoad1();
 
 	return {
 		ts: new Date().toISOString(),
@@ -164,5 +207,14 @@ export function readBattery(): BatterySample {
 		cpu_temp_c: sysTemps.cpu_c,
 		gpu_temp_c: sysTemps.gpu_c,
 		nvme_temp_c: sysTemps.nvme_c,
+		cpu_pct: glances.cpu_pct,
+		mem_pct: glances.mem_pct,
+		top_processes: glances.top_processes,
+		cpu_freq_mhz: cpuFreq,
+		gpu_pct: glances.gpu_pct,
+		gpu_power_w: sysTemps.gpu_power_w,
+		load1,
 	};
 }
+
+export const readBattery = readTelemetry;

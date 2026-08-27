@@ -1,4 +1,4 @@
-export interface BatterySample {
+export interface TelemetrySample {
 	ts: string;
 	percentage: number;
 	status: string;
@@ -19,12 +19,37 @@ export interface BatterySample {
 	cpu_temp_c: number | null;
 	gpu_temp_c: number | null;
 	nvme_temp_c: number | null;
+	cpu_pct: number | null;
+	mem_pct: number | null;
+	top_processes: string | null;
+	cpu_freq_mhz: number | null;
+	gpu_pct: number | null;
+	gpu_power_w: number | null;
+	load1: number | null;
+}
+
+export type BatterySample = TelemetrySample;
+
+export interface TopProcessGroup {
+	name: string;
+	cpu: number;
+	mem: number;
+	count: number;
+}
+
+export interface GlancesTelemetry {
+	cpu_pct: number | null;
+	mem_pct: number | null;
+	top_processes: string | null;
+	cpu_freq_mhz: number | null;
+	gpu_pct: number | null;
 }
 
 export interface SystemTemps {
 	cpu_c: number | null;
 	gpu_c: number | null;
 	nvme_c: number | null;
+	gpu_power_w: number | null;
 }
 
 /** Shape of `sensors -j` output */

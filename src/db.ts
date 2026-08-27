@@ -1,7 +1,16 @@
 import { mkdirSync } from "node:fs";
 import { SQL } from "bun";
-import { DB_DIR, DB_PATH } from "./config";
+import {
+	DB_DIR,
+	DB_PATH,
+	DEBUG_DB_PATH,
+	DEBUG_RETENTION_HOURS,
+} from "./config";
+import { DEBUG_MIGRATIONS, HISTORICAL_MIGRATIONS, migrate } from "./migrations";
 import type { BatterySample } from "./types";
+
+let histSql: SQL | null = null;
+let debugSql: SQL | null = null;
 
 // ── estimated cycle calculation ──────────────────────────────────────
 export function computeEstimatedCycles(
@@ -23,47 +32,32 @@ export function computeEstimatedCycles(
 	return prevCycles;
 }
 
-// ── store ────────────────────────────────────────────────────────────
-export async function store(s: BatterySample): Promise<BatterySample | null> {
+// ── historical database (battery.db) ─────────────────────────────────
+export async function initHistoricalDb(): Promise<SQL> {
+	if (histSql) return histSql;
+
 	mkdirSync(DB_DIR, { recursive: true });
 	const sql = new SQL(`sqlite://${DB_PATH}`);
 
 	await sql`PRAGMA journal_mode = WAL;`;
+	await sql`PRAGMA synchronous = NORMAL;`;
+	await sql`PRAGMA wal_autocheckpoint = 100;`;
 	await sql`PRAGMA busy_timeout = 5000;`;
-	await sql`
-		CREATE TABLE IF NOT EXISTS samples (
-			id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-			ts                    TEXT    NOT NULL,
-			percentage            REAL,
-			status                TEXT,
-			energy_wh             REAL,
-			energy_full_wh        REAL,
-			energy_design         REAL,
-			power_w               REAL,
-			voltage_v             REAL,
-			voltage_design        REAL,
-			cycle_count           INTEGER,
-			estimated_cycle_count REAL,
-			temperature_c         REAL,
-			capacity_pct          REAL,
-			is_charging           INTEGER,
-			is_present            INTEGER,
-			time_to_empty_s       INTEGER,
-			time_to_full_s        INTEGER,
-			cpu_temp_c            REAL,
-			gpu_temp_c            REAL,
-			nvme_temp_c           REAL
-		);
-	`;
-	await sql`CREATE INDEX IF NOT EXISTS idx_ts ON samples(ts);`;
 
-	const cols = await sql`PRAGMA table_info(samples);`;
-	const hasEstimated = cols.some(
-		(c: { name: string }) => c.name === "estimated_cycle_count",
-	);
-	if (!hasEstimated) {
-		await sql`ALTER TABLE samples ADD COLUMN estimated_cycle_count REAL;`;
-	}
+	await migrate(sql, HISTORICAL_MIGRATIONS, "battery.db");
+
+	histSql = sql;
+	return histSql;
+}
+
+export async function getLatestHistoricalSample(): Promise<BatterySample | null> {
+	const sql = await initHistoricalDb();
+	const rows = await sql`SELECT * FROM samples ORDER BY id DESC LIMIT 1;`;
+	return rows.length > 0 ? (rows[0] as unknown as BatterySample) : null;
+}
+
+export async function store(s: BatterySample): Promise<BatterySample | null> {
+	const sql = await initHistoricalDb();
 
 	const rows = await sql`SELECT * FROM samples ORDER BY id DESC LIMIT 1;`;
 	const prev = rows.length > 0 ? (rows[0] as unknown as BatterySample) : null;
@@ -71,7 +65,47 @@ export async function store(s: BatterySample): Promise<BatterySample | null> {
 	s.estimated_cycle_count = computeEstimatedCycles(s, prev);
 
 	await sql`INSERT INTO samples ${sql(s)}`;
-	await sql.close();
-
 	return prev;
+}
+
+// ── debug flight recorder database (debug.db) ─────────────────────────
+export async function initDebugDb(): Promise<SQL> {
+	if (debugSql) return debugSql;
+
+	mkdirSync(DB_DIR, { recursive: true });
+	const sql = new SQL(`sqlite://${DEBUG_DB_PATH}`);
+
+	await sql`PRAGMA journal_mode = WAL;`;
+	await sql`PRAGMA synchronous = NORMAL;`;
+	await sql`PRAGMA wal_autocheckpoint = 100;`;
+	await sql`PRAGMA busy_timeout = 5000;`;
+
+	await migrate(sql, DEBUG_MIGRATIONS, "debug.db");
+
+	debugSql = sql;
+	return debugSql;
+}
+
+export async function storeDebug(s: BatterySample): Promise<void> {
+	const sql = await initDebugDb();
+	await sql`INSERT INTO samples_debug ${sql(s)}`;
+}
+
+export async function pruneDebug(hours = DEBUG_RETENTION_HOURS): Promise<void> {
+	const sql = await initDebugDb();
+	await sql.unsafe(
+		`DELETE FROM samples_debug WHERE julianday(ts) < julianday('now', '-${hours} hours');`,
+	);
+}
+
+// ── cleanup ──────────────────────────────────────────────────────────
+export async function closeDbs(): Promise<void> {
+	if (histSql) {
+		await histSql.close();
+		histSql = null;
+	}
+	if (debugSql) {
+		await debugSql.close();
+		debugSql = null;
+	}
 }

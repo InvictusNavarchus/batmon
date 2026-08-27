@@ -1,7 +1,7 @@
 {
 	"name": "batmon",
-	"version": "0.1.0",
-	"description": "Battery health monitor → SQLite. Logs UPower/sysfs telemetry every 60s via systemd.",
+	"version": "0.2.0",
+	"description": "Battery health monitor & flight recorder → SQLite. Logs 1s debug telemetry and 60s historical data via systemd daemon.",
 	"type": "module",
 	"scripts": {
 		"start": "bun run src/index.ts",

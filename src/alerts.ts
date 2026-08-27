@@ -121,7 +121,7 @@ export function alert(curr: BatterySample, prev: BatterySample | null): void {
 	if (
 		curr.is_charging &&
 		curr.cpu_temp_c !== null &&
-		curr.cpu_temp_c > CPU_HOT_CHARGING
+		curr.cpu_temp_c >= CPU_HOT_CHARGING
 	) {
 		notify({
 			title: "Warning: Heat-Soak Risk",
