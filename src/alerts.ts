@@ -41,78 +41,78 @@ export function notify({
 // ── alerts ───────────────────────────────────────────────────────────
 export function alert(curr: BatterySample, prev: BatterySample | null): void {
 	const prevCharging = prev !== null ? Boolean(prev.is_charging) : null;
-	const prevPct = prev !== null ? prev.percentage : null;
+	const prevPct = prev !== null ? prev.charge_pct : null;
 
-	if (curr.is_charging && curr.percentage >= CHARGE_HIGH_WARN) {
+	if (curr.is_charging && curr.charge_pct >= CHARGE_HIGH_WARN) {
 		const justCrossed =
 			prevPct === null || prevCharging === false || prevPct < CHARGE_HIGH_WARN;
 		if (justCrossed) {
 			notify({
 				title: "Battery Charge Target Reached",
-				body: `Level reached ${curr.percentage}% – unplug charger to preserve health`,
+				body: `Level reached ${curr.charge_pct}% – unplug charger to preserve health`,
 				urgency: "normal",
 				icon: "battery-full-charging",
 			});
 		}
 	}
 
-	if (!curr.is_charging && curr.percentage <= CHARGE_LOW_WARN) {
+	if (!curr.is_charging && curr.charge_pct <= CHARGE_LOW_WARN) {
 		const justCrossed =
 			prevPct === null || prevCharging === true || prevPct > CHARGE_LOW_WARN;
 		if (justCrossed) {
 			notify({
 				title: "Low Battery",
-				body: `${curr.percentage}% remaining – plug in charger`,
+				body: `${curr.charge_pct}% remaining – plug in charger`,
 				urgency: "normal",
 				icon: "battery-caution",
 			});
 		}
 	}
 
-	if (!curr.is_charging && curr.percentage <= CHARGE_CRIT_WARN) {
+	if (!curr.is_charging && curr.charge_pct <= CHARGE_CRIT_WARN) {
 		const justCrossed =
 			prevPct === null || prevCharging === true || prevPct > CHARGE_CRIT_WARN;
 		if (justCrossed) {
 			notify({
 				title: "CRITICAL: Battery Low",
-				body: `${curr.percentage}% remaining – connect charger immediately`,
+				body: `${curr.charge_pct}% remaining – connect charger immediately`,
 				urgency: "critical",
 				icon: "battery-empty",
 			});
 		}
 	}
 
-	if (curr.temperature_c !== null) {
-		if (curr.temperature_c >= TEMP_CRIT) {
+	if (curr.battery_temp_c !== null) {
+		if (curr.battery_temp_c >= TEMP_CRIT) {
 			notify({
 				title: "CRITICAL: Battery Overheating",
-				body: `Battery at ${curr.temperature_c.toFixed(1)} °C – unplug immediately`,
+				body: `Battery at ${curr.battery_temp_c.toFixed(1)} °C – unplug immediately`,
 				urgency: "critical",
 				icon: "dialog-warning",
 			});
-		} else if (curr.temperature_c >= TEMP_WARN) {
+		} else if (curr.battery_temp_c >= TEMP_WARN) {
 			notify({
 				title: "Warning: High Battery Temperature",
-				body: `Battery at ${curr.temperature_c.toFixed(1)} °C`,
+				body: `Battery at ${curr.battery_temp_c.toFixed(1)} °C`,
 				urgency: "normal",
 				icon: "dialog-warning",
 			});
 		}
 	}
 
-	if (curr.capacity_pct < CAP_WARN) {
+	if (curr.health_pct < CAP_WARN) {
 		notify({
 			title: "Battery Health Notice",
-			body: `Battery health at ${curr.capacity_pct.toFixed(1)}% of design capacity`,
+			body: `Battery health at ${curr.health_pct.toFixed(1)}% of design capacity`,
 			urgency: "normal",
 			icon: "battery-caution",
 		});
 	}
 
-	if (curr.is_charging && curr.voltage_v > curr.voltage_design * 1.15) {
+	if (curr.is_charging && curr.voltage_v > curr.voltage_design_v * 1.15) {
 		notify({
 			title: "Warning: Over-Voltage Charging",
-			body: `Voltage ${curr.voltage_v.toFixed(2)} V well above design ${curr.voltage_design} V`,
+			body: `Voltage ${curr.voltage_v.toFixed(2)} V well above design ${curr.voltage_design_v} V`,
 			urgency: "normal",
 			icon: "dialog-warning",
 		});

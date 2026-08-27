@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SYSFS } from "./config";
 import { readGlances } from "./glances";
@@ -185,18 +185,18 @@ export async function readTelemetry(): Promise<TelemetrySample> {
 
 	return {
 		ts: new Date().toISOString(),
-		percentage: readNum("capacity"),
+		charge_pct: readNum("capacity"),
 		status,
 		energy_wh: Math.round(energy.now * 1000) / 1000,
 		energy_full_wh: Math.round(energy.full * 1000) / 1000,
-		energy_design: Math.round(energy.design * 1000) / 1000,
+		energy_design_wh: Math.round(energy.design * 1000) / 1000,
 		power_w: Math.round(powerW * 1000) / 1000,
 		voltage_v: voltageV,
-		voltage_design: voltDesign,
+		voltage_design_v: voltDesign,
 		cycle_count: readOpt("cycle_count"),
 		estimated_cycle_count: 0,
-		temperature_c: battTemp,
-		capacity_pct:
+		battery_temp_c: battTemp,
+		health_pct:
 			energy.design > 0
 				? Math.round((energy.full / energy.design) * 10000) / 100
 				: 100,

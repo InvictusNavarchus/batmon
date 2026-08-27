@@ -1,17 +1,17 @@
 export interface TelemetrySample {
 	ts: string;
-	percentage: number;
+	charge_pct: number;
 	status: string;
 	energy_wh: number;
 	energy_full_wh: number;
-	energy_design: number;
+	energy_design_wh: number;
 	power_w: number;
 	voltage_v: number;
-	voltage_design: number;
+	voltage_design_v: number;
 	cycle_count: number | null;
 	estimated_cycle_count: number;
-	temperature_c: number | null;
-	capacity_pct: number;
+	battery_temp_c: number | null;
+	health_pct: number;
 	is_charging: boolean;
 	is_present: boolean;
 	time_to_empty_s: number | null;

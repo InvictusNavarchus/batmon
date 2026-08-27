@@ -40,13 +40,16 @@
 | :--- | :--- | :--- | :--- |
 | **Electrical & Power** | `voltage_v` | sysfs (`BAT0`) | Instantaneous battery rail voltage (V) |
 | | `power_w` | sysfs (`BAT0`) | Discharge / charge rate (Watts) |
-| | `percentage` | sysfs (`BAT0`) | Current state of charge (%) |
+| | `charge_pct` | sysfs (`BAT0`) | Current state of charge (%) |
 | | `energy_wh` | sysfs (`BAT0`) | Remaining energy (Wh) |
+| | `energy_full_wh` | sysfs (`BAT0`) | Current full charge capacity (Wh) |
+| | `energy_design_wh` | sysfs (`BAT0`) | Factory nominal design capacity (Wh) |
+| | `voltage_design_v` | sysfs (`BAT0`) | Factory design voltage (V) |
 | | `is_charging` | sysfs (`BAT0`) | Charge state boolean |
 | **Thermal Environment** | `cpu_temp_c` | `lm_sensors` | CPU Package / Tctl temperature (°C) |
 | | `gpu_temp_c` | `lm_sensors` | GPU edge temperature (°C) |
 | | `nvme_temp_c` | `lm_sensors` | NVMe composite temperature (°C) |
-| | `temperature_c` | sysfs / hwmon | Battery sensor temperature (if present) |
+| | `battery_temp_c` | sysfs / hwmon | Battery sensor temperature (if present) |
 | **Clock & SoC Power** | `cpu_freq_mhz` | Glances / sysfs | Instantaneous CPU clock frequency (MHz) |
 | | `gpu_power_w` | `lm_sensors` | AMD APU / SoC PPT package power (Watts) |
 | | `gpu_pct` | Glances | GPU compute / shader utilization (%) |
@@ -54,7 +57,7 @@
 | | `mem_pct` | Glances | Global Memory utilization (%) |
 | | `load1` | Glances / `/proc` | 1-minute system load average |
 | | `top_processes` | Glances REST API | Top 5 aggregated process groups (JSON) |
-| **Health & Wear** | `capacity_pct` | sysfs | Full charge capacity vs design capacity (%) |
+| **Health & Wear** | `health_pct` | sysfs | Full charge capacity vs design capacity (%) |
 | | `cycle_count` | sysfs | Hardware cycle count (if reported by BMS) |
 | | `estimated_cycle_count` | Integrator | Calculated cycle count via energy throughput ($\Delta\text{Wh} / \text{Design}$) |
 | **Runtime Estimates** | `time_to_empty_s` | UPower D-Bus | Smoothed discharge runtime estimate (seconds) |
@@ -80,7 +83,7 @@ LIMIT 30;"
 ### 2. Check long-term battery degradation & wear
 ```bash
 sqlite3 ~/.local/share/batmon/battery.db "
-SELECT ts, percentage, capacity_pct, cycle_count, estimated_cycle_count, energy_full_wh
+SELECT ts, charge_pct, health_pct, cycle_count, estimated_cycle_count, energy_full_wh, energy_design_wh
 FROM samples
 ORDER BY id DESC
 LIMIT 10;"

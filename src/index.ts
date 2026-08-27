@@ -55,7 +55,6 @@ async function runTick(): Promise<void> {
 			alert(sample, oldPrev);
 			prevHistorical = sample;
 		}
-		}
 
 		// 3. Batch prune debug.db every 5 minutes (300 ticks)
 		if (tickCount > 0 && tickCount % PRUNE_INTERVAL_TICKS === 0) {

@@ -17,14 +17,14 @@ export function computeEstimatedCycles(
 	curr: BatterySample,
 	prev: BatterySample | null,
 ): number {
-	if (!prev || curr.energy_design <= 0) return 0;
+	if (!prev || curr.energy_design_wh <= 0) return 0;
 
 	const prevCycles = prev.estimated_cycle_count ?? 0;
 
 	if (!curr.is_charging && prev.energy_wh > curr.energy_wh) {
 		const deltaWh = prev.energy_wh - curr.energy_wh;
-		if (deltaWh > 0 && deltaWh <= curr.energy_design) {
-			const deltaCycles = deltaWh / curr.energy_design;
+		if (deltaWh > 0 && deltaWh <= curr.energy_design_wh) {
+			const deltaCycles = deltaWh / curr.energy_design_wh;
 			return Math.round((prevCycles + deltaCycles) * 10000) / 10000;
 		}
 	}
