@@ -96,20 +96,34 @@ let prevCpu: { idle: number; total: number } | null = null;
 export function readCpuPct(): number | null {
 	try {
 		const stat = readFileSync("/proc/stat", "utf-8");
-		const line = stat.split("\n")[0];
-		if (!line?.startsWith("cpu ")) return null;
-		const parts = line.trim().split(/\s+/).slice(1).map(Number);
-		const idle = parts[3] + (parts[4] || 0); // idle + iowait
-		const total = parts.reduce((acc, v) => acc + v, 0);
+		const [cpuHeaderLine] = stat.split("\n");
+		if (!cpuHeaderLine?.startsWith("cpu ")) return null;
+
+		// /proc/stat columns: cpu user nice system idle iowait irq softirq steal guest guest_nice
+		const [
+			,
+			user = 0,
+			nice = 0,
+			system = 0,
+			idle = 0,
+			iowait = 0,
+			irq = 0,
+			softirq = 0,
+			steal = 0,
+		] = cpuHeaderLine.trim().split(/\s+/).map(Number);
+
+		const idleTime = idle + iowait;
+		const totalTime =
+			user + nice + system + idle + iowait + irq + softirq + steal;
 
 		if (!prevCpu) {
-			prevCpu = { idle, total };
+			prevCpu = { idle: idleTime, total: totalTime };
 			return null;
 		}
 
-		const totalDelta = total - prevCpu.total;
-		const idleDelta = idle - prevCpu.idle;
-		prevCpu = { idle, total };
+		const totalDelta = totalTime - prevCpu.total;
+		const idleDelta = idleTime - prevCpu.idle;
+		prevCpu = { idle: idleTime, total: totalTime };
 
 		if (totalDelta <= 0) return 0;
 		const pct = (1 - idleDelta / totalDelta) * 100;
@@ -122,30 +136,27 @@ export function readCpuPct(): number | null {
 export function readMemPct(): number | null {
 	try {
 		const meminfo = readFileSync("/proc/meminfo", "utf-8");
-		let totalKb: number | null = null;
-		let availKb: number | null = null;
-		let freeKb = 0;
-		let buffersKb = 0;
-		let cachedKb = 0;
+		const mem = new Map<string, number>();
 
 		for (const line of meminfo.split("\n")) {
-			if (line.startsWith("MemTotal:"))
-				totalKb = Number(line.replace(/\D+/g, ""));
-			else if (line.startsWith("MemAvailable:"))
-				availKb = Number(line.replace(/\D+/g, ""));
-			else if (line.startsWith("MemFree:"))
-				freeKb = Number(line.replace(/\D+/g, ""));
-			else if (line.startsWith("Buffers:"))
-				buffersKb = Number(line.replace(/\D+/g, ""));
-			else if (line.startsWith("Cached:"))
-				cachedKb = Number(line.replace(/\D+/g, ""));
+			const colonIdx = line.indexOf(":");
+			if (colonIdx === -1) continue;
+			const key = line.slice(0, colonIdx).trim();
+			const valKb = Number.parseInt(line.slice(colonIdx + 1), 10);
+			if (Number.isFinite(valKb)) mem.set(key, valKb);
 		}
 
-		if (totalKb === null || totalKb <= 0) return null;
+		const totalKb = mem.get("MemTotal");
+		if (!totalKb || totalKb <= 0) return null;
 
-		const effectiveAvail = availKb ?? freeKb + buffersKb + cachedKb;
-		const pct = ((totalKb - effectiveAvail) / totalKb) * 100;
-		return Math.round(Math.max(0, Math.min(100, pct)) * 10) / 10;
+		const availKb =
+			mem.get("MemAvailable") ??
+			(mem.get("MemFree") ?? 0) +
+				(mem.get("Buffers") ?? 0) +
+				(mem.get("Cached") ?? 0);
+
+		const usedPct = ((totalKb - availKb) / totalKb) * 100;
+		return Math.round(Math.max(0, Math.min(100, usedPct)) * 10) / 10;
 	} catch {
 		return null;
 	}
@@ -225,12 +236,14 @@ export function readTopProcesses(): string | null {
 		for (const line of lines) {
 			const trimmed = line.trim();
 			if (!trimmed) continue;
-			const match = trimmed.match(/^(.*?)\s+([\d.]+)\s+([\d.]+)$/);
-			if (!match) continue;
-			const name = match[1];
+			const match = trimmed.match(
+				/^(?<name>.*?)\s+(?<cpu>[\d.]+)\s+(?<mem>[\d.]+)$/,
+			);
+			if (!match?.groups) continue;
+			const { name, cpu: cpuStr, mem: memStr } = match.groups;
 			if (name === "ps") continue; // filter self-sampling artifact
-			const cpu = Number(match[2]);
-			const mem = Number(match[3]);
+			const cpu = Number(cpuStr);
+			const mem = Number(memStr);
 
 			const existing = map.get(name);
 			if (existing) {
@@ -262,8 +275,8 @@ function readSysfsLoad1(): number | null {
 	try {
 		const p = "/proc/loadavg";
 		if (existsSync(p)) {
-			const [l1] = readFileSync(p, "utf-8").trim().split(" ");
-			const num = Number(l1);
+			const [load1Str] = readFileSync(p, "utf-8").trim().split(/\s+/);
+			const num = Number(load1Str);
 			return Number.isFinite(num) ? Math.round(num * 100) / 100 : null;
 		}
 	} catch {
