@@ -27,27 +27,26 @@ export const HISTORICAL_MIGRATIONS: Migration[] = [
 		up: async (sql) => {
 			await sql`
 				CREATE TABLE IF NOT EXISTS samples (
-					id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-					ts                    TEXT    NOT NULL,
-					percentage            REAL,
-					status                TEXT,
-					energy_wh             REAL,
-					energy_full_wh        REAL,
-					energy_design         REAL,
-					power_w               REAL,
-					voltage_v             REAL,
-					voltage_design        REAL,
-					cycle_count           INTEGER,
-					estimated_cycle_count REAL,
-					temperature_c         REAL,
-					capacity_pct          REAL,
-					is_charging           INTEGER,
-					is_present            INTEGER,
-					time_to_empty_s       INTEGER,
-					time_to_full_s        INTEGER,
-					cpu_temp_c            REAL,
-					gpu_temp_c            REAL,
-					nvme_temp_c           REAL
+					id              INTEGER PRIMARY KEY AUTOINCREMENT,
+					ts              TEXT    NOT NULL,
+					percentage      REAL,
+					status          TEXT,
+					energy_wh       REAL,
+					energy_full_wh  REAL,
+					energy_design   REAL,
+					power_w         REAL,
+					voltage_v       REAL,
+					voltage_design  REAL,
+					cycle_count     INTEGER,
+					temperature_c   REAL,
+					capacity_pct    REAL,
+					is_charging     INTEGER,
+					is_present      INTEGER,
+					time_to_empty_s INTEGER,
+					time_to_full_s  INTEGER,
+					cpu_temp_c      REAL,
+					gpu_temp_c      REAL,
+					nvme_temp_c     REAL
 				);
 			`;
 			await sql`CREATE INDEX IF NOT EXISTS idx_ts ON samples(ts);`;
@@ -55,6 +54,18 @@ export const HISTORICAL_MIGRATIONS: Migration[] = [
 	},
 	{
 		version: 2,
+		name: "add_estimated_cycle_count",
+		up: async (sql) => {
+			await addColumnIfNotExists(
+				sql,
+				"samples",
+				"estimated_cycle_count",
+				"REAL",
+			);
+		},
+	},
+	{
+		version: 3,
 		name: "add_glances_and_system_telemetry",
 		up: async (sql) => {
 			await addColumnIfNotExists(sql, "samples", "cpu_pct", "REAL");
@@ -63,25 +74,13 @@ export const HISTORICAL_MIGRATIONS: Migration[] = [
 		},
 	},
 	{
-		version: 3,
+		version: 4,
 		name: "add_flight_telemetry_metrics",
 		up: async (sql) => {
 			await addColumnIfNotExists(sql, "samples", "cpu_freq_mhz", "REAL");
 			await addColumnIfNotExists(sql, "samples", "gpu_pct", "REAL");
 			await addColumnIfNotExists(sql, "samples", "gpu_power_w", "REAL");
 			await addColumnIfNotExists(sql, "samples", "load1", "REAL");
-		},
-	},
-	{
-		version: 4,
-		name: "ensure_estimated_cycle_count",
-		up: async (sql) => {
-			await addColumnIfNotExists(
-				sql,
-				"samples",
-				"estimated_cycle_count",
-				"REAL",
-			);
 		},
 	},
 ];
