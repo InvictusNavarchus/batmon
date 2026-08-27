@@ -1,6 +1,6 @@
 {
 	"name": "batmon",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Battery health monitor & flight recorder → SQLite. Logs 1s debug telemetry and 60s historical data via systemd daemon.",
 	"type": "module",
 	"scripts": {
