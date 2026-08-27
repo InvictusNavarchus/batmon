@@ -181,7 +181,7 @@ export async function readBattery(): Promise<BatterySample> {
 		ttf = Math.round(((energy.full - energy.now) / powerW) * 3600);
 
 	const cpuFreq = glances.cpu_freq_mhz ?? readSysfsCpuFreq();
-	const load1 = glances.load1 ?? readSysfsLoad1();
+	const load1 = readSysfsLoad1();
 
 	return {
 		ts: new Date().toISOString(),

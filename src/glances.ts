@@ -44,7 +44,6 @@ export async function readGlances(
 				top_processes: null,
 				cpu_freq_mhz: null,
 				gpu_pct: null,
-				load1: null,
 			};
 		}
 
@@ -86,10 +85,6 @@ export async function readGlances(
 				typeof quicklookRes?.gpu_proc === "number"
 					? Math.round(quicklookRes.gpu_proc * 10) / 10
 					: null,
-			load1:
-				typeof quicklookRes?.load === "number"
-					? Math.round(quicklookRes.load * 100) / 100
-					: null,
 		};
 	} catch {
 		return {
@@ -98,7 +93,6 @@ export async function readGlances(
 			top_processes: null,
 			cpu_freq_mhz: null,
 			gpu_pct: null,
-			load1: null,
 		};
 	}
 }

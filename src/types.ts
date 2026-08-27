@@ -41,7 +41,6 @@ export interface GlancesTelemetry {
 	top_processes: string | null;
 	cpu_freq_mhz: number | null;
 	gpu_pct: number | null;
-	load1: number | null;
 }
 
 export interface SystemTemps {
