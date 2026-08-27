@@ -5,6 +5,9 @@ export const GLANCES_BASE_URL = "http://127.0.0.1:61208/api/4";
 interface GlancesQuicklook {
 	cpu?: number;
 	mem?: number;
+	cpu_hz_current?: number;
+	gpu_proc?: number;
+	load?: number;
 }
 
 interface GlancesProgram {
@@ -15,7 +18,7 @@ interface GlancesProgram {
 }
 
 /**
- * Reads CPU, memory, and top 5 process groups from Glances REST API v4.
+ * Reads CPU, memory, clock speed, GPU %, load, and top 5 process groups from Glances REST API v4.
  * Gracefully falls back to null values if Glances is not running or unreachable.
  */
 export async function readGlances(
@@ -35,7 +38,14 @@ export async function readGlances(
 		]);
 
 		if (!quicklookRes && !programListRes) {
-			return { cpu_pct: null, mem_pct: null, top_processes: null };
+			return {
+				cpu_pct: null,
+				mem_pct: null,
+				top_processes: null,
+				cpu_freq_mhz: null,
+				gpu_pct: null,
+				load1: null,
+			};
 		}
 
 		const topProcesses: TopProcessGroup[] | null = Array.isArray(programListRes)
@@ -67,8 +77,28 @@ export async function readGlances(
 				topProcesses && topProcesses.length > 0
 					? JSON.stringify(topProcesses)
 					: null,
+			cpu_freq_mhz:
+				typeof quicklookRes?.cpu_hz_current === "number" &&
+				quicklookRes.cpu_hz_current > 0
+					? Math.round(quicklookRes.cpu_hz_current / 1_000_000)
+					: null,
+			gpu_pct:
+				typeof quicklookRes?.gpu_proc === "number"
+					? Math.round(quicklookRes.gpu_proc * 10) / 10
+					: null,
+			load1:
+				typeof quicklookRes?.load === "number"
+					? Math.round(quicklookRes.load * 100) / 100
+					: null,
 		};
 	} catch {
-		return { cpu_pct: null, mem_pct: null, top_processes: null };
+		return {
+			cpu_pct: null,
+			mem_pct: null,
+			top_processes: null,
+			cpu_freq_mhz: null,
+			gpu_pct: null,
+			load1: null,
+		};
 	}
 }

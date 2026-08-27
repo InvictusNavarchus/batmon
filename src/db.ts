@@ -67,7 +67,11 @@ export async function initHistoricalDb(): Promise<SQL> {
 			nvme_temp_c           REAL,
 			cpu_pct               REAL,
 			mem_pct               REAL,
-			top_processes         TEXT
+			top_processes         TEXT,
+			cpu_freq_mhz          REAL,
+			gpu_pct               REAL,
+			gpu_power_w           REAL,
+			load1                 REAL
 		);
 	`;
 	await sql`CREATE INDEX IF NOT EXISTS idx_ts ON samples(ts);`;
@@ -80,6 +84,10 @@ export async function initHistoricalDb(): Promise<SQL> {
 		cpu_pct: "REAL",
 		mem_pct: "REAL",
 		top_processes: "TEXT",
+		cpu_freq_mhz: "REAL",
+		gpu_pct: "REAL",
+		gpu_power_w: "REAL",
+		load1: "REAL",
 	};
 
 	for (const [col, type] of Object.entries(migrations)) {
@@ -140,10 +148,36 @@ export async function initDebugDb(): Promise<SQL> {
 			nvme_temp_c           REAL,
 			cpu_pct               REAL,
 			mem_pct               REAL,
-			top_processes         TEXT
+			top_processes         TEXT,
+			cpu_freq_mhz          REAL,
+			gpu_pct               REAL,
+			gpu_power_w           REAL,
+			load1                 REAL
 		);
 	`;
 	await sql`CREATE INDEX IF NOT EXISTS idx_debug_ts ON samples_debug(ts);`;
+
+	const debugCols = await sql`PRAGMA table_info(samples_debug);`;
+	const existingDebugCols = new Set(
+		debugCols.map((c: { name: string }) => c.name),
+	);
+
+	const debugMigrations: Record<string, string> = {
+		estimated_cycle_count: "REAL",
+		cpu_pct: "REAL",
+		mem_pct: "REAL",
+		top_processes: "TEXT",
+		cpu_freq_mhz: "REAL",
+		gpu_pct: "REAL",
+		gpu_power_w: "REAL",
+		load1: "REAL",
+	};
+
+	for (const [col, type] of Object.entries(debugMigrations)) {
+		if (!existingDebugCols.has(col)) {
+			await sql.unsafe(`ALTER TABLE samples_debug ADD COLUMN ${col} ${type};`);
+		}
+	}
 
 	debugSql = sql;
 	return debugSql;

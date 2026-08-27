@@ -14,14 +14,17 @@ precede that kind of failure.
 |---|---|
 | Charge %, status, energy, power, voltage | sysfs (`/sys/class/power_supply/BAT0/`) |
 | Time to empty / full (smoothed) | UPower via D-Bus (`busctl`) |
-| Battery temperature | sysfs / hwmon (if sensor exists) |
 | CPU, GPU, NVMe temperature | `lm_sensors` (thermal environment proxy) |
 | CPU & Memory usage (global %) | Glances REST API (`/api/4/quicklook`) |
+| CPU clock frequency (MHz) | Glances / sysfs (`cpufreq`) |
+| GPU utilization (%) | Glances (`/api/4/quicklook`) |
+| GPU / SoC Package Power (W) | `lm_sensors` (`amdgpu.PPT`) |
+| 1-Min Load Average | Glances / `/proc/loadavg` |
 | Top 5 process groups (CPU %, Mem %, count) | Glances REST API (`/api/4/programlist`) |
 | Cycle count, estimated cycles, health vs design capacity | sysfs & energy throughput integrator |
 
 Auto-detects `energy_*` (µWh) vs `charge_*` (µAh) batteries.
-Gracefully records `NULL` when Glances or specific thermal sensors are offline.
+Gracefully falls back to sysfs/proc reads or records `NULL` when Glances is offline.
 
 ## Requirements
 
