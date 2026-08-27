@@ -19,6 +19,22 @@ export interface BatterySample {
 	cpu_temp_c: number | null;
 	gpu_temp_c: number | null;
 	nvme_temp_c: number | null;
+	cpu_pct: number | null;
+	mem_pct: number | null;
+	top_processes: string | null;
+}
+
+export interface TopProcessGroup {
+	name: string;
+	cpu: number;
+	mem: number;
+	count: number;
+}
+
+export interface GlancesTelemetry {
+	cpu_pct: number | null;
+	mem_pct: number | null;
+	top_processes: string | null;
 }
 
 export interface SystemTemps {

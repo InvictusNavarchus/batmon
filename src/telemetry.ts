@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { SYSFS } from "./config";
+import { readGlances } from "./glances";
 import type { BatterySample, SensorsData, SystemTemps } from "./types";
 
 // ── sysfs helpers ────────────────────────────────────────────────────
@@ -123,7 +124,7 @@ export function upowerProp(prop: string): number | null {
 }
 
 // ── read ─────────────────────────────────────────────────────────────
-export function readBattery(): BatterySample {
+export async function readBattery(): Promise<BatterySample> {
 	const status = read("status");
 	const energy = readEnergy();
 	const powerW = readPower();
@@ -132,6 +133,7 @@ export function readBattery(): BatterySample {
 	const isCharging = status === "Charging";
 	const sysTemps = readSystemTemps();
 	const battTemp = readBatteryTemp();
+	const glances = await readGlances();
 
 	let tte = upowerProp("TimeToEmpty");
 	let ttf = upowerProp("TimeToFull");
@@ -164,5 +166,8 @@ export function readBattery(): BatterySample {
 		cpu_temp_c: sysTemps.cpu_c,
 		gpu_temp_c: sysTemps.gpu_c,
 		nvme_temp_c: sysTemps.nvme_c,
+		cpu_pct: glances.cpu_pct,
+		mem_pct: glances.mem_pct,
+		top_processes: glances.top_processes,
 	};
 }

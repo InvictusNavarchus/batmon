@@ -29,6 +29,8 @@ export async function store(s: BatterySample): Promise<BatterySample | null> {
 	const sql = new SQL(`sqlite://${DB_PATH}`);
 
 	await sql`PRAGMA journal_mode = WAL;`;
+	await sql`PRAGMA synchronous = NORMAL;`;
+	await sql`PRAGMA wal_autocheckpoint = 100;`;
 	await sql`PRAGMA busy_timeout = 5000;`;
 	await sql`
 		CREATE TABLE IF NOT EXISTS samples (
@@ -52,17 +54,28 @@ export async function store(s: BatterySample): Promise<BatterySample | null> {
 			time_to_full_s        INTEGER,
 			cpu_temp_c            REAL,
 			gpu_temp_c            REAL,
-			nvme_temp_c           REAL
+			nvme_temp_c           REAL,
+			cpu_pct               REAL,
+			mem_pct               REAL,
+			top_processes         TEXT
 		);
 	`;
 	await sql`CREATE INDEX IF NOT EXISTS idx_ts ON samples(ts);`;
 
 	const cols = await sql`PRAGMA table_info(samples);`;
-	const hasEstimated = cols.some(
-		(c: { name: string }) => c.name === "estimated_cycle_count",
-	);
-	if (!hasEstimated) {
-		await sql`ALTER TABLE samples ADD COLUMN estimated_cycle_count REAL;`;
+	const existingCols = new Set(cols.map((c: { name: string }) => c.name));
+
+	const migrations: Record<string, string> = {
+		estimated_cycle_count: "REAL",
+		cpu_pct: "REAL",
+		mem_pct: "REAL",
+		top_processes: "TEXT",
+	};
+
+	for (const [col, type] of Object.entries(migrations)) {
+		if (!existingCols.has(col)) {
+			await sql.unsafe(`ALTER TABLE samples ADD COLUMN ${col} ${type};`);
+		}
 	}
 
 	const rows = await sql`SELECT * FROM samples ORDER BY id DESC LIMIT 1;`;

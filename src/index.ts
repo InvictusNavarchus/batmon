@@ -16,7 +16,7 @@ import { readBattery } from "./telemetry";
 
 // ── main ─────────────────────────────────────────────────────────────
 try {
-	const sample = readBattery();
+	const sample = await readBattery();
 	if (!sample.is_present) process.exit(0);
 	const prev = await store(sample);
 	alert(sample, prev);
