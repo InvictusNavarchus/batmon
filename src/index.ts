@@ -22,6 +22,7 @@ import type { BatterySample } from "./types";
 let prevHistorical: BatterySample | null = null;
 let tickCount = 0;
 let isRunning = true;
+let isTicking = false;
 
 async function runTick(): Promise<void> {
 	try {
@@ -45,6 +46,16 @@ async function runTick(): Promise<void> {
 		tickCount++;
 	} catch (err) {
 		console.error("batmon tick error:", err);
+	}
+}
+
+async function executeTick(): Promise<void> {
+	if (isTicking || !isRunning) return;
+	isTicking = true;
+	try {
+		await runTick();
+	} finally {
+		isTicking = false;
 	}
 }
 
@@ -77,12 +88,12 @@ if (process.argv.includes("--oneshot")) {
 	}
 } else {
 	// Daemon mode: execute first tick immediately, then enter 1s interval loop
-	await runTick();
+	await executeTick();
 	const interval = setInterval(async () => {
 		if (!isRunning) {
 			clearInterval(interval);
 			return;
 		}
-		await runTick();
+		await executeTick();
 	}, DEBUG_SAMPLE_INTERVAL_MS);
 }
