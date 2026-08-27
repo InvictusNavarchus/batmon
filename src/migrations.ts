@@ -72,6 +72,18 @@ export const HISTORICAL_MIGRATIONS: Migration[] = [
 			await addColumnIfNotExists(sql, "samples", "load1", "REAL");
 		},
 	},
+	{
+		version: 4,
+		name: "ensure_estimated_cycle_count",
+		up: async (sql) => {
+			await addColumnIfNotExists(
+				sql,
+				"samples",
+				"estimated_cycle_count",
+				"REAL",
+			);
+		},
+	},
 ];
 
 // ── Debug Flight Recorder Migrations (debug.db) ───────────────────────
