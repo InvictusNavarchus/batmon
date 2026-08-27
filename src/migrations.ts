@@ -35,6 +35,20 @@ async function renameColumnIfExists(
 	}
 }
 
+async function renameTableIfExists(
+	sql: SQL,
+	oldTable: string,
+	newTable: string,
+): Promise<void> {
+	const tables =
+		await sql`SELECT name FROM sqlite_master WHERE type='table' AND name=${oldTable};`;
+	const newTables =
+		await sql`SELECT name FROM sqlite_master WHERE type='table' AND name=${newTable};`;
+	if (tables.length > 0 && newTables.length === 0) {
+		await sql.unsafe(`ALTER TABLE ${oldTable} RENAME TO ${newTable};`);
+	}
+}
+
 // ── Historical Database Migrations (battery.db) ──────────────────────
 export const HISTORICAL_MIGRATIONS: Migration[] = [
 	{
@@ -134,7 +148,7 @@ export const DEBUG_MIGRATIONS: Migration[] = [
 		name: "create_debug_samples_table",
 		up: async (sql) => {
 			await sql`
-				CREATE TABLE IF NOT EXISTS samples_debug (
+				CREATE TABLE IF NOT EXISTS samples (
 					id                    INTEGER PRIMARY KEY AUTOINCREMENT,
 					ts                    TEXT    NOT NULL,
 					charge_pct            REAL,
@@ -165,43 +179,42 @@ export const DEBUG_MIGRATIONS: Migration[] = [
 					load1                 REAL
 				);
 			`;
-			await sql`CREATE INDEX IF NOT EXISTS idx_debug_ts ON samples_debug(ts);`;
+			await sql`CREATE INDEX IF NOT EXISTS idx_debug_ts ON samples(ts);`;
 		},
 	},
 	{
 		version: 2,
 		name: "standardize_debug_column_names",
 		up: async (sql) => {
-			await renameColumnIfExists(
-				sql,
-				"samples_debug",
-				"percentage",
-				"charge_pct",
-			);
-			await renameColumnIfExists(
-				sql,
-				"samples_debug",
-				"capacity_pct",
-				"health_pct",
-			);
-			await renameColumnIfExists(
-				sql,
-				"samples_debug",
-				"energy_design",
-				"energy_design_wh",
-			);
-			await renameColumnIfExists(
-				sql,
-				"samples_debug",
-				"voltage_design",
-				"voltage_design_v",
-			);
-			await renameColumnIfExists(
-				sql,
-				"samples_debug",
-				"temperature_c",
-				"battery_temp_c",
-			);
+			for (const table of ["samples", "samples_debug"]) {
+				await renameColumnIfExists(sql, table, "percentage", "charge_pct");
+				await renameColumnIfExists(sql, table, "capacity_pct", "health_pct");
+				await renameColumnIfExists(
+					sql,
+					table,
+					"energy_design",
+					"energy_design_wh",
+				);
+				await renameColumnIfExists(
+					sql,
+					table,
+					"voltage_design",
+					"voltage_design_v",
+				);
+				await renameColumnIfExists(
+					sql,
+					table,
+					"temperature_c",
+					"battery_temp_c",
+				);
+			}
+		},
+	},
+	{
+		version: 3,
+		name: "rename_samples_debug_to_samples",
+		up: async (sql) => {
+			await renameTableIfExists(sql, "samples_debug", "samples");
 		},
 	},
 ];

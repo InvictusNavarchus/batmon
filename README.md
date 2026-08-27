@@ -75,7 +75,7 @@
 ```bash
 sqlite3 ~/.local/share/batmon/debug.db "
 SELECT ts, power_w, voltage_v, cpu_freq_mhz, cpu_temp_c, gpu_power_w, cpu_pct, top_processes
-FROM samples_debug
+FROM samples
 ORDER BY id DESC
 LIMIT 30;"
 ```
@@ -93,7 +93,7 @@ LIMIT 10;"
 ```bash
 sqlite3 ~/.local/share/batmon/debug.db "
 SELECT ts, power_w, cpu_temp_c, top_processes
-FROM samples_debug
+FROM samples
 WHERE power_w > 30.0
 ORDER BY id DESC
 LIMIT 5;"

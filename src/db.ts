@@ -88,13 +88,13 @@ export async function initDebugDb(): Promise<SQL> {
 
 export async function storeDebug(s: BatterySample): Promise<void> {
 	const sql = await initDebugDb();
-	await sql`INSERT INTO samples_debug ${sql(s)}`;
+	await sql`INSERT INTO samples ${sql(s)}`;
 }
 
 export async function pruneDebug(hours = DEBUG_RETENTION_HOURS): Promise<void> {
 	const sql = await initDebugDb();
 	await sql.unsafe(
-		`DELETE FROM samples_debug WHERE julianday(ts) < julianday('now', '-${hours} hours');`,
+		`DELETE FROM samples WHERE julianday(ts) < julianday('now', '-${hours} hours');`,
 	);
 }
 
