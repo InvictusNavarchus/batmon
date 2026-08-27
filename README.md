@@ -61,7 +61,8 @@
 | | `time_to_full_s` | UPower D-Bus | Smoothed charge completion estimate (seconds) |
 
 * Auto-detects `energy_*` (µWh) vs `charge_*` (µAh) battery drivers.
-* Resilient: If Glances is not running, `cpu_freq_mhz` and `load1` seamlessly fall back to native `/sys` and `/proc` reads, while optional metrics record `NULL` without throwing errors.
+* **Resilient Fallbacks:** If Glances is not running, `cpu_freq_mhz` and `load1` seamlessly fall back to native `/sys` and `/proc` reads, while optional metrics record `NULL` without throwing errors.
+* **Automatic Migrations:** Database schema updates and column additions are handled seamlessly and automatically on startup using SQLite's native `user_version` tracking with zero manual migration steps required.
 
 ---
 
@@ -116,7 +117,7 @@ LIMIT 5;"
   sudo dnf install lm_sensors   # Fedora/RHEL
   sudo apt install lm-sensors   # Ubuntu/Debian
   ```
-- **`glances`** (optional, for global CPU/RAM ad top process telemetry):
+- **`glances`** (optional, for global CPU/RAM and top process telemetry):
   ```bash
   pipx install glances
   # Start Glances API server:
@@ -132,6 +133,8 @@ LIMIT 5;"
 git clone https://github.com/YOUR_USER/batmon.git
 cd batmon
 ./install.sh
+# or using bun:
+bun run install-service
 ```
 
 The installer will:
@@ -156,5 +159,7 @@ bun run src/index.ts --oneshot
 
 ```bash
 ./uninstall.sh
+# or using bun:
+bun run uninstall-service
 ```
 *(Databases in `~/.local/share/batmon/` are preserved upon uninstall).*
