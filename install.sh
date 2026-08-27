@@ -22,6 +22,11 @@ if ! command -v busctl &>/dev/null; then
   echo "WARN: busctl not found. Time estimates will use instantaneous math."
 fi
 
+if ! command -v notify-send &>/dev/null; then
+  echo "WARN: notify-send (libnotify) not found. Desktop notifications will be disabled."
+  echo "      Install: sudo dnf install libnotify (or apt install libnotify-bin)"
+fi
+
 # ── install source ────────────────────────────────────────────────────
 mkdir -p "$INSTALL_DIR"
 rm -rf "$INSTALL_DIR/src"
@@ -56,33 +61,32 @@ EOF
 
 echo "    service → $SYSTEMD_DIR/batmon.service"
 
-# ── enable & restart service ──────────────────────────────────────────
-systemctl --user daemon-reload
-systemctl --user enable --now batmon.service
-systemctl --user restart batmon.service
-echo "    service → enabled & started (1s flight recorder + 60s history)"
-
 # ── verify ────────────────────────────────────────────────────────────
 echo ""
 echo "==> Running sample verification…"
 if "$BUN_PATH" run "$INSTALL_DIR/src/index.ts" --oneshot; then
   echo "    ✓ sample stored"
-  echo ""
-  echo "    Check historical data (if sqlite3 CLI is installed):"
-  echo "      sqlite3 $INSTALL_DIR/battery.db 'SELECT * FROM samples ORDER BY id DESC LIMIT 1;'"
-  echo ""
-  echo "    Check flight recorder data:"
-  echo "      sqlite3 $INSTALL_DIR/debug.db 'SELECT * FROM samples_debug ORDER BY id DESC LIMIT 5;'"
-  echo ""
-  echo "    Check service status:"
-  echo "      systemctl --user status batmon.service"
-  echo ""
-  echo "    View logs:"
-  echo "      journalctl --user -u batmon -f"
 else
-  echo "    ✗ test run failed – check: journalctl --user -u batmon -n 10"
+  echo "    ✗ test run failed – check your system configuration"
   exit 1
 fi
 
+# ── enable & restart service ──────────────────────────────────────────
+systemctl --user daemon-reload
+systemctl --user enable --now batmon.service
+systemctl --user restart batmon.service
+echo "    service → enabled & started (1s flight recorder + 60s history)"
+echo ""
+echo "    Check historical data (if sqlite3 CLI is installed):"
+echo "      sqlite3 $INSTALL_DIR/battery.db 'SELECT * FROM samples ORDER BY id DESC LIMIT 1;'"
+echo ""
+echo "    Check flight recorder data:"
+echo "      sqlite3 $INSTALL_DIR/debug.db 'SELECT * FROM samples_debug ORDER BY id DESC LIMIT 5;'"
+echo ""
+echo "    Check service status:"
+echo "      systemctl --user status batmon.service"
+echo ""
+echo "    View logs:"
+echo "      journalctl --user -u batmon -f"
 echo ""
 echo "==> Done. Battery health monitoring and flight recording are active."
