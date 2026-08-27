@@ -10,7 +10,7 @@ import {
 import type { BatterySample, NotificationOptions } from "./types";
 
 // ── notifications ───────────────────────────────────────────────────
-export function notify({
+function notify({
 	title,
 	body,
 	urgency = "normal",

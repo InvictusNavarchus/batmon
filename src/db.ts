@@ -33,7 +33,7 @@ export function computeEstimatedCycles(
 }
 
 // ── historical database (battery.db) ─────────────────────────────────
-export async function initHistoricalDb(): Promise<SQL> {
+async function initHistoricalDb(): Promise<SQL> {
 	if (histSql) return histSql;
 
 	mkdirSync(DB_DIR, { recursive: true });
@@ -69,7 +69,7 @@ export async function store(s: BatterySample): Promise<BatterySample | null> {
 }
 
 // ── debug flight recorder database (debug.db) ─────────────────────────
-export async function initDebugDb(): Promise<SQL> {
+async function initDebugDb(): Promise<SQL> {
 	if (debugSql) return debugSql;
 
 	mkdirSync(DB_DIR, { recursive: true });

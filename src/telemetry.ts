@@ -32,7 +32,7 @@ function readOpt(name: string): number | null {
 }
 
 // ── temperature: battery sensor (may not exist) ──────────────────────
-export function readBatteryTemp(): number | null {
+function readBatteryTemp(): number | null {
 	const direct = readOpt("temp");
 	if (direct !== null && direct > 0) return direct / 10;
 
@@ -55,7 +55,7 @@ export function readBatteryTemp(): number | null {
 }
 
 // ── system temps & power via `sensors -j` (thermal environment proxy) ─
-export function readSystemTemps(): SystemTemps {
+function readSystemTemps(): SystemTemps {
 	try {
 		const { stdout, exitCode } = Bun.spawnSync(["sensors", "-j"]);
 		if (exitCode !== 0)
@@ -93,7 +93,7 @@ export function readSystemTemps(): SystemTemps {
 // ── native CPU, Memory, GPU & Process telemetry readers ───────────────
 let prevCpu: { idle: number; total: number } | null = null;
 
-export function readCpuPct(): number | null {
+function readCpuPct(): number | null {
 	try {
 		const stat = readFileSync("/proc/stat", "utf-8");
 		const [cpuHeaderLine] = stat.split("\n");
@@ -133,7 +133,7 @@ export function readCpuPct(): number | null {
 	}
 }
 
-export function readMemPct(): number | null {
+function readMemPct(): number | null {
 	try {
 		const meminfo = readFileSync("/proc/meminfo", "utf-8");
 		const mem = new Map<string, number>();
@@ -162,7 +162,7 @@ export function readMemPct(): number | null {
 	}
 }
 
-export function readCpuFreqMhz(): number | null {
+function readCpuFreqMhz(): number | null {
 	try {
 		const cpuBase = "/sys/devices/system/cpu";
 		if (existsSync(cpuBase)) {
@@ -202,7 +202,7 @@ export function readCpuFreqMhz(): number | null {
 	return null;
 }
 
-export function readGpuPct(): number | null {
+function readGpuPct(): number | null {
 	try {
 		const drmBase = "/sys/class/drm";
 		if (existsSync(drmBase)) {
@@ -238,7 +238,7 @@ function getMemTotalKb(): number {
 	return 1;
 }
 
-export function readTopProcesses(): string | null {
+function readTopProcesses(): string | null {
 	try {
 		// Read total system CPU ticks from /proc/stat
 		const stat = readFileSync("/proc/stat", "utf-8");
@@ -356,7 +356,7 @@ function readSysfsLoad1(): number | null {
 }
 
 // ── energy: auto-detect energy_* (µWh) vs charge_* (µAh) ────────────
-export function readEnergy(): { now: number; full: number; design: number } {
+function readEnergy(): { now: number; full: number; design: number } {
 	if (exists("energy_now")) {
 		return {
 			now: readNum("energy_now") / 1_000_000,
@@ -374,7 +374,7 @@ export function readEnergy(): { now: number; full: number; design: number } {
 }
 
 // ── power: prefer power_now, fall back to current × voltage ──────────
-export function readPower(): number {
+function readPower(): number {
 	const pw = readOpt("power_now");
 	if (pw !== null) return pw / 1_000_000;
 	const i = readOpt("current_now");
@@ -384,7 +384,7 @@ export function readPower(): number {
 }
 
 // ── UPower D-Bus for smoothed time estimates ─────────────────────────
-export function upowerProp(prop: string): number | null {
+function upowerProp(prop: string): number | null {
 	try {
 		const { stdout, exitCode } = Bun.spawnSync([
 			"busctl",
@@ -460,5 +460,3 @@ export async function readTelemetry(): Promise<TelemetrySample> {
 		load1,
 	};
 }
-
-export const readBattery = readTelemetry;
