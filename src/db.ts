@@ -6,6 +6,7 @@ import {
 	DEBUG_DB_PATH,
 	DEBUG_RETENTION_HOURS,
 } from "./config";
+import { DEBUG_MIGRATIONS, HISTORICAL_MIGRATIONS, migrate } from "./migrations";
 import type { BatterySample } from "./types";
 
 let histSql: SQL | null = null;
@@ -42,59 +43,8 @@ export async function initHistoricalDb(): Promise<SQL> {
 	await sql`PRAGMA synchronous = NORMAL;`;
 	await sql`PRAGMA wal_autocheckpoint = 100;`;
 	await sql`PRAGMA busy_timeout = 5000;`;
-	await sql`
-		CREATE TABLE IF NOT EXISTS samples (
-			id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-			ts                    TEXT    NOT NULL,
-			percentage            REAL,
-			status                TEXT,
-			energy_wh             REAL,
-			energy_full_wh        REAL,
-			energy_design         REAL,
-			power_w               REAL,
-			voltage_v             REAL,
-			voltage_design        REAL,
-			cycle_count           INTEGER,
-			estimated_cycle_count REAL,
-			temperature_c         REAL,
-			capacity_pct          REAL,
-			is_charging           INTEGER,
-			is_present            INTEGER,
-			time_to_empty_s       INTEGER,
-			time_to_full_s        INTEGER,
-			cpu_temp_c            REAL,
-			gpu_temp_c            REAL,
-			nvme_temp_c           REAL,
-			cpu_pct               REAL,
-			mem_pct               REAL,
-			top_processes         TEXT,
-			cpu_freq_mhz          REAL,
-			gpu_pct               REAL,
-			gpu_power_w           REAL,
-			load1                 REAL
-		);
-	`;
-	await sql`CREATE INDEX IF NOT EXISTS idx_ts ON samples(ts);`;
 
-	const cols = await sql`PRAGMA table_info(samples);`;
-	const existingCols = new Set(cols.map((c: { name: string }) => c.name));
-
-	const migrations: Record<string, string> = {
-		estimated_cycle_count: "REAL",
-		cpu_pct: "REAL",
-		mem_pct: "REAL",
-		top_processes: "TEXT",
-		cpu_freq_mhz: "REAL",
-		gpu_pct: "REAL",
-		gpu_power_w: "REAL",
-		load1: "REAL",
-	};
-
-	for (const [col, type] of Object.entries(migrations)) {
-		if (!existingCols.has(col)) {
-			await sql.unsafe(`ALTER TABLE samples ADD COLUMN ${col} ${type};`);
-		}
-	}
+	await migrate(sql, HISTORICAL_MIGRATIONS, "battery.db");
 
 	histSql = sql;
 	return histSql;
@@ -123,61 +73,8 @@ export async function initDebugDb(): Promise<SQL> {
 	await sql`PRAGMA synchronous = NORMAL;`;
 	await sql`PRAGMA wal_autocheckpoint = 100;`;
 	await sql`PRAGMA busy_timeout = 5000;`;
-	await sql`
-		CREATE TABLE IF NOT EXISTS samples_debug (
-			id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-			ts                    TEXT    NOT NULL,
-			percentage            REAL,
-			status                TEXT,
-			energy_wh             REAL,
-			energy_full_wh        REAL,
-			energy_design         REAL,
-			power_w               REAL,
-			voltage_v             REAL,
-			voltage_design        REAL,
-			cycle_count           INTEGER,
-			estimated_cycle_count REAL,
-			temperature_c         REAL,
-			capacity_pct          REAL,
-			is_charging           INTEGER,
-			is_present            INTEGER,
-			time_to_empty_s       INTEGER,
-			time_to_full_s        INTEGER,
-			cpu_temp_c            REAL,
-			gpu_temp_c            REAL,
-			nvme_temp_c           REAL,
-			cpu_pct               REAL,
-			mem_pct               REAL,
-			top_processes         TEXT,
-			cpu_freq_mhz          REAL,
-			gpu_pct               REAL,
-			gpu_power_w           REAL,
-			load1                 REAL
-		);
-	`;
-	await sql`CREATE INDEX IF NOT EXISTS idx_debug_ts ON samples_debug(ts);`;
 
-	const debugCols = await sql`PRAGMA table_info(samples_debug);`;
-	const existingDebugCols = new Set(
-		debugCols.map((c: { name: string }) => c.name),
-	);
-
-	const debugMigrations: Record<string, string> = {
-		estimated_cycle_count: "REAL",
-		cpu_pct: "REAL",
-		mem_pct: "REAL",
-		top_processes: "TEXT",
-		cpu_freq_mhz: "REAL",
-		gpu_pct: "REAL",
-		gpu_power_w: "REAL",
-		load1: "REAL",
-	};
-
-	for (const [col, type] of Object.entries(debugMigrations)) {
-		if (!existingDebugCols.has(col)) {
-			await sql.unsafe(`ALTER TABLE samples_debug ADD COLUMN ${col} ${type};`);
-		}
-	}
+	await migrate(sql, DEBUG_MIGRATIONS, "debug.db");
 
 	debugSql = sql;
 	return debugSql;
