@@ -9,7 +9,8 @@
 		"lint": "biome lint",
 		"typecheck": "tsc --noEmit",
 		"install-service": "./install.sh",
-		"uninstall-service": "./uninstall.sh"
+		"uninstall-service": "./uninstall.sh",
+		"knip": "knip"
 	},
 	"keywords": [
 		"battery",
@@ -23,6 +24,9 @@
 	"devDependencies": {
 		"@biomejs/biome": "2.5.10",
 		"@types/bun": "^1.4.0",
-		"lefthook": "^2.1.10"
+		"@types/node": "^26.4.0",
+		"knip": "^6.32.3",
+		"lefthook": "^2.1.10",
+		"typescript": "^7.0.2"
 	}
 }
