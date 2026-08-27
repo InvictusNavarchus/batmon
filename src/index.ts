@@ -51,8 +51,10 @@ async function runTick(): Promise<void> {
 		// 2. Historical: store every 60s sample to battery.db and trigger alerts
 		if (tickCount % HISTORICAL_SAMPLE_INTERVAL_TICKS === 0) {
 			const oldPrev = prevHistorical;
-			prevHistorical = await store(sample);
+			await store(sample);
 			alert(sample, oldPrev);
+			prevHistorical = sample;
+		}
 		}
 
 		// 3. Batch prune debug.db every 5 minutes (300 ticks)
