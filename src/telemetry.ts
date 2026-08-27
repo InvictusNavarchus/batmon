@@ -220,48 +220,118 @@ export function readGpuPct(): number | null {
 	return null;
 }
 
+let prevProcMap = new Map<number, number>();
+let prevProcTotalCpuTicks = 0;
+let cachedMemTotalKb = 0;
+
+function getMemTotalKb(): number {
+	if (cachedMemTotalKb > 0) return cachedMemTotalKb;
+	try {
+		const meminfo = readFileSync("/proc/meminfo", "utf-8");
+		for (const line of meminfo.split("\n")) {
+			if (line.startsWith("MemTotal:")) {
+				cachedMemTotalKb = Number.parseInt(line.replace(/\D+/g, ""), 10) || 1;
+				return cachedMemTotalKb;
+			}
+		}
+	} catch {}
+	return 1;
+}
+
 export function readTopProcesses(): string | null {
 	try {
-		const { stdout, exitCode } = Bun.spawnSync([
-			"ps",
-			"-eo",
-			"comm,%cpu,%mem",
-			"--sort=-%cpu",
-		]);
-		if (exitCode !== 0) return null;
+		// Read total system CPU ticks from /proc/stat
+		const stat = readFileSync("/proc/stat", "utf-8");
+		const [cpuHeaderLine] = stat.split("\n");
+		if (!cpuHeaderLine?.startsWith("cpu ")) return null;
 
-		const lines = stdout.toString().trim().split("\n").slice(1);
-		const map = new Map<string, { cpu: number; mem: number; count: number }>();
+		const [
+			,
+			user = 0,
+			nice = 0,
+			system = 0,
+			idle = 0,
+			iowait = 0,
+			irq = 0,
+			softirq = 0,
+			steal = 0,
+		] = cpuHeaderLine.trim().split(/\s+/).map(Number);
 
-		for (const line of lines) {
-			const trimmed = line.trim();
-			if (!trimmed) continue;
-			const match = trimmed.match(
-				/^(?<name>.*?)\s+(?<cpu>[\d.]+)\s+(?<mem>[\d.]+)$/,
-			);
-			if (!match?.groups) continue;
-			const { name, cpu: cpuStr, mem: memStr } = match.groups;
-			if (name === "ps") continue; // filter self-sampling artifact
-			const cpu = Number(cpuStr);
-			const mem = Number(memStr);
+		const currentTotalCpuTicks =
+			user + nice + system + idle + iowait + irq + softirq + steal;
+		const deltaTotalCpu = currentTotalCpuTicks - prevProcTotalCpuTicks;
+		prevProcTotalCpuTicks = currentTotalCpuTicks;
 
-			const existing = map.get(name);
-			if (existing) {
-				existing.cpu += cpu;
-				existing.mem += mem;
-				existing.count += 1;
-			} else {
-				map.set(name, { cpu, mem, count: 1 });
+		const totalMemKb = getMemTotalKb();
+		const pageSizeKb = 4; // Linux x86_64/arm64 standard page size (4 KB)
+
+		const currentMap = new Map<number, number>();
+		const groupMap = new Map<
+			string,
+			{ cpuTicks: number; rssPages: number; count: number }
+		>();
+
+		const entries = readdirSync("/proc");
+		for (const entry of entries) {
+			const firstChar = entry.charCodeAt(0);
+			if (firstChar < 48 || firstChar > 57) continue; // skip non-PID entries
+
+			const pid = Number(entry);
+			try {
+				const statContent = readFileSync(`/proc/${pid}/stat`, "utf-8");
+				const openParen = statContent.indexOf("(");
+				const closeParen = statContent.lastIndexOf(")");
+				if (openParen === -1 || closeParen === -1) continue;
+
+				const name = statContent.substring(openParen + 1, closeParen);
+				const rest = statContent.substring(closeParen + 2).split(" ");
+
+				// utime (field 14: index 11) & stime (field 15: index 12)
+				// rss pages (field 24: index 21)
+				const utime = Number(rest[11]) || 0;
+				const stime = Number(rest[12]) || 0;
+				const rss = Number(rest[21]) || 0;
+				const ticks = utime + stime;
+
+				currentMap.set(pid, ticks);
+
+				const prevTicks = prevProcMap.get(pid);
+				const deltaTicks =
+					prevTicks !== undefined ? Math.max(0, ticks - prevTicks) : 0;
+
+				const group = groupMap.get(name);
+				if (group) {
+					group.cpuTicks += deltaTicks;
+					group.rssPages += rss;
+					group.count += 1;
+				} else {
+					groupMap.set(name, {
+						cpuTicks: deltaTicks,
+						rssPages: rss,
+						count: 1,
+					});
+				}
+			} catch {
+				// Process exited between readdir and stat read (expected in Linux VFS)
 			}
 		}
 
-		const top: TopProcessGroup[] = Array.from(map.entries())
-			.map(([name, data]) => ({
-				name,
-				cpu: Math.round(data.cpu * 10) / 10,
-				mem: Math.round(data.mem * 10) / 10,
-				count: data.count,
-			}))
+		prevProcMap = currentMap;
+
+		if (deltaTotalCpu <= 0 || groupMap.size === 0) return null;
+
+		const top: TopProcessGroup[] = Array.from(groupMap.entries())
+			.map(([name, data]) => {
+				const cpuPct = (data.cpuTicks / deltaTotalCpu) * 100;
+				const memKb = data.rssPages * pageSizeKb;
+				const memPct = (memKb / totalMemKb) * 100;
+				return {
+					name,
+					cpu: Math.round(cpuPct * 10) / 10,
+					mem: Math.round(memPct * 10) / 10,
+					count: data.count,
+				};
+			})
 			.sort((a, b) => b.cpu - a.cpu || b.mem - a.mem)
 			.slice(0, 5);
 

@@ -5,7 +5,7 @@
  * Dual-tier monitoring:
  * - 1-second flight recorder samples → debug.db (auto-pruned rolling window)
  * - 60-second historical downsampled telemetry → battery.db (permanent)
- * - Collects sysfs, procfs, UPower D-Bus, sensors -j, and POSIX process metrics.
+ * - Collects sysfs, procfs, UPower D-Bus, sensors -j, and per-PID delta metrics.
  */
 
 import { alert } from "./alerts";

@@ -56,7 +56,7 @@
 | **System Load** | `cpu_pct` | `/proc/stat` | Global CPU utilization (%) |
 | | `mem_pct` | `/proc/meminfo` | Global Memory utilization (%) |
 | | `load1` | `/proc/loadavg` | 1-minute system load average |
-| | `top_processes` | POSIX `ps` | Top 5 aggregated process groups (JSON) |
+| | `top_processes` | `/proc/[pid]/stat` | Top 5 aggregated process groups by 1s CPU delta (JSON) |
 | **Health & Wear** | `health_pct` | sysfs | Full charge capacity vs design capacity (%) |
 | | `cycle_count` | sysfs | Hardware cycle count (if reported by BMS) |
 | | `estimated_cycle_count` | Integrator | Calculated cycle count via energy throughput ($\Delta\text{Wh} / \text{Design}$) |
