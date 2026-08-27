@@ -1,8 +1,12 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SYSFS } from "./config";
-import { readGlances } from "./glances";
-import type { SensorsData, SystemTemps, TelemetrySample } from "./types";
+import type {
+	SensorsData,
+	SystemTemps,
+	TelemetrySample,
+	TopProcessGroup,
+} from "./types";
 
 // ── sysfs helpers ────────────────────────────────────────────────────
 function sysfsPath(name: string): string {
@@ -86,26 +90,263 @@ export function readSystemTemps(): SystemTemps {
 	}
 }
 
-// ── native sysfs fallbacks for clock & load ──────────────────────────
-function readSysfsCpuFreq(): number | null {
+// ── native CPU, Memory, GPU & Process telemetry readers ───────────────
+let prevCpu: { idle: number; total: number } | null = null;
+
+export function readCpuPct(): number | null {
 	try {
-		const p = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq";
-		if (existsSync(p)) {
-			const khz = Number(readFileSync(p, "utf-8").trim());
-			return Number.isFinite(khz) && khz > 0 ? Math.round(khz / 1000) : null;
+		const stat = readFileSync("/proc/stat", "utf-8");
+		const [cpuHeaderLine] = stat.split("\n");
+		if (!cpuHeaderLine?.startsWith("cpu ")) return null;
+
+		// /proc/stat columns: cpu user nice system idle iowait irq softirq steal guest guest_nice
+		const [
+			,
+			user = 0,
+			nice = 0,
+			system = 0,
+			idle = 0,
+			iowait = 0,
+			irq = 0,
+			softirq = 0,
+			steal = 0,
+		] = cpuHeaderLine.trim().split(/\s+/).map(Number);
+
+		const idleTime = idle + iowait;
+		const totalTime =
+			user + nice + system + idle + iowait + irq + softirq + steal;
+
+		if (!prevCpu) {
+			prevCpu = { idle: idleTime, total: totalTime };
+			return null;
 		}
+
+		const totalDelta = totalTime - prevCpu.total;
+		const idleDelta = idleTime - prevCpu.idle;
+		prevCpu = { idle: idleTime, total: totalTime };
+
+		if (totalDelta <= 0) return 0;
+		const pct = (1 - idleDelta / totalDelta) * 100;
+		return Math.round(Math.max(0, Math.min(100, pct)) * 10) / 10;
 	} catch {
-		/* no cpufreq sysfs */
+		return null;
 	}
+}
+
+export function readMemPct(): number | null {
+	try {
+		const meminfo = readFileSync("/proc/meminfo", "utf-8");
+		const mem = new Map<string, number>();
+
+		for (const line of meminfo.split("\n")) {
+			const colonIdx = line.indexOf(":");
+			if (colonIdx === -1) continue;
+			const key = line.slice(0, colonIdx).trim();
+			const valKb = Number.parseInt(line.slice(colonIdx + 1), 10);
+			if (Number.isFinite(valKb)) mem.set(key, valKb);
+		}
+
+		const totalKb = mem.get("MemTotal");
+		if (!totalKb || totalKb <= 0) return null;
+
+		const availKb =
+			mem.get("MemAvailable") ??
+			(mem.get("MemFree") ?? 0) +
+				(mem.get("Buffers") ?? 0) +
+				(mem.get("Cached") ?? 0);
+
+		const usedPct = ((totalKb - availKb) / totalKb) * 100;
+		return Math.round(Math.max(0, Math.min(100, usedPct)) * 10) / 10;
+	} catch {
+		return null;
+	}
+}
+
+export function readCpuFreqMhz(): number | null {
+	try {
+		const cpuBase = "/sys/devices/system/cpu";
+		if (existsSync(cpuBase)) {
+			let sumKhz = 0;
+			let count = 0;
+			for (const entry of readdirSync(cpuBase)) {
+				if (!/^cpu\d+$/.test(entry)) continue;
+				const freqFile = join(cpuBase, entry, "cpufreq", "scaling_cur_freq");
+				if (existsSync(freqFile)) {
+					const khz = Number(readFileSync(freqFile, "utf-8").trim());
+					if (Number.isFinite(khz) && khz > 0) {
+						sumKhz += khz;
+						count++;
+					}
+				}
+			}
+			if (count > 0) {
+				return Math.round(sumKhz / count / 1000);
+			}
+		}
+
+		// Fallback: /proc/cpuinfo
+		const cpuinfo = readFileSync("/proc/cpuinfo", "utf-8");
+		let sumMhz = 0;
+		let count = 0;
+		for (const line of cpuinfo.split("\n")) {
+			if (line.startsWith("cpu MHz")) {
+				const mhz = Number(line.split(":")[1]?.trim());
+				if (Number.isFinite(mhz) && mhz > 0) {
+					sumMhz += mhz;
+					count++;
+				}
+			}
+		}
+		if (count > 0) return Math.round(sumMhz / count);
+	} catch {}
 	return null;
+}
+
+export function readGpuPct(): number | null {
+	try {
+		const drmBase = "/sys/class/drm";
+		if (existsSync(drmBase)) {
+			for (const entry of readdirSync(drmBase)) {
+				if (!/^card\d+$/.test(entry)) continue;
+				const amdPath = join(drmBase, entry, "device", "gpu_busy_percent");
+				if (existsSync(amdPath)) {
+					const val = Number(readFileSync(amdPath, "utf-8").trim());
+					if (Number.isFinite(val) && val >= 0)
+						return Math.round(val * 10) / 10;
+				}
+			}
+		}
+	} catch {}
+	return null;
+}
+
+let prevProcMap = new Map<number, number>();
+let prevProcTotalCpuTicks = 0;
+let cachedMemTotalKb = 0;
+
+function getMemTotalKb(): number {
+	if (cachedMemTotalKb > 0) return cachedMemTotalKb;
+	try {
+		const meminfo = readFileSync("/proc/meminfo", "utf-8");
+		for (const line of meminfo.split("\n")) {
+			if (line.startsWith("MemTotal:")) {
+				cachedMemTotalKb = Number.parseInt(line.replace(/\D+/g, ""), 10) || 1;
+				return cachedMemTotalKb;
+			}
+		}
+	} catch {}
+	return 1;
+}
+
+export function readTopProcesses(): string | null {
+	try {
+		// Read total system CPU ticks from /proc/stat
+		const stat = readFileSync("/proc/stat", "utf-8");
+		const [cpuHeaderLine] = stat.split("\n");
+		if (!cpuHeaderLine?.startsWith("cpu ")) return null;
+
+		const [
+			,
+			user = 0,
+			nice = 0,
+			system = 0,
+			idle = 0,
+			iowait = 0,
+			irq = 0,
+			softirq = 0,
+			steal = 0,
+		] = cpuHeaderLine.trim().split(/\s+/).map(Number);
+
+		const currentTotalCpuTicks =
+			user + nice + system + idle + iowait + irq + softirq + steal;
+		const deltaTotalCpu = currentTotalCpuTicks - prevProcTotalCpuTicks;
+		prevProcTotalCpuTicks = currentTotalCpuTicks;
+
+		const totalMemKb = getMemTotalKb();
+		const pageSizeKb = 4; // Linux x86_64/arm64 standard page size (4 KB)
+
+		const currentMap = new Map<number, number>();
+		const groupMap = new Map<
+			string,
+			{ cpuTicks: number; rssPages: number; count: number }
+		>();
+
+		const entries = readdirSync("/proc");
+		for (const entry of entries) {
+			const firstChar = entry.charCodeAt(0);
+			if (firstChar < 48 || firstChar > 57) continue; // skip non-PID entries
+
+			const pid = Number(entry);
+			try {
+				const statContent = readFileSync(`/proc/${pid}/stat`, "utf-8");
+				const openParen = statContent.indexOf("(");
+				const closeParen = statContent.lastIndexOf(")");
+				if (openParen === -1 || closeParen === -1) continue;
+
+				const name = statContent.substring(openParen + 1, closeParen);
+				const rest = statContent.substring(closeParen + 2).split(" ");
+
+				// utime (field 14: index 11) & stime (field 15: index 12)
+				// rss pages (field 24: index 21)
+				const utime = Number(rest[11]) || 0;
+				const stime = Number(rest[12]) || 0;
+				const rss = Number(rest[21]) || 0;
+				const ticks = utime + stime;
+
+				currentMap.set(pid, ticks);
+
+				const prevTicks = prevProcMap.get(pid);
+				const deltaTicks =
+					prevTicks !== undefined ? Math.max(0, ticks - prevTicks) : 0;
+
+				const group = groupMap.get(name);
+				if (group) {
+					group.cpuTicks += deltaTicks;
+					group.rssPages += rss;
+					group.count += 1;
+				} else {
+					groupMap.set(name, {
+						cpuTicks: deltaTicks,
+						rssPages: rss,
+						count: 1,
+					});
+				}
+			} catch {
+				// Process exited between readdir and stat read (expected in Linux VFS)
+			}
+		}
+
+		prevProcMap = currentMap;
+
+		if (deltaTotalCpu <= 0 || groupMap.size === 0) return null;
+
+		const top: TopProcessGroup[] = Array.from(groupMap.entries())
+			.map(([name, data]) => {
+				const cpuPct = (data.cpuTicks / deltaTotalCpu) * 100;
+				const memKb = data.rssPages * pageSizeKb;
+				const memPct = (memKb / totalMemKb) * 100;
+				return {
+					name,
+					cpu: Math.round(cpuPct * 10) / 10,
+					mem: Math.round(memPct * 10) / 10,
+					count: data.count,
+				};
+			})
+			.sort((a, b) => b.cpu - a.cpu || b.mem - a.mem)
+			.slice(0, 5);
+
+		return top.length > 0 ? JSON.stringify(top) : null;
+	} catch {
+		return null;
+	}
 }
 
 function readSysfsLoad1(): number | null {
 	try {
 		const p = "/proc/loadavg";
 		if (existsSync(p)) {
-			const [l1] = readFileSync(p, "utf-8").trim().split(" ");
-			const num = Number(l1);
+			const [load1Str] = readFileSync(p, "utf-8").trim().split(/\s+/);
+			const num = Number(load1Str);
 			return Number.isFinite(num) ? Math.round(num * 100) / 100 : null;
 		}
 	} catch {
@@ -171,7 +412,6 @@ export async function readTelemetry(): Promise<TelemetrySample> {
 	const isCharging = status === "Charging";
 	const sysTemps = readSystemTemps();
 	const battTemp = readBatteryTemp();
-	const glances = await readGlances();
 
 	let tte = upowerProp("TimeToEmpty");
 	let ttf = upowerProp("TimeToFull");
@@ -180,7 +420,11 @@ export async function readTelemetry(): Promise<TelemetrySample> {
 	if (ttf === null && isCharging && powerW > 0.5)
 		ttf = Math.round(((energy.full - energy.now) / powerW) * 3600);
 
-	const cpuFreq = glances.cpu_freq_mhz ?? readSysfsCpuFreq();
+	const cpuPct = readCpuPct();
+	const memPct = readMemPct();
+	const cpuFreq = readCpuFreqMhz();
+	const gpuPct = readGpuPct();
+	const topProcs = readTopProcesses();
 	const load1 = readSysfsLoad1();
 
 	return {
@@ -207,11 +451,11 @@ export async function readTelemetry(): Promise<TelemetrySample> {
 		cpu_temp_c: sysTemps.cpu_c,
 		gpu_temp_c: sysTemps.gpu_c,
 		nvme_temp_c: sysTemps.nvme_c,
-		cpu_pct: glances.cpu_pct,
-		mem_pct: glances.mem_pct,
-		top_processes: glances.top_processes,
+		cpu_pct: cpuPct,
+		mem_pct: memPct,
+		top_processes: topProcs,
 		cpu_freq_mhz: cpuFreq,
-		gpu_pct: glances.gpu_pct,
+		gpu_pct: gpuPct,
 		gpu_power_w: sysTemps.gpu_power_w,
 		load1,
 	};

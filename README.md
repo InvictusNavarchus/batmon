@@ -50,13 +50,13 @@
 | | `gpu_temp_c` | `lm_sensors` | GPU edge temperature (°C) |
 | | `nvme_temp_c` | `lm_sensors` | NVMe composite temperature (°C) |
 | | `battery_temp_c` | sysfs / hwmon | Battery sensor temperature (if present) |
-| **Clock & SoC Power** | `cpu_freq_mhz` | Glances / sysfs | Instantaneous CPU clock frequency (MHz) |
+| **Clock & SoC Power** | `cpu_freq_mhz` | sysfs (`cpufreq`) / `/proc` | Instantaneous CPU clock frequency (MHz) |
 | | `gpu_power_w` | `lm_sensors` | AMD APU / SoC PPT package power (Watts) |
-| | `gpu_pct` | Glances | GPU compute / shader utilization (%) |
-| **System Load** | `cpu_pct` | Glances | Global CPU utilization (%) |
-| | `mem_pct` | Glances | Global Memory utilization (%) |
-| | `load1` | Glances / `/proc` | 1-minute system load average |
-| | `top_processes` | Glances REST API | Top 5 aggregated process groups (JSON) |
+| | `gpu_pct` | sysfs (DRM) | GPU compute / shader utilization (%) |
+| **System Load** | `cpu_pct` | `/proc/stat` | Global CPU utilization (%) |
+| | `mem_pct` | `/proc/meminfo` | Global Memory utilization (%) |
+| | `load1` | `/proc/loadavg` | 1-minute system load average |
+| | `top_processes` | `/proc/[pid]/stat` | Top 5 aggregated process groups by 1s CPU delta (JSON) |
 | **Health & Wear** | `health_pct` | sysfs | Full charge capacity vs design capacity (%) |
 | | `cycle_count` | sysfs | Hardware cycle count (if reported by BMS) |
 | | `estimated_cycle_count` | Integrator | Calculated cycle count via energy throughput ($\Delta\text{Wh} / \text{Design}$) |
@@ -64,7 +64,7 @@
 | | `time_to_full_s` | UPower D-Bus | Smoothed charge completion estimate (seconds) |
 
 * Auto-detects `energy_*` (µWh) vs `charge_*` (µAh) battery drivers.
-* **Resilient Fallbacks:** If Glances is not running, `cpu_freq_mhz` and `load1` seamlessly fall back to native `/sys` and `/proc` reads, while optional metrics record `NULL` without throwing errors.
+* **Zero-Overhead Native Reads:** All CPU, memory, clock, GPU, and process metrics are gathered directly via Linux kernel VFS interfaces (`/proc` and `/sys`) and standard POSIX process accounting with sub-millisecond execution and zero external daemons. See [empirical evaluation](docs/empirical-glances-vs-native-comparison.md) for detailed benchmark results.
 * **Automatic Migrations:** Database schema updates and column additions are handled seamlessly and automatically on startup using SQLite's native `user_version` tracking with zero manual migration steps required.
 
 ---
@@ -124,12 +124,6 @@ LIMIT 5;"
   ```bash
   sudo dnf install lm_sensors   # Fedora/RHEL
   sudo apt install lm-sensors   # Ubuntu/Debian
-  ```
-- **`glances`** (optional, for global CPU/RAM and top process telemetry):
-  ```bash
-  pipx install glances
-  # Start Glances API server:
-  glances -w --disable-webui --cached-time 1 -t 1
   ```
 - **`sqlite3` CLI** (optional, for querying databases): `sudo dnf install sqlite`
 

@@ -37,14 +37,6 @@ export interface TopProcessGroup {
 	count: number;
 }
 
-export interface GlancesTelemetry {
-	cpu_pct: number | null;
-	mem_pct: number | null;
-	top_processes: string | null;
-	cpu_freq_mhz: number | null;
-	gpu_pct: number | null;
-}
-
 export interface SystemTemps {
 	cpu_c: number | null;
 	gpu_c: number | null;
