@@ -1,8 +1,13 @@
 [Unit]
-Description=batmon – battery health logger (sysfs → SQLite)
+Description=batmon – battery health monitor & flight recorder (sysfs → SQLite)
 Documentation=https://github.com/InvictusNavarchus/batmon
 
 [Service]
-Type=oneshot
+Type=simple
 ExecStart=/usr/local/bin/bun run %h/.local/share/batmon/src/index.ts
+Restart=on-failure
+RestartSec=5s
 Nice=10
+
+[Install]
+WantedBy=default.target
