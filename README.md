@@ -10,7 +10,7 @@
 
 `batmon` captures telemetry using two distinct tiers:
 
-```
+```text
                       ┌───────────────────────────────────────────────┐
                       │             batmon Daemon (Bun)               │
                       └───────┬───────────────────────────────┬───────┘
@@ -22,12 +22,12 @@
                │ • 1s sample resolution       │ │ • 60s sample resolution      │
                │ • SQLite WAL + sync=NORMAL   │ │ • SQLite WAL + sync=NORMAL   │
                │ • Auto-pruned (last 6 hours) │ │ • Permanent wear records     │
-               │ • Survives hard panics       │ │ • Cycle count & degradation  │
+               │ • Crash & panic forensics    │ │ • Cycle count & degradation  │
                └──────────────────────────────┘ └──────────────────────────────┘
 ```
 
 1. **High-Frequency Flight Recorder (`debug.db`):**  
-   Records every 1 second directly to SQLite using WAL mode (`PRAGMA synchronous = NORMAL`). Coalesced by the Linux kernel page cache, it consumes negligible power (<15 mW) while ensuring that if a hard lockup, thermal trip, or kernel panic occurs, the crucial seconds and minutes leading up to the failure are safely preserved on disk for post-mortem forensics. Auto-prunes older records on a rolling window (default: 6 hours).
+   Records every 1 second directly to SQLite using WAL mode (`PRAGMA synchronous = NORMAL`). Coalesced by the Linux kernel page cache, it consumes negligible power (<15 mW) while ensuring that during hard lockups, thermal throttling, or kernel panics, the crucial minutes leading up to the failure are safely preserved on disk for post-mortem forensics (with at most ~2–5s uncommitted in kernel page cache during sudden hard power cuts). Auto-prunes older records on a rolling window (default: 6 hours).
 
 2. **Long-Term Historical Telemetry (`battery.db`):**  
    Records downsampled samples every 60 seconds. Tracks long-term battery degradation, design wear capacity, and software-integrated cycle count over months and years.
@@ -112,6 +112,11 @@ LIMIT 5;"
 
 - **Linux** with systemd (Fedora, Ubuntu, Debian, Arch, etc.)
 - **[Bun](https://bun.sh)** runtime ($\ge 1.3$)
+- **`libnotify` / `notify-send`** (optional, for desktop notifications):
+  ```bash
+  sudo dnf install libnotify     # Fedora/RHEL
+  sudo apt install libnotify-bin # Ubuntu/Debian
+  ```
 - **`lm_sensors`** (recommended, for system thermals and APU power):
   ```bash
   sudo dnf install lm_sensors   # Fedora/RHEL
@@ -130,7 +135,7 @@ LIMIT 5;"
 ## 🚀 Installation
 
 ```bash
-git clone https://github.com/YOUR_USER/batmon.git
+git clone https://github.com/InvictusNavarchus/batmon.git
 cd batmon
 ./install.sh
 # or using bun:
