@@ -6,9 +6,7 @@ export const DB_PATH = join(DB_DIR, "battery.db");
 export const DEBUG_DB_PATH = join(DB_DIR, "debug.db");
 
 // ── flight recorder & loop configuration ─────────────────────────────
-const envRetention = Number(process.env.BATMON_DEBUG_RETENTION_HOURS);
-export const DEBUG_RETENTION_HOURS =
-	Number.isFinite(envRetention) && envRetention > 0 ? envRetention : 6;
+export const DEBUG_RETENTION_HOURS = 6;
 export const DEBUG_SAMPLE_INTERVAL_MS = 1000; // 1s
 export const HISTORICAL_SAMPLE_INTERVAL_TICKS = 60; // 60s (every 60 debug ticks)
 export const PRUNE_INTERVAL_TICKS = 300; // 5 min (every 300 debug ticks)
