@@ -15,7 +15,14 @@ import {
 	HISTORICAL_SAMPLE_INTERVAL_TICKS,
 	PRUNE_INTERVAL_TICKS,
 } from "./config";
-import { closeDbs, pruneDebug, store, storeDebug } from "./db";
+import {
+	closeDbs,
+	computeEstimatedCycles,
+	getLatestHistoricalSample,
+	pruneDebug,
+	store,
+	storeDebug,
+} from "./db";
 import { readBattery } from "./telemetry";
 import type { BatterySample } from "./types";
 
@@ -29,13 +36,23 @@ async function runTick(): Promise<void> {
 		const sample = await readBattery();
 		if (!sample.is_present) return;
 
+		if (prevHistorical === null) {
+			prevHistorical = await getLatestHistoricalSample();
+		}
+
+		sample.estimated_cycle_count = computeEstimatedCycles(
+			sample,
+			prevHistorical,
+		);
+
 		// 1. Flight recorder: store every 1s sample to debug.db
 		await storeDebug(sample);
 
 		// 2. Historical: store every 60s sample to battery.db and trigger alerts
 		if (tickCount % HISTORICAL_SAMPLE_INTERVAL_TICKS === 0) {
+			const oldPrev = prevHistorical;
 			prevHistorical = await store(sample);
-			alert(sample, prevHistorical);
+			alert(sample, oldPrev);
 		}
 
 		// 3. Batch prune debug.db every 5 minutes (300 ticks)

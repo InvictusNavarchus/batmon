@@ -50,6 +50,12 @@ export async function initHistoricalDb(): Promise<SQL> {
 	return histSql;
 }
 
+export async function getLatestHistoricalSample(): Promise<BatterySample | null> {
+	const sql = await initHistoricalDb();
+	const rows = await sql`SELECT * FROM samples ORDER BY id DESC LIMIT 1;`;
+	return rows.length > 0 ? (rows[0] as unknown as BatterySample) : null;
+}
+
 export async function store(s: BatterySample): Promise<BatterySample | null> {
 	const sql = await initHistoricalDb();
 
