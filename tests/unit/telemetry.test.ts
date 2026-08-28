@@ -189,6 +189,33 @@ describe("telemetry parsers", () => {
 				gpu_power_w: 25.0,
 			});
 		});
+
+		test("retains pairing when multiple AMDGPU devices exist", () => {
+			tempHwmonDir = mkdtempSync(join(tmpdir(), "batmon-hwmon-test-"));
+
+			// hwmon0: AMD iGPU (42°C, 8W)
+			const hwmon0 = join(tempHwmonDir, "hwmon0");
+			mkdirSync(hwmon0);
+			writeFileSync(join(hwmon0, "name"), "amdgpu\n");
+			writeFileSync(join(hwmon0, "temp1_input"), "42000\n");
+			writeFileSync(join(hwmon0, "power1_input"), "8000000\n");
+
+			// hwmon1: AMD dGPU (82°C, 90W)
+			const hwmon1 = join(tempHwmonDir, "hwmon1");
+			mkdirSync(hwmon1);
+			writeFileSync(join(hwmon1, "name"), "amdgpu\n");
+			writeFileSync(join(hwmon1, "temp1_input"), "82000\n");
+			writeFileSync(join(hwmon1, "power1_input"), "90000000\n");
+
+			const result = readSystemTemps(tempHwmonDir);
+			// Must not mix hwmon0 power with hwmon1 temperature
+			expect(result).toEqual({
+				cpu_c: null,
+				gpu_c: 42.0,
+				nvme_c: null,
+				gpu_power_w: 8.0,
+			});
+		});
 	});
 
 	describe("upowerProp parser", () => {
