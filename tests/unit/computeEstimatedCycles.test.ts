@@ -57,12 +57,13 @@ describe("computeEstimatedCycles", () => {
 
 	test("does not increase cycle count while charging", () => {
 		const prev = createMockSample({
-			energy_wh: 30,
+			energy_wh: 40,
 			estimated_cycle_count: 3.5,
 			is_charging: true,
 		});
 		const curr = createMockSample({
 			energy_wh: 35,
+			energy_design_wh: 50,
 			estimated_cycle_count: 0,
 			is_charging: true,
 		});
