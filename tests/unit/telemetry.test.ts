@@ -163,6 +163,32 @@ describe("telemetry parsers", () => {
 				gpu_power_w: 0,
 			});
 		});
+
+		test("preserves GPU temperature and power pairing on multi-GPU systems", () => {
+			tempHwmonDir = mkdtempSync(join(tmpdir(), "batmon-hwmon-test-"));
+
+			// hwmon0: Intel i915 (iGPU) appearing first in directory scan
+			const hwmon0 = join(tempHwmonDir, "hwmon0");
+			mkdirSync(hwmon0);
+			writeFileSync(join(hwmon0, "name"), "i915\n");
+			writeFileSync(join(hwmon0, "temp1_input"), "45000\n");
+
+			// hwmon1: AMD dGPU with temperature and power appearing second
+			const hwmon1 = join(tempHwmonDir, "hwmon1");
+			mkdirSync(hwmon1);
+			writeFileSync(join(hwmon1, "name"), "amdgpu\n");
+			writeFileSync(join(hwmon1, "temp1_input"), "58500\n");
+			writeFileSync(join(hwmon1, "power1_input"), "25000000\n");
+
+			const result = readSystemTemps(tempHwmonDir);
+			// Must prioritize amdgpu temperature so temp (58.5) and power (25.0) come from the same device
+			expect(result).toEqual({
+				cpu_c: null,
+				gpu_c: 58.5,
+				nvme_c: null,
+				gpu_power_w: 25.0,
+			});
+		});
 	});
 
 	describe("upowerProp parser", () => {

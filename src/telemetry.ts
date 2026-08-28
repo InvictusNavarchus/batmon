@@ -111,26 +111,34 @@ export function readSystemTemps(hwmonBase = "/sys/class/hwmon"): SystemTemps {
 
 			// GPU Temperature & Power
 			if (GPU_DRIVERS.has(driverName)) {
-				if (result.gpu_c === null) {
-					const inputFile = join(hwmonPath, "temp1_input");
-					if (existsSync(inputFile)) {
-						const raw = Number(readFileSync(inputFile, "utf-8").trim());
-						if (Number.isFinite(raw) && raw > -50000) {
-							result.gpu_c = Math.round((raw / 1000) * 10) / 10;
-						}
+				const inputFile = join(hwmonPath, "temp1_input");
+				let temp: number | null = null;
+				if (existsSync(inputFile)) {
+					const raw = Number(readFileSync(inputFile, "utf-8").trim());
+					if (Number.isFinite(raw) && raw > -50000) {
+						temp = Math.round((raw / 1000) * 10) / 10;
 					}
 				}
-				if (result.gpu_power_w === null && driverName === "amdgpu") {
-					for (const powerFile of ["power1_input", "power1_average"]) {
-						const pPath = join(hwmonPath, powerFile);
-						if (existsSync(pPath)) {
-							const raw = Number(readFileSync(pPath, "utf-8").trim());
-							if (Number.isFinite(raw) && raw >= 0) {
-								result.gpu_power_w = Math.round((raw / 1_000_000) * 100) / 100;
-								break;
+
+				if (driverName === "amdgpu") {
+					if (temp !== null) {
+						result.gpu_c = temp;
+					}
+					if (result.gpu_power_w === null) {
+						for (const powerFile of ["power1_input", "power1_average"]) {
+							const pPath = join(hwmonPath, powerFile);
+							if (existsSync(pPath)) {
+								const raw = Number(readFileSync(pPath, "utf-8").trim());
+								if (Number.isFinite(raw) && raw >= 0) {
+									result.gpu_power_w =
+										Math.round((raw / 1_000_000) * 100) / 100;
+									break;
+								}
 							}
 						}
 					}
+				} else if (result.gpu_c === null && temp !== null) {
+					result.gpu_c = temp;
 				}
 			}
 
