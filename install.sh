@@ -13,11 +13,6 @@ if ! command -v bun &>/dev/null; then
   exit 1
 fi
 
-if ! command -v sensors &>/dev/null; then
-  echo "WARN: lm_sensors not found. System temps will be NULL."
-  echo "      Install: sudo dnf install lm_sensors (or sudo apt install lm-sensors)"
-fi
-
 if ! command -v busctl &>/dev/null; then
   echo "WARN: busctl not found. Time estimates will use instantaneous math."
 fi
