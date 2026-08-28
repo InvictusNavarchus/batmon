@@ -26,10 +26,17 @@ function readOpt(name: string): number | null {
 	return Number.isFinite(v) ? v : null;
 }
 
+// ── temperature limits & sysfs conversion constants ──────────────────
+// Minimum physically valid operating temperature (-50°C).
+// Rejects Linux kernel negative errno codes (e.g. -EINVAL = -22, -ENODATA = -61)
+// and uninitialized/disconnected absolute zero placeholders (-273.15°C = -273150 m°C).
+const MIN_BAT_TEMP_TENTHS_C = -500; // ACPI power_supply (BAT0) uses tenths of °C (-50.0°C)
+const MIN_HWMON_TEMP_MC = -50000; // Linux sysfs hwmon ABI uses millidegrees Celsius (-50.000°C)
+
 // ── temperature: battery sensor (may not exist) ──────────────────────
 function readBatteryTemp(): number | null {
 	const direct = readOpt("temp");
-	if (direct !== null && direct >= -500) return direct / 10;
+	if (direct !== null && direct >= MIN_BAT_TEMP_TENTHS_C) return direct / 10;
 
 	try {
 		for (const e of readdirSync(SYSFS)) {
@@ -38,7 +45,7 @@ function readBatteryTemp(): number | null {
 				const p = join(SYSFS, e, `temp${i}_input`);
 				if (existsSync(p)) {
 					const v = Number(readFileSync(p, "utf-8").trim());
-					if (Number.isFinite(v) && v >= -50000) return v / 1000;
+					if (Number.isFinite(v) && v >= MIN_HWMON_TEMP_MC) return v / 1000;
 				}
 			}
 		}
@@ -89,7 +96,7 @@ export function readSystemTemps(hwmonBase = "/sys/class/hwmon"): SystemTemps {
 							const label = readFileSync(labelFile, "utf-8").trim();
 							if (label.startsWith("Package id")) {
 								const raw = Number(readFileSync(inputFile, "utf-8").trim());
-								if (Number.isFinite(raw) && raw >= -50000) {
+								if (Number.isFinite(raw) && raw >= MIN_HWMON_TEMP_MC) {
 									cpuTemp = Math.round((raw / 1000) * 10) / 10;
 									break;
 								}
@@ -101,7 +108,7 @@ export function readSystemTemps(hwmonBase = "/sys/class/hwmon"): SystemTemps {
 					const inputFile = join(hwmonPath, "temp1_input");
 					if (existsSync(inputFile)) {
 						const raw = Number(readFileSync(inputFile, "utf-8").trim());
-						if (Number.isFinite(raw) && raw >= -50000) {
+						if (Number.isFinite(raw) && raw >= MIN_HWMON_TEMP_MC) {
 							cpuTemp = Math.round((raw / 1000) * 10) / 10;
 						}
 					}
@@ -115,7 +122,7 @@ export function readSystemTemps(hwmonBase = "/sys/class/hwmon"): SystemTemps {
 				const inputFile = join(hwmonPath, "temp1_input");
 				if (existsSync(inputFile)) {
 					const raw = Number(readFileSync(inputFile, "utf-8").trim());
-					if (Number.isFinite(raw) && raw >= -50000) {
+					if (Number.isFinite(raw) && raw >= MIN_HWMON_TEMP_MC) {
 						temp = Math.round((raw / 1000) * 10) / 10;
 					}
 				}
@@ -150,7 +157,7 @@ export function readSystemTemps(hwmonBase = "/sys/class/hwmon"): SystemTemps {
 				const inputFile = join(hwmonPath, "temp1_input");
 				if (existsSync(inputFile)) {
 					const raw = Number(readFileSync(inputFile, "utf-8").trim());
-					if (Number.isFinite(raw) && raw >= -50000) {
+					if (Number.isFinite(raw) && raw >= MIN_HWMON_TEMP_MC) {
 						result.nvme_c = Math.round((raw / 1000) * 10) / 10;
 					}
 				}
