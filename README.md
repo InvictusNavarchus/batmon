@@ -46,12 +46,12 @@
 | | `energy_design_wh` | sysfs (`BAT0`) | Factory nominal design capacity (Wh) |
 | | `voltage_design_v` | sysfs (`BAT0`) | Factory design voltage (V) |
 | | `is_charging` | sysfs (`BAT0`) | Charge state boolean |
-| **Thermal Environment** | `cpu_temp_c` | sysfs (`hwmon`) | CPU Package / Tctl temperature (°C) |
-| | `gpu_temp_c` | sysfs (`hwmon`) | GPU edge temperature (°C) |
+| **Thermal Environment** | `cpu_temp_c` | sysfs (`hwmon`) | CPU package / core temperature (e.g. AMD Tctl / Intel Package id) (°C) |
+| | `gpu_temp_c` | sysfs (`hwmon`) | GPU temperature (e.g. AMD edge / Intel package) (°C) |
 | | `nvme_temp_c` | sysfs (`hwmon`) | NVMe composite temperature (°C) |
 | | `battery_temp_c` | sysfs (`BAT0` / `hwmon`) | Battery sensor temperature (if present) |
 | **Clock & SoC Power** | `cpu_freq_mhz` | sysfs (`cpufreq`) / `/proc` | Instantaneous CPU clock frequency (MHz) |
-| | `gpu_power_w` | sysfs (`hwmon`) | AMD APU / SoC PPT package power (Watts) |
+| | `gpu_power_w` | sysfs (`hwmon`) | AMD APU / GPU package power (PPT via amdgpu) (Watts) |
 | | `gpu_pct` | sysfs (DRM) | GPU compute / shader utilization (%) |
 | **System Load** | `cpu_pct` | `/proc/stat` | Global CPU utilization (%) |
 | | `mem_pct` | `/proc/meminfo` | Global Memory utilization (%) |
@@ -64,7 +64,7 @@
 | | `time_to_full_s` | UPower D-Bus | Smoothed charge completion estimate (seconds) |
 
 * Auto-detects `energy_*` (µWh) vs `charge_*` (µAh) battery drivers.
-* **Zero-Overhead Native Reads:** All CPU, memory, clock, GPU, thermal, and process metrics are gathered directly via Linux kernel VFS interfaces (`/proc` and `/sys`) and standard POSIX process accounting with sub-millisecond execution and zero external daemons. See empirical evaluations on [Kernel VFS vs. Glances](docs/empirical-glances-vs-native-comparison.md) and [Sysfs Hwmon vs. lm-sensors](docs/empirical-lm-sensors-vs-native-hwmon.md) for detailed benchmark results.
+* **Low-Overhead Native Reads:** All CPU, memory, clock, GPU, thermal, and process metrics are gathered directly via Linux kernel VFS interfaces (`/proc` and `/sys`) and standard POSIX process accounting (~5–8 ms execution per sample cycle) with zero child processes or external daemons. See empirical evaluations on [Kernel VFS vs. Glances](docs/empirical-glances-vs-native-comparison.md) and [Sysfs Hwmon vs. lm-sensors](docs/empirical-lm-sensors-vs-native-hwmon.md) for detailed benchmark results.
 * **Automatic Migrations:** Database schema updates and column additions are handled seamlessly and automatically on startup using SQLite's native `user_version` tracking with zero manual migration steps required.
 
 ---
