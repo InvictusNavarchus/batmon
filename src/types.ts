@@ -44,15 +44,6 @@ export interface SystemTemps {
 	gpu_power_w: number | null;
 }
 
-/** Shape of `sensors -j` output */
-export interface SensorsData {
-	[adapter: string]: {
-		[feature: string]: {
-			[subfeature: string]: number;
-		};
-	};
-}
-
 export interface NotificationOptions {
 	title: string;
 	body: string;

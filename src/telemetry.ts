@@ -1,12 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SYSFS } from "./config";
-import type {
-	SensorsData,
-	SystemTemps,
-	TelemetrySample,
-	TopProcessGroup,
-} from "./types";
+import type { SystemTemps, TelemetrySample, TopProcessGroup } from "./types";
 
 // ── sysfs helpers ────────────────────────────────────────────────────
 function sysfsPath(name: string): string {
@@ -54,40 +49,107 @@ function readBatteryTemp(): number | null {
 	return null;
 }
 
-// ── system temps & power via `sensors -j` (thermal environment proxy) ─
-export function readSystemTemps(): SystemTemps {
+// ── system temps & power via direct /sys/class/hwmon reads ───────────
+const CPU_DRIVERS = new Set([
+	"k10temp",
+	"zenpower",
+	"coretemp",
+	"cpu_thermal",
+	"soc_thermal",
+]);
+const GPU_DRIVERS = new Set(["amdgpu", "i915", "xe", "nouveau"]);
+
+export function readSystemTemps(hwmonBase = "/sys/class/hwmon"): SystemTemps {
+	const result: SystemTemps = {
+		cpu_c: null,
+		gpu_c: null,
+		nvme_c: null,
+		gpu_power_w: null,
+	};
+
 	try {
-		const { stdout, exitCode } = Bun.spawnSync(["sensors", "-j"]);
-		if (exitCode !== 0)
-			return { cpu_c: null, gpu_c: null, nvme_c: null, gpu_power_w: null };
-		const data: SensorsData = JSON.parse(stdout.toString());
+		if (!existsSync(hwmonBase)) return result;
 
-		const find = (prefix: string): SensorsData[string] | undefined =>
-			Object.entries(data).find(([k]) => k.startsWith(prefix))?.[1];
+		const entries = readdirSync(hwmonBase);
+		for (const entry of entries) {
+			const hwmonPath = join(hwmonBase, entry);
+			const namePath = join(hwmonPath, "name");
+			if (!existsSync(namePath)) continue;
 
-		const cpu =
-			find("k10temp")?.Tctl?.temp1_input ??
-			find("coretemp")?.["Package id 0"]?.temp1_input ??
-			null;
-		const gpu =
-			find("amdgpu")?.edge?.temp1_input ??
-			find("i915")?.temp1?.temp1_input ??
-			null;
-		const nvme = find("nvme")?.Composite?.temp1_input ?? null;
-		const gpuPower =
-			find("amdgpu")?.PPT?.power1_input ??
-			find("amdgpu")?.PPT?.power1_average ??
-			null;
+			const driverName = readFileSync(namePath, "utf-8").trim();
 
-		return {
-			cpu_c: cpu,
-			gpu_c: gpu,
-			nvme_c: nvme,
-			gpu_power_w: gpuPower !== null ? Math.round(gpuPower * 100) / 100 : null,
-		};
+			// CPU Temperature
+			if (result.cpu_c === null && CPU_DRIVERS.has(driverName)) {
+				let cpuTemp: number | null = null;
+				if (driverName === "coretemp") {
+					for (let i = 1; i <= 16; i++) {
+						const labelFile = join(hwmonPath, `temp${i}_label`);
+						const inputFile = join(hwmonPath, `temp${i}_input`);
+						if (existsSync(labelFile) && existsSync(inputFile)) {
+							const label = readFileSync(labelFile, "utf-8").trim();
+							if (label.startsWith("Package id")) {
+								const raw = Number(readFileSync(inputFile, "utf-8").trim());
+								if (Number.isFinite(raw) && raw > 0) {
+									cpuTemp = Math.round((raw / 1000) * 10) / 10;
+									break;
+								}
+							}
+						}
+					}
+				}
+				if (cpuTemp === null) {
+					const inputFile = join(hwmonPath, "temp1_input");
+					if (existsSync(inputFile)) {
+						const raw = Number(readFileSync(inputFile, "utf-8").trim());
+						if (Number.isFinite(raw) && raw > 0) {
+							cpuTemp = Math.round((raw / 1000) * 10) / 10;
+						}
+					}
+				}
+				result.cpu_c = cpuTemp;
+			}
+
+			// GPU Temperature & Power
+			if (GPU_DRIVERS.has(driverName)) {
+				if (result.gpu_c === null) {
+					const inputFile = join(hwmonPath, "temp1_input");
+					if (existsSync(inputFile)) {
+						const raw = Number(readFileSync(inputFile, "utf-8").trim());
+						if (Number.isFinite(raw) && raw > 0) {
+							result.gpu_c = Math.round((raw / 1000) * 10) / 10;
+						}
+					}
+				}
+				if (result.gpu_power_w === null && driverName === "amdgpu") {
+					for (const powerFile of ["power1_input", "power1_average"]) {
+						const pPath = join(hwmonPath, powerFile);
+						if (existsSync(pPath)) {
+							const raw = Number(readFileSync(pPath, "utf-8").trim());
+							if (Number.isFinite(raw) && raw > 0) {
+								result.gpu_power_w = Math.round((raw / 1_000_000) * 100) / 100;
+								break;
+							}
+						}
+					}
+				}
+			}
+
+			// NVMe Temperature
+			if (result.nvme_c === null && driverName === "nvme") {
+				const inputFile = join(hwmonPath, "temp1_input");
+				if (existsSync(inputFile)) {
+					const raw = Number(readFileSync(inputFile, "utf-8").trim());
+					if (Number.isFinite(raw) && raw > 0) {
+						result.nvme_c = Math.round((raw / 1000) * 10) / 10;
+					}
+				}
+			}
+		}
 	} catch {
-		return { cpu_c: null, gpu_c: null, nvme_c: null, gpu_power_w: null };
+		// return partial or null result on error
 	}
+
+	return result;
 }
 
 // ── native CPU, Memory, GPU & Process telemetry readers ───────────────
