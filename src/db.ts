@@ -98,7 +98,7 @@ export async function pruneDebug(hours = DEBUG_RETENTION_HOURS): Promise<void> {
 	);
 }
 
-// ── cleanup ──────────────────────────────────────────────────────────
+// ── cleanup & test helpers ───────────────────────────────────────────
 export async function closeDbs(): Promise<void> {
 	if (histSql) {
 		await histSql.close();
@@ -108,4 +108,18 @@ export async function closeDbs(): Promise<void> {
 		await debugSql.close();
 		debugSql = null;
 	}
+}
+
+export function setDbConnectionsForTesting(
+	historical: SQL | null = null,
+	debug: SQL | null = null,
+): void {
+	if (histSql && histSql !== historical) {
+		histSql.close().catch(() => {});
+	}
+	if (debugSql && debugSql !== debug) {
+		debugSql.close().catch(() => {});
+	}
+	histSql = historical;
+	debugSql = debug;
 }

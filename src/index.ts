@@ -87,31 +87,42 @@ async function runOneshot(): Promise<void> {
 }
 
 // ── Signal Handling ──────────────────────────────────────────────────
-async function shutdown(): Promise<void> {
+export async function shutdown(): Promise<void> {
 	isRunning = false;
 	await closeDbs();
 	process.exit(0);
 }
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+export function resetDaemonStateForTesting(): void {
+	prevHistorical = null;
+	tickCount = 0;
+	isRunning = true;
+	isTicking = false;
+}
+
+export { executeTick, runOneshot, runTick };
 
 // ── Main Entrypoint ──────────────────────────────────────────────────
-if (process.argv.includes("--oneshot")) {
-	try {
-		await runOneshot();
-	} catch (err) {
-		console.error("batmon oneshot error:", err);
-		process.exit(1);
-	}
-} else {
-	// Daemon mode: execute first tick immediately, then enter 1s interval loop
-	await executeTick();
-	const interval = setInterval(async () => {
-		if (!isRunning) {
-			clearInterval(interval);
-			return;
+if (import.meta.main) {
+	process.on("SIGINT", shutdown);
+	process.on("SIGTERM", shutdown);
+
+	if (process.argv.includes("--oneshot")) {
+		try {
+			await runOneshot();
+		} catch (err) {
+			console.error("batmon oneshot error:", err);
+			process.exit(1);
 		}
+	} else {
+		// Daemon mode: execute first tick immediately, then enter 1s interval loop
 		await executeTick();
-	}, DEBUG_SAMPLE_INTERVAL_MS);
+		const interval = setInterval(async () => {
+			if (!isRunning) {
+				clearInterval(interval);
+				return;
+			}
+			await executeTick();
+		}, DEBUG_SAMPLE_INTERVAL_MS);
+	}
 }
