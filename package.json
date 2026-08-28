@@ -11,7 +11,8 @@
 		"test": "bun test",
 		"install-service": "./install.sh",
 		"uninstall-service": "./uninstall.sh",
-		"knip": "knip"
+		"knip": "knip",
+		"release": "release-it"
 	},
 	"keywords": [
 		"battery",
@@ -28,6 +29,7 @@
 		"@types/node": "^26.4.0",
 		"knip": "^6.32.3",
 		"lefthook": "^2.1.10",
+		"release-it": "^21.0.2",
 		"typescript": "^7.0.2"
 	}
 }
