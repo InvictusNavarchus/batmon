@@ -29,7 +29,7 @@ function readOpt(name: string): number | null {
 // ── temperature: battery sensor (may not exist) ──────────────────────
 function readBatteryTemp(): number | null {
 	const direct = readOpt("temp");
-	if (direct !== null && direct > -500) return direct / 10;
+	if (direct !== null && direct >= -500) return direct / 10;
 
 	try {
 		for (const e of readdirSync(SYSFS)) {
@@ -38,7 +38,7 @@ function readBatteryTemp(): number | null {
 				const p = join(SYSFS, e, `temp${i}_input`);
 				if (existsSync(p)) {
 					const v = Number(readFileSync(p, "utf-8").trim());
-					if (Number.isFinite(v) && v > -50000) return v / 1000;
+					if (Number.isFinite(v) && v >= -50000) return v / 1000;
 				}
 			}
 		}
@@ -89,7 +89,7 @@ export function readSystemTemps(hwmonBase = "/sys/class/hwmon"): SystemTemps {
 							const label = readFileSync(labelFile, "utf-8").trim();
 							if (label.startsWith("Package id")) {
 								const raw = Number(readFileSync(inputFile, "utf-8").trim());
-								if (Number.isFinite(raw) && raw > -50000) {
+								if (Number.isFinite(raw) && raw >= -50000) {
 									cpuTemp = Math.round((raw / 1000) * 10) / 10;
 									break;
 								}
@@ -101,7 +101,7 @@ export function readSystemTemps(hwmonBase = "/sys/class/hwmon"): SystemTemps {
 					const inputFile = join(hwmonPath, "temp1_input");
 					if (existsSync(inputFile)) {
 						const raw = Number(readFileSync(inputFile, "utf-8").trim());
-						if (Number.isFinite(raw) && raw > -50000) {
+						if (Number.isFinite(raw) && raw >= -50000) {
 							cpuTemp = Math.round((raw / 1000) * 10) / 10;
 						}
 					}
@@ -115,7 +115,7 @@ export function readSystemTemps(hwmonBase = "/sys/class/hwmon"): SystemTemps {
 				let temp: number | null = null;
 				if (existsSync(inputFile)) {
 					const raw = Number(readFileSync(inputFile, "utf-8").trim());
-					if (Number.isFinite(raw) && raw > -50000) {
+					if (Number.isFinite(raw) && raw >= -50000) {
 						temp = Math.round((raw / 1000) * 10) / 10;
 					}
 				}
@@ -147,7 +147,7 @@ export function readSystemTemps(hwmonBase = "/sys/class/hwmon"): SystemTemps {
 				const inputFile = join(hwmonPath, "temp1_input");
 				if (existsSync(inputFile)) {
 					const raw = Number(readFileSync(inputFile, "utf-8").trim());
-					if (Number.isFinite(raw) && raw > -50000) {
+					if (Number.isFinite(raw) && raw >= -50000) {
 						result.nvme_c = Math.round((raw / 1000) * 10) / 10;
 					}
 				}

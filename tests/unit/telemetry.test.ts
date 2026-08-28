@@ -139,7 +139,7 @@ describe("telemetry parsers", () => {
 			});
 		});
 
-		test("accepts 0W GPU power and 0°C or valid sub-zero temperatures", () => {
+		test("accepts 0W GPU power and 0°C or valid sub-zero temperatures down to -50°C", () => {
 			tempHwmonDir = mkdtempSync(join(tmpdir(), "batmon-hwmon-test-"));
 
 			// hwmon0: AMD GPU in D3cold (0 W) and 0°C
@@ -149,15 +149,15 @@ describe("telemetry parsers", () => {
 			writeFileSync(join(hwmon0, "temp1_input"), "0\n");
 			writeFileSync(join(hwmon0, "power1_input"), "0\n");
 
-			// hwmon1: CPU at -5°C
+			// hwmon1: CPU at exact boundary of -50°C (-50000 m°C)
 			const hwmon1 = join(tempHwmonDir, "hwmon1");
 			mkdirSync(hwmon1);
 			writeFileSync(join(hwmon1, "name"), "k10temp\n");
-			writeFileSync(join(hwmon1, "temp1_input"), "-5000\n");
+			writeFileSync(join(hwmon1, "temp1_input"), "-50000\n");
 
 			const result = readSystemTemps(tempHwmonDir);
 			expect(result).toEqual({
-				cpu_c: -5.0,
+				cpu_c: -50.0,
 				gpu_c: 0,
 				nvme_c: null,
 				gpu_power_w: 0,
