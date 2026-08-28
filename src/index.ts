@@ -93,6 +93,13 @@ export async function shutdown(): Promise<void> {
 	process.exit(0);
 }
 
+export function resetDaemonStateForTesting(): void {
+	prevHistorical = null;
+	tickCount = 0;
+	isRunning = true;
+	isTicking = false;
+}
+
 export { executeTick, runOneshot, runTick };
 
 // ── Main Entrypoint ──────────────────────────────────────────────────
