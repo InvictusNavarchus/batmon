@@ -107,90 +107,113 @@ describe("alert logic and edge-crossing triggers", () => {
 		]);
 	});
 
-	test("fires battery temperature warning and critical alerts", () => {
+	test("fires battery temperature warning and critical alerts only on threshold crossing", () => {
 		const notifications: NotificationOptions[] = [];
 		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
 
-		// Warning level (45 <= temp < 50)
-		alert(createMockSample({ battery_temp_c: 46 }), null, notifyFn);
+		// Normal to Warning level (30 -> 46 °C)
+		const prevNormal = createMockSample({ battery_temp_c: 30 });
+		const currWarn1 = createMockSample({ battery_temp_c: 46 });
+		alert(currWarn1, prevNormal, notifyFn);
 		expect(notifications.length).toBe(1);
 		expect(notifications[0].title).toBe("Warning: High Battery Temperature");
 		expect(notifications[0].urgency).toBe("normal");
 
-		// Critical level (temp >= 50)
+		// Persisting in Warning level (46 -> 47 °C) - should NOT re-fire
 		notifications.length = 0;
-		alert(createMockSample({ battery_temp_c: 52 }), null, notifyFn);
+		const currWarn2 = createMockSample({ battery_temp_c: 47 });
+		alert(currWarn2, currWarn1, notifyFn);
+		expect(notifications.length).toBe(0);
+
+		// Warning to Critical level (47 -> 51 °C) - should fire Critical
+		notifications.length = 0;
+		const currCrit1 = createMockSample({ battery_temp_c: 51 });
+		alert(currCrit1, currWarn2, notifyFn);
 		expect(notifications.length).toBe(1);
 		expect(notifications[0].title).toBe("CRITICAL: Battery Overheating");
 		expect(notifications[0].urgency).toBe("critical");
-	});
 
-	test("fires health alert when capacity health is degraded below threshold", () => {
-		const notifications: NotificationOptions[] = [];
-		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
-
-		alert(createMockSample({ health_pct: 75 }), null, notifyFn);
-		expect(notifications.length).toBe(1);
-		expect(notifications[0].title).toBe("Battery Health Notice");
-	});
-
-	test("fires over-voltage warning only when actively charging", () => {
-		const notifications: NotificationOptions[] = [];
-		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
-
-		// Charging with voltage > 1.15x design voltage (12.0 * 1.15 = 13.8V -> 14.0V)
-		alert(
-			createMockSample({
-				is_charging: true,
-				voltage_v: 14.0,
-				voltage_design_v: 12.0,
-			}),
-			null,
-			notifyFn,
-		);
-		expect(notifications.length).toBe(1);
-		expect(notifications[0].title).toBe("Warning: Over-Voltage Charging");
-
-		// Discharging with same voltage does not fire over-voltage
+		// Persisting in Critical level (51 -> 52 °C) - should NOT re-fire
 		notifications.length = 0;
-		alert(
-			createMockSample({
-				is_charging: false,
-				voltage_v: 14.0,
-				voltage_design_v: 12.0,
-			}),
-			null,
-			notifyFn,
-		);
+		const currCrit2 = createMockSample({ battery_temp_c: 52 });
+		alert(currCrit2, currCrit1, notifyFn);
 		expect(notifications.length).toBe(0);
 	});
 
-	test("fires heat-soak risk warning when charging while CPU is hot", () => {
+	test("fires health alert only on initial downward crossing below threshold", () => {
 		const notifications: NotificationOptions[] = [];
 		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
 
-		// Charging with CPU temp >= 85°C
-		alert(
-			createMockSample({
-				is_charging: true,
-				cpu_temp_c: 88,
-			}),
-			null,
-			notifyFn,
-		);
+		// Crossing from 82% to 78% health
+		const prevGood = createMockSample({ health_pct: 82 });
+		const currDegraded = createMockSample({ health_pct: 78 });
+		alert(currDegraded, prevGood, notifyFn);
+		expect(notifications.length).toBe(1);
+		expect(notifications[0].title).toBe("Battery Health Notice");
+
+		// Persisting in degraded state (78% -> 77%) - should NOT re-fire
+		notifications.length = 0;
+		const currStillDegraded = createMockSample({ health_pct: 77 });
+		alert(currStillDegraded, currDegraded, notifyFn);
+		expect(notifications.length).toBe(0);
+	});
+
+	test("fires over-voltage warning only on initial crossing while charging", () => {
+		const notifications: NotificationOptions[] = [];
+		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+
+		const prevNormal = createMockSample({
+			is_charging: true,
+			voltage_v: 12.5,
+			voltage_design_v: 12.0,
+		});
+		const currOver = createMockSample({
+			is_charging: true,
+			voltage_v: 14.0,
+			voltage_design_v: 12.0,
+		});
+
+		// 12.5V -> 14.0V while charging
+		alert(currOver, prevNormal, notifyFn);
+		expect(notifications.length).toBe(1);
+		expect(notifications[0].title).toBe("Warning: Over-Voltage Charging");
+
+		// Persisting over-voltage (14.0V -> 14.2V) - should NOT re-fire
+		notifications.length = 0;
+		const currStillOver = createMockSample({
+			is_charging: true,
+			voltage_v: 14.2,
+			voltage_design_v: 12.0,
+		});
+		alert(currStillOver, currOver, notifyFn);
+		expect(notifications.length).toBe(0);
+	});
+
+	test("fires heat-soak risk warning only on initial crossing while charging", () => {
+		const notifications: NotificationOptions[] = [];
+		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+
+		const prevWarm = createMockSample({
+			is_charging: true,
+			cpu_temp_c: 80,
+		});
+		const currHot = createMockSample({
+			is_charging: true,
+			cpu_temp_c: 88,
+		});
+
+		// 80°C -> 88°C while charging
+		alert(currHot, prevWarm, notifyFn);
 		expect(notifications.length).toBe(1);
 		expect(notifications[0].title).toBe("Warning: Heat-Soak Risk");
 
-		// Discharging with high CPU temp does not fire heat-soak alert
+		// Persisting hot CPU while charging (88°C -> 89°C) - should NOT re-fire
 		notifications.length = 0;
-		alert(
-			createMockSample({
-				is_charging: false,
-				cpu_temp_c: 88,
-			}),
-			null,
-			notifyFn,
-		);
+		const currStillHot = createMockSample({
+			is_charging: true,
+			cpu_temp_c: 89,
+		});
+		alert(currStillHot, currHot, notifyFn);
 		expect(notifications.length).toBe(0);
 	});
 });

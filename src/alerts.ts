@@ -46,6 +46,11 @@ export function alert(
 ): void {
 	const prevCharging = prev !== null ? Boolean(prev.is_charging) : null;
 	const prevPct = prev !== null ? prev.charge_pct : null;
+	const prevBattTemp = prev !== null ? prev.battery_temp_c : null;
+	const prevHealth = prev !== null ? prev.health_pct : null;
+	const prevCpuTemp = prev !== null ? prev.cpu_temp_c : null;
+	const prevVoltage = prev !== null ? prev.voltage_v : null;
+	const prevVoltDesign = prev !== null ? prev.voltage_design_v : null;
 
 	if (curr.is_charging && curr.charge_pct >= CHARGE_HIGH_WARN) {
 		const justCrossed =
@@ -88,38 +93,54 @@ export function alert(
 
 	if (curr.battery_temp_c !== null) {
 		if (curr.battery_temp_c >= TEMP_CRIT) {
-			notifyFn({
-				title: "CRITICAL: Battery Overheating",
-				body: `Battery at ${curr.battery_temp_c.toFixed(1)} °C – unplug immediately`,
-				urgency: "critical",
-				icon: "dialog-warning",
-			});
+			const justCrossed = prevBattTemp === null || prevBattTemp < TEMP_CRIT;
+			if (justCrossed) {
+				notifyFn({
+					title: "CRITICAL: Battery Overheating",
+					body: `Battery at ${curr.battery_temp_c.toFixed(1)} °C – unplug immediately`,
+					urgency: "critical",
+					icon: "dialog-warning",
+				});
+			}
 		} else if (curr.battery_temp_c >= TEMP_WARN) {
-			notifyFn({
-				title: "Warning: High Battery Temperature",
-				body: `Battery at ${curr.battery_temp_c.toFixed(1)} °C`,
-				urgency: "normal",
-				icon: "dialog-warning",
-			});
+			const justCrossed = prevBattTemp === null || prevBattTemp < TEMP_WARN;
+			if (justCrossed) {
+				notifyFn({
+					title: "Warning: High Battery Temperature",
+					body: `Battery at ${curr.battery_temp_c.toFixed(1)} °C`,
+					urgency: "normal",
+					icon: "dialog-warning",
+				});
+			}
 		}
 	}
 
 	if (curr.health_pct < CAP_WARN) {
-		notifyFn({
-			title: "Battery Health Notice",
-			body: `Battery health at ${curr.health_pct.toFixed(1)}% of design capacity`,
-			urgency: "normal",
-			icon: "battery-caution",
-		});
+		const justCrossed = prevHealth === null || prevHealth >= CAP_WARN;
+		if (justCrossed) {
+			notifyFn({
+				title: "Battery Health Notice",
+				body: `Battery health at ${curr.health_pct.toFixed(1)}% of design capacity`,
+				urgency: "normal",
+				icon: "battery-caution",
+			});
+		}
 	}
 
 	if (curr.is_charging && curr.voltage_v > curr.voltage_design_v * 1.15) {
-		notifyFn({
-			title: "Warning: Over-Voltage Charging",
-			body: `Voltage ${curr.voltage_v.toFixed(2)} V well above design ${curr.voltage_design_v} V`,
-			urgency: "normal",
-			icon: "dialog-warning",
-		});
+		const prevOvervoltage =
+			prevVoltage !== null &&
+			prevVoltDesign !== null &&
+			prevVoltage > prevVoltDesign * 1.15;
+		const justCrossed = prevCharging !== true || !prevOvervoltage;
+		if (justCrossed) {
+			notifyFn({
+				title: "Warning: Over-Voltage Charging",
+				body: `Voltage ${curr.voltage_v.toFixed(2)} V well above design ${curr.voltage_design_v} V`,
+				urgency: "normal",
+				icon: "dialog-warning",
+			});
+		}
 	}
 
 	if (
@@ -127,11 +148,15 @@ export function alert(
 		curr.cpu_temp_c !== null &&
 		curr.cpu_temp_c >= CPU_HOT_CHARGING
 	) {
-		notifyFn({
-			title: "Warning: Heat-Soak Risk",
-			body: `Charging while CPU at ${curr.cpu_temp_c.toFixed(0)} °C`,
-			urgency: "normal",
-			icon: "dialog-warning",
-		});
+		const prevHot = prevCpuTemp !== null && prevCpuTemp >= CPU_HOT_CHARGING;
+		const justCrossed = prevCharging !== true || !prevHot;
+		if (justCrossed) {
+			notifyFn({
+				title: "Warning: Heat-Soak Risk",
+				body: `Charging while CPU at ${curr.cpu_temp_c.toFixed(0)} °C`,
+				urgency: "normal",
+				icon: "dialog-warning",
+			});
+		}
 	}
 }
