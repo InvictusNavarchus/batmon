@@ -46,12 +46,12 @@
 | | `energy_design_wh` | sysfs (`BAT0`) | Factory nominal design capacity (Wh) |
 | | `voltage_design_v` | sysfs (`BAT0`) | Factory design voltage (V) |
 | | `is_charging` | sysfs (`BAT0`) | Charge state boolean |
-| **Thermal Environment** | `cpu_temp_c` | `lm_sensors` | CPU Package / Tctl temperature (°C) |
-| | `gpu_temp_c` | `lm_sensors` | GPU edge temperature (°C) |
-| | `nvme_temp_c` | `lm_sensors` | NVMe composite temperature (°C) |
-| | `battery_temp_c` | sysfs / hwmon | Battery sensor temperature (if present) |
+| **Thermal Environment** | `cpu_temp_c` | sysfs (`hwmon`) | CPU Package / Tctl temperature (°C) |
+| | `gpu_temp_c` | sysfs (`hwmon`) | GPU edge temperature (°C) |
+| | `nvme_temp_c` | sysfs (`hwmon`) | NVMe composite temperature (°C) |
+| | `battery_temp_c` | sysfs (`BAT0` / `hwmon`) | Battery sensor temperature (if present) |
 | **Clock & SoC Power** | `cpu_freq_mhz` | sysfs (`cpufreq`) / `/proc` | Instantaneous CPU clock frequency (MHz) |
-| | `gpu_power_w` | `lm_sensors` | AMD APU / SoC PPT package power (Watts) |
+| | `gpu_power_w` | sysfs (`hwmon`) | AMD APU / SoC PPT package power (Watts) |
 | | `gpu_pct` | sysfs (DRM) | GPU compute / shader utilization (%) |
 | **System Load** | `cpu_pct` | `/proc/stat` | Global CPU utilization (%) |
 | | `mem_pct` | `/proc/meminfo` | Global Memory utilization (%) |
@@ -64,7 +64,7 @@
 | | `time_to_full_s` | UPower D-Bus | Smoothed charge completion estimate (seconds) |
 
 * Auto-detects `energy_*` (µWh) vs `charge_*` (µAh) battery drivers.
-* **Zero-Overhead Native Reads:** All CPU, memory, clock, GPU, and process metrics are gathered directly via Linux kernel VFS interfaces (`/proc` and `/sys`) and standard POSIX process accounting with sub-millisecond execution and zero external daemons. See [empirical evaluation](docs/empirical-glances-vs-native-comparison.md) for detailed benchmark results.
+* **Zero-Overhead Native Reads:** All CPU, memory, clock, GPU, thermal, and process metrics are gathered directly via Linux kernel VFS interfaces (`/proc` and `/sys`) and standard POSIX process accounting with sub-millisecond execution and zero external daemons. See [empirical evaluation](docs/empirical-glances-vs-native-comparison.md) for detailed benchmark results.
 * **Automatic Migrations:** Database schema updates and column additions are handled seamlessly and automatically on startup using SQLite's native `user_version` tracking with zero manual migration steps required.
 
 ---
@@ -119,11 +119,6 @@ LIMIT 5;"
   ```bash
   sudo dnf install libnotify     # Fedora/RHEL
   sudo apt install libnotify-bin # Ubuntu/Debian
-  ```
-- **`lm_sensors`** (recommended, for system thermals and APU power):
-  ```bash
-  sudo dnf install lm_sensors   # Fedora/RHEL
-  sudo apt install lm-sensors   # Ubuntu/Debian
   ```
 - **`sqlite3` CLI** (optional, for querying databases): `sudo dnf install sqlite`
 
