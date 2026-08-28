@@ -138,6 +138,31 @@ describe("telemetry parsers", () => {
 				gpu_power_w: null,
 			});
 		});
+
+		test("accepts 0W GPU power and 0°C or valid sub-zero temperatures", () => {
+			tempHwmonDir = mkdtempSync(join(tmpdir(), "batmon-hwmon-test-"));
+
+			// hwmon0: AMD GPU in D3cold (0 W) and 0°C
+			const hwmon0 = join(tempHwmonDir, "hwmon0");
+			mkdirSync(hwmon0);
+			writeFileSync(join(hwmon0, "name"), "amdgpu\n");
+			writeFileSync(join(hwmon0, "temp1_input"), "0\n");
+			writeFileSync(join(hwmon0, "power1_input"), "0\n");
+
+			// hwmon1: CPU at -5°C
+			const hwmon1 = join(tempHwmonDir, "hwmon1");
+			mkdirSync(hwmon1);
+			writeFileSync(join(hwmon1, "name"), "k10temp\n");
+			writeFileSync(join(hwmon1, "temp1_input"), "-5000\n");
+
+			const result = readSystemTemps(tempHwmonDir);
+			expect(result).toEqual({
+				cpu_c: -5.0,
+				gpu_c: 0,
+				nvme_c: null,
+				gpu_power_w: 0,
+			});
+		});
 	});
 
 	describe("upowerProp parser", () => {
