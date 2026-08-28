@@ -64,7 +64,7 @@
 | | `time_to_full_s` | UPower D-Bus | Smoothed charge completion estimate (seconds) |
 
 * Auto-detects `energy_*` (µWh) vs `charge_*` (µAh) battery drivers.
-* **Zero-Overhead Native Reads:** All CPU, memory, clock, GPU, thermal, and process metrics are gathered directly via Linux kernel VFS interfaces (`/proc` and `/sys`) and standard POSIX process accounting with sub-millisecond execution and zero external daemons. See [empirical evaluation](docs/empirical-glances-vs-native-comparison.md) for detailed benchmark results.
+* **Zero-Overhead Native Reads:** All CPU, memory, clock, GPU, thermal, and process metrics are gathered directly via Linux kernel VFS interfaces (`/proc` and `/sys`) and standard POSIX process accounting with sub-millisecond execution and zero external daemons. See empirical evaluations on [Kernel VFS vs. Glances](docs/empirical-glances-vs-native-comparison.md) and [Sysfs Hwmon vs. lm-sensors](docs/empirical-lm-sensors-vs-native-hwmon.md) for detailed benchmark results.
 * **Automatic Migrations:** Database schema updates and column additions are handled seamlessly and automatically on startup using SQLite's native `user_version` tracking with zero manual migration steps required.
 
 ---
