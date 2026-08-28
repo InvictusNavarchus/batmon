@@ -114,6 +114,12 @@ export function setDbConnectionsForTesting(
 	historical: SQL | null = null,
 	debug: SQL | null = null,
 ): void {
+	if (histSql && histSql !== historical) {
+		histSql.close().catch(() => {});
+	}
+	if (debugSql && debugSql !== debug) {
+		debugSql.close().catch(() => {});
+	}
 	histSql = historical;
 	debugSql = debug;
 }
