@@ -48,6 +48,7 @@ function createMockSample(
 describe("daemon tick cadence scenario", () => {
 	let histSql: SQL;
 	let debugSql: SQL;
+	let readSpy: ReturnType<typeof spyOn> | null = null;
 
 	beforeEach(async () => {
 		resetDaemonStateForTesting();
@@ -61,22 +62,24 @@ describe("daemon tick cadence scenario", () => {
 	});
 
 	afterEach(async () => {
+		if (readSpy) {
+			readSpy.mockRestore();
+			readSpy = null;
+		}
 		await closeDbs();
 		resetDaemonStateForTesting();
 	});
 
 	test("logs 1s flight samples to debug.db and 60s downsampled rows to battery.db", async () => {
 		let callCount = 0;
-		const readSpy = spyOn(telemetry, "readTelemetry").mockImplementation(
-			async () => {
-				callCount++;
-				return createMockSample({
-					ts: new Date(1700000000000 + callCount * 1000).toISOString(),
-					charge_pct: 75,
-					energy_wh: 40 - callCount * 0.01,
-				});
-			},
-		);
+		readSpy = spyOn(telemetry, "readTelemetry").mockImplementation(async () => {
+			callCount++;
+			return createMockSample({
+				ts: new Date(1700000000000 + callCount * 1000).toISOString(),
+				charge_pct: 75,
+				energy_wh: 40 - callCount * 0.01,
+			});
+		});
 
 		// Execute 61 ticks (tick 0 through 60)
 		for (let i = 0; i <= 60; i++) {
@@ -96,13 +99,11 @@ describe("daemon tick cadence scenario", () => {
 				count: number;
 			}>;
 		expect(Number(histRows[0].count)).toBe(2);
-
-		readSpy.mockRestore();
 	});
 
 	test("skips recording when battery is not present", async () => {
-		const readSpy = spyOn(telemetry, "readTelemetry").mockImplementation(
-			async () => createMockSample({ is_present: false }),
+		readSpy = spyOn(telemetry, "readTelemetry").mockImplementation(async () =>
+			createMockSample({ is_present: false }),
 		);
 
 		await runTick();
@@ -112,7 +113,5 @@ describe("daemon tick cadence scenario", () => {
 				count: number;
 			}>;
 		expect(Number(debugRows[0].count)).toBe(0);
-
-		readSpy.mockRestore();
 	});
 });
