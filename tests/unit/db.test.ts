@@ -125,7 +125,7 @@ describe("database operations (store, getLatest, prune)", () => {
 		await storeDebug(oldSample);
 		await storeDebug(nowSample);
 
-		let rows =
+		const rows =
 			(await debugSql`SELECT count(*) as count FROM samples;`) as Array<{
 				count: number;
 			}>;
@@ -134,9 +134,10 @@ describe("database operations (store, getLatest, prune)", () => {
 		// Prune older than 6 hours
 		await pruneDebug(6);
 
-		rows = (await debugSql`SELECT count(*) as count FROM samples;`) as Array<{
-			count: number;
+		const survivingRows = (await debugSql`SELECT ts FROM samples;`) as Array<{
+			ts: string;
 		}>;
-		expect(Number(rows[0].count)).toBe(1);
+		expect(survivingRows.length).toBe(1);
+		expect(survivingRows[0].ts).toBe(nowSample.ts);
 	});
 });
