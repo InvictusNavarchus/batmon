@@ -6,7 +6,7 @@
 
 ### Core Conclusion
 **Direct Linux kernel sysfs hwmon parsing is strictly superior to `lm-sensors` for `batmon`:**
-* **100% Measurement Fidelity:** Parsing `/sys/class/hwmon` directly yields identical temperature and power readings as `lm-sensors` because `libsensors` is merely a user-space C wrapper around the exact same kernel sysfs attributes.
+* **High Measurement Fidelity:** Parsing `/sys/class/hwmon` directly reads the exact same kernel sysfs attributes as `libsensors`, matching `lm-sensors` readings within `batmon`'s emitted precision (temperatures rounded to 1 decimal place; power to 2 decimal places).
 * **Elimination of 86,400 Process Spawns/Day:** Spawning `Bun.spawnSync(["sensors", "-j"])` once every 1,000 ms incurred continuous `fork`/`clone`, `execve`, dynamic linking, and JSON serialization overhead (over **41 ms** average execution latency). Native sysfs traversal eliminates child process creation entirely (~**5.6 ms** un-cached full directory scan; <**0.2 ms** cached file reads).
 * **Zero External Dependencies:** Eliminates `lm_sensors` package installation requirements across minimal Linux installations (Alpine, Arch, Debian minimal, NixOS, Void Linux, and container environments).
 * **Guaranteed Kernel ABI Stability:** `/sys/class/hwmon` attribute naming (`name`, `tempX_input`, `powerX_input`) and units (millidegrees Celsius, microwatts) are governed by the Linux Kernel ABI backwards compatibility guarantee.
@@ -86,7 +86,7 @@ Per Linux Kernel documentation (`Documentation/hwmon/sysfs-interface.rst`):
 * `temp[1-n]_label`: Optional string describing sensor location (`Tctl`, `Package id 0`, `Composite`, `edge`).
 * `power[1-n]_input` / `power[1-n]_average`: Instantaneous or average power in microwatts ($\mu\text{W}$).
 
-These attributes are governed by the Linux Kernel ABI stability guarantee and remain identical across all Linux distributions (Ubuntu, Fedora, Arch, Debian, Alpine, NixOS, openSUSE).
+While the ABI standardizes attribute naming schemes, formatting, and measurement units across all Linux distributions (Ubuntu, Fedora, Arch, Debian, Alpine, NixOS, openSUSE), specific channel indices (`temp1` vs `temp2`) and label availability vary depending on the active hardware driver and kernel configuration.
 
 ### 3. Dynamic Device Enumeration
 Because `hwmon` numbering (`hwmon0`, `hwmon1`, etc.) is dynamically assigned by the kernel during driver initialization, `batmon` dynamically scans `/sys/class/hwmon/*/name` to associate drivers:
