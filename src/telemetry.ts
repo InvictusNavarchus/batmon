@@ -55,7 +55,7 @@ function readBatteryTemp(): number | null {
 }
 
 // ── system temps & power via `sensors -j` (thermal environment proxy) ─
-function readSystemTemps(): SystemTemps {
+export function readSystemTemps(): SystemTemps {
 	try {
 		const { stdout, exitCode } = Bun.spawnSync(["sensors", "-j"]);
 		if (exitCode !== 0)
@@ -384,7 +384,7 @@ function readPower(): number {
 }
 
 // ── UPower D-Bus for smoothed time estimates ─────────────────────────
-function upowerProp(prop: string): number | null {
+export function upowerProp(prop: string): number | null {
 	try {
 		const { stdout, exitCode } = Bun.spawnSync([
 			"busctl",
