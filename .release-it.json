@@ -5,12 +5,8 @@
 		"tagAnnotation": "Release v${version}",
 		"tagName": "v${version}"
 	},
-	"hooks": {
-		"before:github:release": "bun pm pack --destination ./release-assets/"
-	},
 	"github": {
 		"release": true,
-		"assets": ["release-assets/*.tgz"],
 		"releaseName": "v${version}"
 	},
 	"npm": {
