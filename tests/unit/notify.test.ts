@@ -1,15 +1,25 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { notify } from "../../src/alerts";
 
 describe("notify", () => {
-	test("spawns notify-send with expected arguments and logs to console.error", () => {
-		const spawnSpy = spyOn(Bun, "spawn").mockImplementation(() => {
+	let spawnSpy: ReturnType<typeof spyOn>;
+	let consoleSpy: ReturnType<typeof spyOn>;
+
+	beforeEach(() => {
+		spawnSpy = spyOn(Bun, "spawn").mockImplementation(() => {
 			return {
 				exited: Promise.resolve(0),
 			} as unknown as ReturnType<typeof Bun.spawn>;
 		});
-		const consoleSpy = spyOn(console, "error").mockImplementation(() => {});
+		consoleSpy = spyOn(console, "error").mockImplementation(() => {});
+	});
 
+	afterEach(() => {
+		spawnSpy.mockRestore();
+		consoleSpy.mockRestore();
+	});
+
+	test("spawns notify-send with expected arguments and logs to console.error", () => {
 		notify({
 			title: "Low Battery",
 			body: "15% remaining",
@@ -36,19 +46,9 @@ describe("notify", () => {
 		expect(consoleSpy).toHaveBeenCalledWith(
 			"[batmon] [CRITICAL] Low Battery: 15% remaining",
 		);
-
-		spawnSpy.mockRestore();
-		consoleSpy.mockRestore();
 	});
 
 	test("uses default values for urgency and icon when omitted", () => {
-		const spawnSpy = spyOn(Bun, "spawn").mockImplementation(() => {
-			return {
-				exited: Promise.resolve(0),
-			} as unknown as ReturnType<typeof Bun.spawn>;
-		});
-		const consoleSpy = spyOn(console, "error").mockImplementation(() => {});
-
 		notify({
 			title: "Charge Notice",
 			body: "Plugged in",
@@ -72,8 +72,5 @@ describe("notify", () => {
 		expect(consoleSpy).toHaveBeenCalledWith(
 			"[batmon] [NORMAL] Charge Notice: Plugged in",
 		);
-
-		spawnSpy.mockRestore();
-		consoleSpy.mockRestore();
 	});
 });
