@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import * as db from "../../src/db";
 import { runOneshot } from "../../src/index";
 import * as telemetry from "../../src/telemetry";
@@ -40,6 +40,15 @@ function createMockSample(
 }
 
 describe("runOneshot scenario", () => {
+	const activeSpies: Array<{ mockRestore: () => void }> = [];
+
+	afterEach(() => {
+		for (const spy of activeSpies) {
+			spy.mockRestore();
+		}
+		activeSpies.length = 0;
+	});
+
 	test("records a single sample to both databases and closes connections", async () => {
 		const mockSample = createMockSample();
 		const readSpy = spyOn(telemetry, "readTelemetry").mockResolvedValue(
@@ -48,6 +57,8 @@ describe("runOneshot scenario", () => {
 		const storeSpy = spyOn(db, "store").mockResolvedValue(null);
 		const storeDebugSpy = spyOn(db, "storeDebug").mockResolvedValue();
 		const closeSpy = spyOn(db, "closeDbs").mockResolvedValue();
+
+		activeSpies.push(readSpy, storeSpy, storeDebugSpy, closeSpy);
 
 		await runOneshot();
 
@@ -58,11 +69,6 @@ describe("runOneshot scenario", () => {
 		expect(storeDebugSpy).toHaveBeenCalledWith(mockSample);
 
 		expect(closeSpy).toHaveBeenCalledTimes(1);
-
-		readSpy.mockRestore();
-		storeSpy.mockRestore();
-		storeDebugSpy.mockRestore();
-		closeSpy.mockRestore();
 	});
 
 	test("exits early if battery is not present", async () => {
@@ -74,11 +80,9 @@ describe("runOneshot scenario", () => {
 			throw new Error("process.exit called");
 		}) as unknown as typeof process.exit);
 
-		expect(runOneshot()).rejects.toThrow("process.exit called");
-		expect(storeSpy).not.toHaveBeenCalled();
+		activeSpies.push(readSpy, storeSpy, exitSpy);
 
-		readSpy.mockRestore();
-		storeSpy.mockRestore();
-		exitSpy.mockRestore();
+		await expect(runOneshot()).rejects.toThrow("process.exit called");
+		expect(storeSpy).not.toHaveBeenCalled();
 	});
 });
