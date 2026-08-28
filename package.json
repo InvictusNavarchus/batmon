@@ -8,6 +8,7 @@
 		"format": "biome format --write",
 		"lint": "biome lint",
 		"typecheck": "tsc --noEmit",
+		"test": "bun test",
 		"install-service": "./install.sh",
 		"uninstall-service": "./uninstall.sh",
 		"knip": "knip"
