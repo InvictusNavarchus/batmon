@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"start": "bun run src/index.ts",
-		"format": "biome format --write",
+		"format": "biome format --write --no-errors-on-unmatched",
 		"lint": "biome lint",
 		"typecheck": "tsc --noEmit",
 		"test": "bun test",

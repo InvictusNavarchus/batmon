@@ -157,7 +157,23 @@ journalctl --user -u batmon.service -f
 bun run src/index.ts --oneshot
 ```
 
-### Uninstallation
+---
+
+## 🧪 Development & Testing
+
+Run unit tests and typechecks using Bun:
+
+```bash
+# Run test suite
+bun test
+
+# Run typechecker
+bun run typecheck
+```
+
+---
+
+## 🗑️ Uninstallation
 
 ```bash
 ./uninstall.sh
