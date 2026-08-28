@@ -1,49 +1,48 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { readSystemTemps, upowerProp } from "../../src/telemetry";
 
 describe("telemetry parsers", () => {
 	let spawnSyncSpy: ReturnType<typeof spyOn> | null = null;
+	let tempHwmonDir: string | null = null;
 
 	afterEach(() => {
 		if (spawnSyncSpy) {
 			spawnSyncSpy.mockRestore();
 			spawnSyncSpy = null;
 		}
+		if (tempHwmonDir) {
+			rmSync(tempHwmonDir, { recursive: true, force: true });
+			tempHwmonDir = null;
+		}
 	});
 
-	describe("readSystemTemps parser", () => {
+	describe("readSystemTemps sysfs hwmon parser", () => {
 		test("parses AMD k10temp, amdgpu, nvme, and GPU power correctly", () => {
-			const mockSensorsJson = JSON.stringify({
-				"k10temp-pci-00c3": {
-					Adapter: "PCI adapter",
-					Tctl: {
-						temp1_input: 48.5,
-						temp1_max: 95.0,
-					},
-				},
-				"amdgpu-pci-0300": {
-					Adapter: "PCI adapter",
-					edge: {
-						temp1_input: 42.0,
-					},
-					PPT: {
-						power1_input: 15.345,
-					},
-				},
-				"nvme-pci-0100": {
-					Adapter: "PCI adapter",
-					Composite: {
-						temp1_input: 38.0,
-					},
-				},
-			});
+			tempHwmonDir = mkdtempSync(join(tmpdir(), "batmon-hwmon-test-"));
 
-			spawnSyncSpy = spyOn(Bun, "spawnSync").mockReturnValue({
-				stdout: Buffer.from(mockSensorsJson),
-				exitCode: 0,
-			} as unknown as ReturnType<typeof Bun.spawnSync>);
+			// hwmon0: AMD GPU
+			const hwmon0 = join(tempHwmonDir, "hwmon0");
+			mkdirSync(hwmon0);
+			writeFileSync(join(hwmon0, "name"), "amdgpu\n");
+			writeFileSync(join(hwmon0, "temp1_input"), "42000\n");
+			writeFileSync(join(hwmon0, "power1_input"), "15345000\n");
 
-			const result = readSystemTemps();
+			// hwmon1: NVMe
+			const hwmon1 = join(tempHwmonDir, "hwmon1");
+			mkdirSync(hwmon1);
+			writeFileSync(join(hwmon1, "name"), "nvme\n");
+			writeFileSync(join(hwmon1, "temp1_input"), "38000\n");
+
+			// hwmon2: AMD CPU k10temp
+			const hwmon2 = join(tempHwmonDir, "hwmon2");
+			mkdirSync(hwmon2);
+			writeFileSync(join(hwmon2, "name"), "k10temp\n");
+			writeFileSync(join(hwmon2, "temp1_input"), "48500\n");
+
+			const result = readSystemTemps(tempHwmonDir);
 			expect(result).toEqual({
 				cpu_c: 48.5,
 				gpu_c: 42.0,
@@ -53,27 +52,22 @@ describe("telemetry parsers", () => {
 		});
 
 		test("parses Intel coretemp and i915 graphics correctly", () => {
-			const mockSensorsJson = JSON.stringify({
-				"coretemp-isa-0000": {
-					Adapter: "ISA adapter",
-					"Package id 0": {
-						temp1_input: 54.0,
-					},
-				},
-				"i915-pci-0002": {
-					Adapter: "PCI adapter",
-					temp1: {
-						temp1_input: 47.0,
-					},
-				},
-			});
+			tempHwmonDir = mkdtempSync(join(tmpdir(), "batmon-hwmon-test-"));
 
-			spawnSyncSpy = spyOn(Bun, "spawnSync").mockReturnValue({
-				stdout: Buffer.from(mockSensorsJson),
-				exitCode: 0,
-			} as unknown as ReturnType<typeof Bun.spawnSync>);
+			// hwmon0: Intel coretemp with Package id label
+			const hwmon0 = join(tempHwmonDir, "hwmon0");
+			mkdirSync(hwmon0);
+			writeFileSync(join(hwmon0, "name"), "coretemp\n");
+			writeFileSync(join(hwmon0, "temp1_label"), "Package id 0\n");
+			writeFileSync(join(hwmon0, "temp1_input"), "54000\n");
 
-			const result = readSystemTemps();
+			// hwmon1: Intel i915
+			const hwmon1 = join(tempHwmonDir, "hwmon1");
+			mkdirSync(hwmon1);
+			writeFileSync(join(hwmon1, "name"), "i915\n");
+			writeFileSync(join(hwmon1, "temp1_input"), "47000\n");
+
+			const result = readSystemTemps(tempHwmonDir);
 			expect(result).toEqual({
 				cpu_c: 54.0,
 				gpu_c: 47.0,
@@ -82,13 +76,32 @@ describe("telemetry parsers", () => {
 			});
 		});
 
-		test("returns all nulls when sensors exits with non-zero exit code", () => {
-			spawnSyncSpy = spyOn(Bun, "spawnSync").mockReturnValue({
-				stdout: Buffer.from(""),
-				exitCode: 1,
-			} as unknown as ReturnType<typeof Bun.spawnSync>);
+		test("parses ARM soc_thermal and power1_average correctly", () => {
+			tempHwmonDir = mkdtempSync(join(tmpdir(), "batmon-hwmon-test-"));
 
-			expect(readSystemTemps()).toEqual({
+			const hwmon0 = join(tempHwmonDir, "hwmon0");
+			mkdirSync(hwmon0);
+			writeFileSync(join(hwmon0, "name"), "soc_thermal\n");
+			writeFileSync(join(hwmon0, "temp1_input"), "39200\n");
+
+			const hwmon1 = join(tempHwmonDir, "hwmon1");
+			mkdirSync(hwmon1);
+			writeFileSync(join(hwmon1, "name"), "amdgpu\n");
+			writeFileSync(join(hwmon1, "temp1_input"), "41000\n");
+			writeFileSync(join(hwmon1, "power1_average"), "12500000\n");
+
+			const result = readSystemTemps(tempHwmonDir);
+			expect(result).toEqual({
+				cpu_c: 39.2,
+				gpu_c: 41.0,
+				nvme_c: null,
+				gpu_power_w: 12.5,
+			});
+		});
+
+		test("returns all nulls when hwmon directory does not exist", () => {
+			const nonExistent = join(tmpdir(), `non-existent-hwmon-${Date.now()}`);
+			expect(readSystemTemps(nonExistent)).toEqual({
 				cpu_c: null,
 				gpu_c: null,
 				nvme_c: null,
@@ -96,13 +109,14 @@ describe("telemetry parsers", () => {
 			});
 		});
 
-		test("returns all nulls when sensors returns invalid JSON", () => {
-			spawnSyncSpy = spyOn(Bun, "spawnSync").mockReturnValue({
-				stdout: Buffer.from("not-a-valid-json"),
-				exitCode: 0,
-			} as unknown as ReturnType<typeof Bun.spawnSync>);
+		test("returns all nulls when hwmon directory contains unknown drivers", () => {
+			tempHwmonDir = mkdtempSync(join(tmpdir(), "batmon-hwmon-test-"));
+			const hwmon0 = join(tempHwmonDir, "hwmon0");
+			mkdirSync(hwmon0);
+			writeFileSync(join(hwmon0, "name"), "unknown_device\n");
+			writeFileSync(join(hwmon0, "temp1_input"), "50000\n");
 
-			expect(readSystemTemps()).toEqual({
+			expect(readSystemTemps(tempHwmonDir)).toEqual({
 				cpu_c: null,
 				gpu_c: null,
 				nvme_c: null,
@@ -110,16 +124,96 @@ describe("telemetry parsers", () => {
 			});
 		});
 
-		test("returns all nulls when spawnSync throws an error", () => {
-			spawnSyncSpy = spyOn(Bun, "spawnSync").mockImplementation(() => {
-				throw new Error("Command failed");
-			});
+		test("handles malformed/non-numeric sysfs entries gracefully", () => {
+			tempHwmonDir = mkdtempSync(join(tmpdir(), "batmon-hwmon-test-"));
+			const hwmon0 = join(tempHwmonDir, "hwmon0");
+			mkdirSync(hwmon0);
+			writeFileSync(join(hwmon0, "name"), "k10temp\n");
+			writeFileSync(join(hwmon0, "temp1_input"), "invalid_number\n");
 
-			expect(readSystemTemps()).toEqual({
+			expect(readSystemTemps(tempHwmonDir)).toEqual({
 				cpu_c: null,
 				gpu_c: null,
 				nvme_c: null,
 				gpu_power_w: null,
+			});
+		});
+
+		test("accepts 0W GPU power and 0°C or valid sub-zero temperatures down to -50°C", () => {
+			tempHwmonDir = mkdtempSync(join(tmpdir(), "batmon-hwmon-test-"));
+
+			// hwmon0: AMD GPU in D3cold (0 W) and 0°C
+			const hwmon0 = join(tempHwmonDir, "hwmon0");
+			mkdirSync(hwmon0);
+			writeFileSync(join(hwmon0, "name"), "amdgpu\n");
+			writeFileSync(join(hwmon0, "temp1_input"), "0\n");
+			writeFileSync(join(hwmon0, "power1_input"), "0\n");
+
+			// hwmon1: CPU at exact boundary of -50°C (-50000 m°C)
+			const hwmon1 = join(tempHwmonDir, "hwmon1");
+			mkdirSync(hwmon1);
+			writeFileSync(join(hwmon1, "name"), "k10temp\n");
+			writeFileSync(join(hwmon1, "temp1_input"), "-50000\n");
+
+			const result = readSystemTemps(tempHwmonDir);
+			expect(result).toEqual({
+				cpu_c: -50.0,
+				gpu_c: 0,
+				nvme_c: null,
+				gpu_power_w: 0,
+			});
+		});
+
+		test("preserves GPU temperature and power pairing on multi-GPU systems", () => {
+			tempHwmonDir = mkdtempSync(join(tmpdir(), "batmon-hwmon-test-"));
+
+			// hwmon0: Intel i915 (iGPU) appearing first in directory scan
+			const hwmon0 = join(tempHwmonDir, "hwmon0");
+			mkdirSync(hwmon0);
+			writeFileSync(join(hwmon0, "name"), "i915\n");
+			writeFileSync(join(hwmon0, "temp1_input"), "45000\n");
+
+			// hwmon1: AMD dGPU with temperature and power appearing second
+			const hwmon1 = join(tempHwmonDir, "hwmon1");
+			mkdirSync(hwmon1);
+			writeFileSync(join(hwmon1, "name"), "amdgpu\n");
+			writeFileSync(join(hwmon1, "temp1_input"), "58500\n");
+			writeFileSync(join(hwmon1, "power1_input"), "25000000\n");
+
+			const result = readSystemTemps(tempHwmonDir);
+			// Must prioritize amdgpu temperature so temp (58.5) and power (25.0) come from the same device
+			expect(result).toEqual({
+				cpu_c: null,
+				gpu_c: 58.5,
+				nvme_c: null,
+				gpu_power_w: 25.0,
+			});
+		});
+
+		test("retains pairing when multiple AMDGPU devices exist", () => {
+			tempHwmonDir = mkdtempSync(join(tmpdir(), "batmon-hwmon-test-"));
+
+			// hwmon0: AMD iGPU (42°C, 8W)
+			const hwmon0 = join(tempHwmonDir, "hwmon0");
+			mkdirSync(hwmon0);
+			writeFileSync(join(hwmon0, "name"), "amdgpu\n");
+			writeFileSync(join(hwmon0, "temp1_input"), "42000\n");
+			writeFileSync(join(hwmon0, "power1_input"), "8000000\n");
+
+			// hwmon1: AMD dGPU (82°C, 90W)
+			const hwmon1 = join(tempHwmonDir, "hwmon1");
+			mkdirSync(hwmon1);
+			writeFileSync(join(hwmon1, "name"), "amdgpu\n");
+			writeFileSync(join(hwmon1, "temp1_input"), "82000\n");
+			writeFileSync(join(hwmon1, "power1_input"), "90000000\n");
+
+			const result = readSystemTemps(tempHwmonDir);
+			// Must not mix hwmon0 power with hwmon1 temperature
+			expect(result).toEqual({
+				cpu_c: null,
+				gpu_c: 42.0,
+				nvme_c: null,
+				gpu_power_w: 8.0,
 			});
 		});
 	});
