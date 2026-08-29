@@ -19,7 +19,6 @@ import {
 	closeDbs,
 	computeEstimatedCycles,
 	getLatestHistoricalSample,
-	getLatestSample,
 	pruneDebug,
 	store,
 	storeDebug,
@@ -29,7 +28,6 @@ import type { TelemetrySample } from "./types";
 
 let alertManager = new AlertManager();
 let prevHistorical: TelemetrySample | null = null;
-let prevSample: TelemetrySample | null = null;
 let tickCount = 0;
 let isRunning = true;
 let isTicking = false;
@@ -39,12 +37,7 @@ async function runTick(): Promise<void> {
 		const sample = await readTelemetry();
 		if (!sample.is_present) {
 			alertManager.reset();
-			prevSample = null;
 			return;
-		}
-
-		if (prevSample === null) {
-			prevSample = await getLatestSample();
 		}
 
 		if (prevHistorical === null) {
@@ -61,7 +54,6 @@ async function runTick(): Promise<void> {
 
 		// 2. Alert Check: stateful evaluation with hysteresis
 		alertManager.check(sample);
-		prevSample = sample;
 
 		// 3. Historical: store downsampled sample to battery.db every 60s
 		if (tickCount % HISTORICAL_SAMPLE_INTERVAL_TICKS === 0) {
@@ -109,7 +101,6 @@ export async function shutdown(): Promise<void> {
 
 export function resetDaemonStateForTesting(): void {
 	alertManager = new AlertManager();
-	prevSample = null;
 	prevHistorical = null;
 	tickCount = 0;
 	isRunning = true;
