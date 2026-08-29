@@ -255,24 +255,3 @@ export class AlertManager {
 		}
 	}
 }
-
-const defaultAlertManager = new AlertManager();
-
-// ── convenience / backwards-compatible entrypoint ───────────────────
-export function alert(
-	curr: BatterySample,
-	managerOrPrev?: AlertManager | BatterySample | null,
-	notifyFn: (opts: NotificationOptions) => void = notify,
-): void {
-	if (managerOrPrev instanceof AlertManager) {
-		managerOrPrev.check(curr, notifyFn);
-		return;
-	}
-
-	// Reuse shared default instance across legacy calls to preserve alert latches
-	defaultAlertManager.check(curr, notifyFn);
-}
-
-export function resetDefaultAlertManagerForTesting(): void {
-	defaultAlertManager.reset();
-}
