@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { SYSFS } from "./config";
 import type { SystemTemps, TelemetrySample, TopProcessGroup } from "./types";
 
@@ -466,11 +466,15 @@ function readPower(): number {
 // ── UPower D-Bus for smoothed time estimates ─────────────────────────
 export function upowerProp(prop: string): number | null {
 	try {
+		const batName = basename(SYSFS);
+		const devicePath = batName.startsWith("battery_")
+			? `/org/freedesktop/UPower/devices/${batName}`
+			: `/org/freedesktop/UPower/devices/battery_${batName}`;
 		const { stdout, exitCode } = Bun.spawnSync([
 			"busctl",
 			"get-property",
 			"org.freedesktop.UPower",
-			"/org/freedesktop/UPower/devices/battery_BAT0",
+			devicePath,
 			"org.freedesktop.UPower.Device",
 			prop,
 		]);
