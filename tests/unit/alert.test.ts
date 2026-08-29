@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { AlertManager, alert } from "../../src/alerts";
+import {
+	AlertManager,
+	alert,
+	resetDefaultAlertManagerForTesting,
+} from "../../src/alerts";
 import type { BatterySample, NotificationOptions } from "../../src/types";
 
 function createMockSample(
@@ -436,13 +440,23 @@ describe("AlertManager stateful engine with hysteresis & suppression", () => {
 		expect(notifications.length).toBe(1);
 	});
 
-	test("convenience alert() function backwards compatibility", () => {
+	test("convenience alert() function backwards compatibility preserves state across repeated legacy calls", () => {
+		resetDefaultAlertManagerForTesting();
 		const notifications: NotificationOptions[] = [];
 		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
 
-		const sample = createMockSample({ charge_pct: 80, is_charging: true });
-		alert(sample, null, notifyFn);
+		const prev79 = createMockSample({ charge_pct: 79, is_charging: true });
+		const curr80 = createMockSample({ charge_pct: 80, is_charging: true });
+		const curr81 = createMockSample({ charge_pct: 81, is_charging: true });
+
+		// First call fires target reached alert
+		alert(curr80, prev79, notifyFn);
 		expect(notifications.length).toBe(1);
 		expect(notifications[0].title).toBe("Battery Charge Target Reached");
+
+		// Second call with new sample preserves latch and remains silent
+		notifications.length = 0;
+		alert(curr81, curr80, notifyFn);
+		expect(notifications.length).toBe(0);
 	});
 });

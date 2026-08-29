@@ -256,6 +256,8 @@ export class AlertManager {
 	}
 }
 
+const defaultAlertManager = new AlertManager();
+
 // ── convenience / backwards-compatible entrypoint ───────────────────
 export function alert(
 	curr: BatterySample,
@@ -267,7 +269,10 @@ export function alert(
 		return;
 	}
 
-	// If called with a custom instance or legacy signature, create a tracker and evaluate
-	const manager = new AlertManager();
-	manager.check(curr, notifyFn);
+	// Reuse shared default instance across legacy calls to preserve alert latches
+	defaultAlertManager.check(curr, notifyFn);
+}
+
+export function resetDefaultAlertManagerForTesting(): void {
+	defaultAlertManager.reset();
 }
