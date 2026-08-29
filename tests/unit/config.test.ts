@@ -3,11 +3,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	CAP_HYSTERESIS_PCT,
 	CAP_WARN,
 	CHARGE_CRIT_WARN,
 	CHARGE_HIGH_WARN,
+	CHARGE_HYSTERESIS_PCT,
 	CHARGE_LOW_WARN,
 	CPU_HOT_CHARGING,
+	CPU_TEMP_HYSTERESIS_C,
 	DB_DIR,
 	DB_PATH,
 	DEBUG_DB_PATH,
@@ -19,7 +22,10 @@ import {
 	PRUNE_INTERVAL_TICKS,
 	SYSFS,
 	TEMP_CRIT,
+	TEMP_HYSTERESIS_C,
 	TEMP_WARN,
+	VOLTAGE_CLEAR_RATIO,
+	VOLTAGE_OVER_RATIO,
 } from "../../src/config";
 
 describe("config thresholds and invariants", () => {
@@ -46,6 +52,27 @@ describe("config thresholds and invariants", () => {
 		expect(CAP_WARN).toBe(80);
 		expect(CAP_WARN).toBeGreaterThan(0);
 		expect(CAP_WARN).toBeLessThanOrEqual(100);
+	});
+
+	test("hysteresis and deadband constants are valid positive ranges", () => {
+		expect(CHARGE_HYSTERESIS_PCT).toBe(5);
+		expect(CHARGE_HYSTERESIS_PCT).toBeGreaterThan(0);
+		expect(CHARGE_HIGH_WARN - CHARGE_HYSTERESIS_PCT).toBeGreaterThan(
+			CHARGE_LOW_WARN,
+		);
+
+		expect(TEMP_HYSTERESIS_C).toBe(3);
+		expect(TEMP_HYSTERESIS_C).toBeGreaterThan(0);
+
+		expect(CPU_TEMP_HYSTERESIS_C).toBe(5);
+		expect(CPU_TEMP_HYSTERESIS_C).toBeGreaterThan(0);
+
+		expect(CAP_HYSTERESIS_PCT).toBe(2);
+		expect(CAP_HYSTERESIS_PCT).toBeGreaterThan(0);
+
+		expect(VOLTAGE_OVER_RATIO).toBe(1.15);
+		expect(VOLTAGE_CLEAR_RATIO).toBe(1.1);
+		expect(VOLTAGE_OVER_RATIO).toBeGreaterThan(VOLTAGE_CLEAR_RATIO);
 	});
 
 	test("timing intervals and retention are positive integers", () => {

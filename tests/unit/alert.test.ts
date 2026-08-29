@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { alert } from "../../src/alerts";
+import { AlertManager, alert } from "../../src/alerts";
 import type { BatterySample, NotificationOptions } from "../../src/types";
 
 function createMockSample(
@@ -37,206 +37,330 @@ function createMockSample(
 	};
 }
 
-describe("alert logic and edge-crossing triggers", () => {
-	test("fires high charge alert only on initial edge crossing", () => {
+describe("AlertManager stateful engine with hysteresis & suppression", () => {
+	test("fires high charge alert once and enforces 5% hysteresis deadband", () => {
 		const notifications: NotificationOptions[] = [];
 		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
 
-		const prev79 = createMockSample({ charge_pct: 79, is_charging: true });
-		const curr80 = createMockSample({ charge_pct: 80, is_charging: true });
-		const curr81 = createMockSample({ charge_pct: 81, is_charging: true });
-
-		// 79% -> 80% while charging (crossing 80% threshold)
-		alert(curr80, prev79, notifyFn);
+		// Charging: 79% -> 80% (crosses CHARGE_HIGH_WARN 80%)
+		manager.check(
+			createMockSample({ charge_pct: 80, is_charging: true }),
+			notifyFn,
+		);
 		expect(notifications.length).toBe(1);
 		expect(notifications[0].title).toBe("Battery Charge Target Reached");
 		expect(notifications[0].urgency).toBe("normal");
 
-		// 80% -> 81% while charging (already crossed)
+		// Flapping: 80% -> 79% -> 80% (within 5% hysteresis deadband, threshold is < 75%)
 		notifications.length = 0;
-		alert(curr81, curr80, notifyFn);
+		manager.check(
+			createMockSample({ charge_pct: 79, is_charging: true }),
+			notifyFn,
+		);
+		manager.check(
+			createMockSample({ charge_pct: 80, is_charging: true }),
+			notifyFn,
+		);
 		expect(notifications.length).toBe(0);
+
+		// Drops below 75% (80 - 5 = 75%), re-arming the alert
+		manager.check(
+			createMockSample({ charge_pct: 74, is_charging: true }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Charges back up to 80% -> re-fires
+		manager.check(
+			createMockSample({ charge_pct: 80, is_charging: true }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(1);
+		expect(notifications[0].title).toBe("Battery Charge Target Reached");
 	});
 
-	test("fires low battery alert only on initial downward edge crossing", () => {
+	test("suppresses Low alert when jumping straight to Critical battery level", () => {
 		const notifications: NotificationOptions[] = [];
 		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
 
-		const prev21 = createMockSample({ charge_pct: 21, is_charging: false });
-		const curr20 = createMockSample({ charge_pct: 20, is_charging: false });
-		const curr19 = createMockSample({ charge_pct: 19, is_charging: false });
+		// Jumping from 25% to 9% discharging (both <= 20% and <= 10% match, but Critical must suppress Low)
+		manager.check(
+			createMockSample({ charge_pct: 9, is_charging: false }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(1);
+		expect(notifications[0].title).toBe("CRITICAL: Battery Low");
+		expect(notifications[0].urgency).toBe("critical");
+	});
+
+	test("escalates from Low to Critical alert cleanly while discharging", () => {
+		const notifications: NotificationOptions[] = [];
+		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
 
 		// 21% -> 20% discharging
-		alert(curr20, prev21, notifyFn);
+		manager.check(
+			createMockSample({ charge_pct: 20, is_charging: false }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(1);
+		expect(notifications[0].title).toBe("Low Battery");
+		expect(notifications[0].urgency).toBe("normal");
+
+		// 20% -> 19% (already fired low, not critical yet)
+		notifications.length = 0;
+		manager.check(
+			createMockSample({ charge_pct: 19, is_charging: false }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// 19% -> 10% (crosses critical threshold)
+		manager.check(
+			createMockSample({ charge_pct: 10, is_charging: false }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(1);
+		expect(notifications[0].title).toBe("CRITICAL: Battery Low");
+		expect(notifications[0].urgency).toBe("critical");
+	});
+
+	test("re-arms low battery alerts when plugged in or charge rises above hysteresis band", () => {
+		const notifications: NotificationOptions[] = [];
+		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
+
+		// Fire low alert at 20%
+		manager.check(
+			createMockSample({ charge_pct: 20, is_charging: false }),
+			notifyFn,
+		);
 		expect(notifications.length).toBe(1);
 		expect(notifications[0].title).toBe("Low Battery");
 
-		// 20% -> 19% discharging (already below 20%, not below crit 10%)
+		// Fluctuate 20% -> 22% -> 20% (does not clear because 22% <= 20% + 5%)
 		notifications.length = 0;
-		alert(curr19, curr20, notifyFn);
+		manager.check(
+			createMockSample({ charge_pct: 22, is_charging: false }),
+			notifyFn,
+		);
+		manager.check(
+			createMockSample({ charge_pct: 20, is_charging: false }),
+			notifyFn,
+		);
 		expect(notifications.length).toBe(0);
+
+		// Plug in charger -> resets discharging alerts
+		manager.check(
+			createMockSample({ charge_pct: 20, is_charging: true }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Unplug at 20% -> re-fires
+		manager.check(
+			createMockSample({ charge_pct: 20, is_charging: false }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(1);
+		expect(notifications[0].title).toBe("Low Battery");
 	});
 
-	test("fires both low and critical alerts when jumping across both thresholds in one sample", () => {
+	test("handles battery temperature warning, critical escalation, and thermal hysteresis", () => {
 		const notifications: NotificationOptions[] = [];
 		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
-
-		const prev25 = createMockSample({ charge_pct: 25, is_charging: false });
-		const curr10 = createMockSample({ charge_pct: 10, is_charging: false });
-
-		alert(curr10, prev25, notifyFn);
-		expect(notifications.map((n) => n.title)).toEqual([
-			"Low Battery",
-			"CRITICAL: Battery Low",
-		]);
-		expect(
-			notifications.find((n) => n.title.includes("CRITICAL"))?.urgency,
-		).toBe("critical");
-	});
-
-	test("fires only critical alert when dropping from low to critical", () => {
-		const notifications: NotificationOptions[] = [];
-		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
-
-		const prev11 = createMockSample({ charge_pct: 11, is_charging: false });
-		const curr10 = createMockSample({ charge_pct: 10, is_charging: false });
-
-		alert(curr10, prev11, notifyFn);
-		expect(notifications.map((n) => n.title)).toEqual([
-			"CRITICAL: Battery Low",
-		]);
-	});
-
-	test("fires battery temperature warning and critical alerts only on threshold crossing", () => {
-		const notifications: NotificationOptions[] = [];
-		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
 
 		// Normal to Warning level (30 -> 46 °C)
-		const prevNormal = createMockSample({ battery_temp_c: 30 });
-		const currWarn1 = createMockSample({ battery_temp_c: 46 });
-		alert(currWarn1, prevNormal, notifyFn);
+		manager.check(createMockSample({ battery_temp_c: 46 }), notifyFn);
 		expect(notifications.length).toBe(1);
 		expect(notifications[0].title).toBe("Warning: High Battery Temperature");
 		expect(notifications[0].urgency).toBe("normal");
 
-		// Persisting in Warning level (46 -> 47 °C) - should NOT re-fire
+		// Persisting / flapping in Warning (46 -> 44 -> 46 °C, deadband is < 42 °C)
 		notifications.length = 0;
-		const currWarn2 = createMockSample({ battery_temp_c: 47 });
-		alert(currWarn2, currWarn1, notifyFn);
+		manager.check(createMockSample({ battery_temp_c: 44 }), notifyFn);
+		manager.check(createMockSample({ battery_temp_c: 46 }), notifyFn);
 		expect(notifications.length).toBe(0);
 
-		// Warning to Critical level (47 -> 51 °C) - should fire Critical with discharging advice
-		notifications.length = 0;
-		const currCritDischarging = createMockSample({
-			battery_temp_c: 51,
-			is_charging: false,
-		});
-		alert(currCritDischarging, currWarn2, notifyFn);
+		// Escalate to Critical (51 °C) while discharging
+		manager.check(
+			createMockSample({ battery_temp_c: 51, is_charging: false }),
+			notifyFn,
+		);
 		expect(notifications.length).toBe(1);
 		expect(notifications[0].title).toBe("CRITICAL: Battery Overheating");
 		expect(notifications[0].urgency).toBe("critical");
 		expect(notifications[0].body).toContain("reduce system load immediately");
 
-		// When charging, critical overheating advises unplugging
+		// Persisting / flapping in Critical (51 -> 48 -> 51 °C, deadband is < 47 °C)
 		notifications.length = 0;
-		const currCritCharging = createMockSample({
-			battery_temp_c: 51,
-			is_charging: true,
-		});
-		alert(currCritCharging, currWarn2, notifyFn);
-		expect(notifications.length).toBe(1);
-		expect(notifications[0].body).toContain("unplug charger immediately");
+		manager.check(
+			createMockSample({ battery_temp_c: 48, is_charging: false }),
+			notifyFn,
+		);
+		manager.check(
+			createMockSample({ battery_temp_c: 51, is_charging: false }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
 
-		// Persisting in Critical level (51 -> 52 °C) - should NOT re-fire
+		// Cool down completely to 35 °C -> re-arms
+		manager.check(createMockSample({ battery_temp_c: 35 }), notifyFn);
+		expect(notifications.length).toBe(0);
+
+		// Heat up directly to Critical while charging -> fires Critical and advises unplugging
+		manager.check(
+			createMockSample({ battery_temp_c: 51, is_charging: true }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(1);
+		expect(notifications[0].title).toBe("CRITICAL: Battery Overheating");
+		expect(notifications[0].body).toContain("unplug charger immediately");
+	});
+
+	test("ignores transient null sensor reads without triggering false edges", () => {
+		const notifications: NotificationOptions[] = [];
+		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
+
+		// Initial warm temp
+		manager.check(createMockSample({ battery_temp_c: 46 }), notifyFn);
+		expect(notifications.length).toBe(1);
+
+		// Sensor temporarily returns null on next tick
 		notifications.length = 0;
-		const currCrit2 = createMockSample({ battery_temp_c: 52 });
-		alert(currCrit2, currCritDischarging, notifyFn);
+		manager.check(createMockSample({ battery_temp_c: null }), notifyFn);
+		expect(notifications.length).toBe(0);
+
+		// Sensor recovers with 46 °C -> should NOT re-fire
+		manager.check(createMockSample({ battery_temp_c: 46 }), notifyFn);
 		expect(notifications.length).toBe(0);
 	});
 
-	test("fires health alert only on initial downward crossing below threshold", () => {
+	test("fires health alert once and enforces hysteresis before re-arming", () => {
 		const notifications: NotificationOptions[] = [];
 		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
 
-		// Crossing from 82% to 78% health
-		const prevGood = createMockSample({ health_pct: 82 });
-		const currDegraded = createMockSample({ health_pct: 78 });
-		alert(currDegraded, prevGood, notifyFn);
+		// Health degraded to 78%
+		manager.check(createMockSample({ health_pct: 78 }), notifyFn);
 		expect(notifications.length).toBe(1);
 		expect(notifications[0].title).toBe("Battery Health Notice");
 
-		// Persisting in degraded state (78% -> 77%) - should NOT re-fire
+		// Flapping around 79% (deadband threshold is >= 82%)
 		notifications.length = 0;
-		const currStillDegraded = createMockSample({ health_pct: 77 });
-		alert(currStillDegraded, currDegraded, notifyFn);
+		manager.check(createMockSample({ health_pct: 79 }), notifyFn);
+		manager.check(createMockSample({ health_pct: 78 }), notifyFn);
 		expect(notifications.length).toBe(0);
+
+		// Recovers above 82%
+		manager.check(createMockSample({ health_pct: 83 }), notifyFn);
+		expect(notifications.length).toBe(0);
+
+		// Degrades again to 78% -> re-fires
+		manager.check(createMockSample({ health_pct: 78 }), notifyFn);
+		expect(notifications.length).toBe(1);
 	});
 
-	test("fires over-voltage warning only on initial crossing while charging and guards zero design voltage", () => {
+	test("fires over-voltage warning and guards zero design voltage", () => {
 		const notifications: NotificationOptions[] = [];
 		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
 
-		// Should not fire over-voltage when voltage_design_v is 0
-		const zeroDesignCurr = createMockSample({
-			is_charging: true,
-			voltage_v: 12.0,
-			voltage_design_v: 0,
-		});
-		alert(zeroDesignCurr, null, notifyFn);
+		// Should not fire when voltage_design_v is 0
+		manager.check(
+			createMockSample({
+				is_charging: true,
+				voltage_v: 12.0,
+				voltage_design_v: 0,
+			}),
+			notifyFn,
+		);
 		expect(notifications.length).toBe(0);
 
-		const prevNormal = createMockSample({
-			is_charging: true,
-			voltage_v: 12.5,
-			voltage_design_v: 12.0,
-		});
-		const currOver = createMockSample({
-			is_charging: true,
-			voltage_v: 14.0,
-			voltage_design_v: 12.0,
-		});
-
-		// 12.5V -> 14.0V while charging
-		alert(currOver, prevNormal, notifyFn);
+		// Over-voltage: 14.0V > 12.0V * 1.15 (13.8V)
+		manager.check(
+			createMockSample({
+				is_charging: true,
+				voltage_v: 14.0,
+				voltage_design_v: 12.0,
+			}),
+			notifyFn,
+		);
 		expect(notifications.length).toBe(1);
 		expect(notifications[0].title).toBe("Warning: Over-Voltage Charging");
 
-		// Persisting over-voltage (14.0V -> 14.2V) - should NOT re-fire
+		// Hovering in over-voltage state does not re-fire
 		notifications.length = 0;
-		const currStillOver = createMockSample({
-			is_charging: true,
-			voltage_v: 14.2,
-			voltage_design_v: 12.0,
-		});
-		alert(currStillOver, currOver, notifyFn);
+		manager.check(
+			createMockSample({
+				is_charging: true,
+				voltage_v: 14.2,
+				voltage_design_v: 12.0,
+			}),
+			notifyFn,
+		);
 		expect(notifications.length).toBe(0);
 	});
 
-	test("fires heat-soak risk warning only on initial crossing while charging", () => {
+	test("fires CPU heat-soak risk warning while charging and enforces hysteresis", () => {
 		const notifications: NotificationOptions[] = [];
 		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
 
-		const prevWarm = createMockSample({
-			is_charging: true,
-			cpu_temp_c: 80,
-		});
-		const currHot = createMockSample({
-			is_charging: true,
-			cpu_temp_c: 88,
-		});
-
-		// 80°C -> 88°C while charging
-		alert(currHot, prevWarm, notifyFn);
+		// CPU hot (88 °C >= 85 °C) while charging
+		manager.check(
+			createMockSample({ is_charging: true, cpu_temp_c: 88 }),
+			notifyFn,
+		);
 		expect(notifications.length).toBe(1);
 		expect(notifications[0].title).toBe("Warning: Heat-Soak Risk");
 
-		// Persisting hot CPU while charging (88°C -> 89°C) - should NOT re-fire
+		// Flapping (88 -> 82 -> 88 °C, deadband is < 80 °C)
 		notifications.length = 0;
-		const currStillHot = createMockSample({
-			is_charging: true,
-			cpu_temp_c: 89,
-		});
-		alert(currStillHot, currHot, notifyFn);
+		manager.check(
+			createMockSample({ is_charging: true, cpu_temp_c: 82 }),
+			notifyFn,
+		);
+		manager.check(
+			createMockSample({ is_charging: true, cpu_temp_c: 88 }),
+			notifyFn,
+		);
 		expect(notifications.length).toBe(0);
+	});
+
+	test("reset() clears all alert latches", () => {
+		const notifications: NotificationOptions[] = [];
+		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
+
+		manager.check(
+			createMockSample({ charge_pct: 80, is_charging: true }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(1);
+
+		notifications.length = 0;
+		manager.reset();
+
+		// After reset, checking same sample fires alert again
+		manager.check(
+			createMockSample({ charge_pct: 80, is_charging: true }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(1);
+	});
+
+	test("convenience alert() function backwards compatibility", () => {
+		const notifications: NotificationOptions[] = [];
+		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+
+		const sample = createMockSample({ charge_pct: 80, is_charging: true });
+		alert(sample, null, notifyFn);
+		expect(notifications.length).toBe(1);
+		expect(notifications[0].title).toBe("Battery Charge Target Reached");
 	});
 });

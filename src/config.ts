@@ -94,3 +94,11 @@ export const CHARGE_HIGH_WARN = 80; // % – unplug reminder
 export const CHARGE_LOW_WARN = 20; // % – plug-in reminder
 export const CHARGE_CRIT_WARN = 10; // % – critical low battery
 export const CPU_HOT_CHARGING = 85; // °C – warn if charging while system is hot
+
+// ── hysteresis & deadband constants ──────────────────────────────────
+export const CHARGE_HYSTERESIS_PCT = 5; // % band before re-arming charge alerts
+export const TEMP_HYSTERESIS_C = 3; // °C band before re-arming thermal alerts
+export const CPU_TEMP_HYSTERESIS_C = 5; // °C band before re-arming CPU heat-soak
+export const CAP_HYSTERESIS_PCT = 2; // % band before re-arming capacity health alert
+export const VOLTAGE_OVER_RATIO = 1.15; // 15% above design voltage triggers overvoltage
+export const VOLTAGE_CLEAR_RATIO = 1.1; // Drops below 10% above design to clear overvoltage
