@@ -473,9 +473,9 @@ function readPower(): number {
  * - Sanitizes invalid D-Bus path characters (`-`, `.`, `:`, `@`) into underscores `_`
  *   (e.g. Linux on Apple Silicon `macsmc-battery` -> `/org/freedesktop/UPower/devices/battery_macsmc_battery`).
  */
-export function upowerProp(prop: string): number | null {
+export function upowerProp(prop: string, sysfsPath = SYSFS): number | null {
 	try {
-		const normalizedBatName = basename(SYSFS).replace(/[-.:@]/g, "_");
+		const normalizedBatName = basename(sysfsPath).replace(/[-.:@]/g, "_");
 		const devicePath = `/org/freedesktop/UPower/devices/battery_${normalizedBatName}`;
 		const { stdout, exitCode } = Bun.spawnSync([
 			"busctl",
