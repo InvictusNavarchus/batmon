@@ -107,7 +107,7 @@ LIMIT 5;"
 * **High Battery Temp Warning:** Alert when battery temp $\ge 45^\circ\text{C}$ (Critical at $50^\circ\text{C}$ with contextual cooling advice; re-arms below $42^\circ\text{C}$ / $47^\circ\text{C}$).
 * **Charging While Hot (Heat-Soak):** Alert when charging while CPU $\ge 85^\circ\text{C}$ (re-arms below $80^\circ\text{C}$).
 * **Charge Limits:** Reminders to unplug at $\ge 80\%$ (re-arms below $75\%$) and plug in at $\le 20\%$ (Critical at $\le 10\%$ suppresses normal low alert; re-arms above $25\%$).
-* **Over-Voltage Charging:** Alert when charging voltage exceeds 15% above design voltage (re-arms below 10%).
+* **Over-Voltage Charging:** Alert when charging voltage exceeds 15% above design voltage (re-arms at or below 10% above design voltage).
 * **Battery Health Degradation:** Warning when full capacity drops below $80\%$ of factory design (re-arms above $82\%$).
 
 ---
