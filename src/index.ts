@@ -8,7 +8,7 @@
  * - Collects sysfs, procfs, UPower D-Bus, sensors -j, and per-PID delta metrics.
  */
 
-import { alert } from "./alerts";
+import { AlertManager } from "./alerts";
 import {
 	DEBUG_RETENTION_HOURS,
 	DEBUG_SAMPLE_INTERVAL_MS,
@@ -26,6 +26,7 @@ import {
 import { readTelemetry } from "./telemetry";
 import type { TelemetrySample } from "./types";
 
+let alertManager = new AlertManager();
 let prevHistorical: TelemetrySample | null = null;
 let tickCount = 0;
 let isRunning = true;
@@ -34,7 +35,10 @@ let isTicking = false;
 async function runTick(): Promise<void> {
 	try {
 		const sample = await readTelemetry();
-		if (!sample.is_present) return;
+		if (!sample.is_present) {
+			alertManager.reset();
+			return;
+		}
 
 		if (prevHistorical === null) {
 			prevHistorical = await getLatestHistoricalSample();
@@ -48,15 +52,16 @@ async function runTick(): Promise<void> {
 		// 1. Flight recorder: store every 1s sample to debug.db
 		await storeDebug(sample);
 
-		// 2. Historical: store every 60s sample to battery.db and trigger alerts
+		// 2. Alert Check: stateful evaluation with hysteresis
+		alertManager.check(sample);
+
+		// 3. Historical: store downsampled sample to battery.db every 60s
 		if (tickCount % HISTORICAL_SAMPLE_INTERVAL_TICKS === 0) {
-			const oldPrev = prevHistorical;
 			await store(sample);
-			alert(sample, oldPrev);
 			prevHistorical = sample;
 		}
 
-		// 3. Batch prune debug.db every 5 minutes (300 ticks)
+		// 4. Batch prune debug.db every 5 minutes (300 ticks)
 		if (tickCount > 0 && tickCount % PRUNE_INTERVAL_TICKS === 0) {
 			await pruneDebug(DEBUG_RETENTION_HOURS);
 		}
@@ -80,9 +85,10 @@ async function executeTick(): Promise<void> {
 async function runOneshot(): Promise<void> {
 	const sample = await readTelemetry();
 	if (!sample.is_present) process.exit(0);
-	const prev = await store(sample);
+	await store(sample);
 	await storeDebug(sample);
-	alert(sample, prev);
+	const oneshotAlerts = new AlertManager();
+	oneshotAlerts.check(sample);
 	await closeDbs();
 }
 
@@ -94,6 +100,7 @@ export async function shutdown(): Promise<void> {
 }
 
 export function resetDaemonStateForTesting(): void {
+	alertManager = new AlertManager();
 	prevHistorical = null;
 	tickCount = 0;
 	isRunning = true;

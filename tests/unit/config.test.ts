@@ -1,20 +1,31 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
+	CAP_HYSTERESIS_PCT,
 	CAP_WARN,
 	CHARGE_CRIT_WARN,
 	CHARGE_HIGH_WARN,
+	CHARGE_HYSTERESIS_PCT,
 	CHARGE_LOW_WARN,
 	CPU_HOT_CHARGING,
+	CPU_TEMP_HYSTERESIS_C,
 	DB_DIR,
 	DB_PATH,
 	DEBUG_DB_PATH,
 	DEBUG_RETENTION_HOURS,
 	DEBUG_SAMPLE_INTERVAL_MS,
+	discoverBatteryPath,
 	HISTORICAL_SAMPLE_INTERVAL_TICKS,
+	POWER_SUPPLY_BASE,
 	PRUNE_INTERVAL_TICKS,
 	SYSFS,
 	TEMP_CRIT,
+	TEMP_HYSTERESIS_C,
 	TEMP_WARN,
+	VOLTAGE_CLEAR_RATIO,
+	VOLTAGE_OVER_RATIO,
 } from "../../src/config";
 
 describe("config thresholds and invariants", () => {
@@ -43,6 +54,27 @@ describe("config thresholds and invariants", () => {
 		expect(CAP_WARN).toBeLessThanOrEqual(100);
 	});
 
+	test("hysteresis and deadband constants are valid positive ranges", () => {
+		expect(CHARGE_HYSTERESIS_PCT).toBe(5);
+		expect(CHARGE_HYSTERESIS_PCT).toBeGreaterThan(0);
+		expect(CHARGE_HIGH_WARN - CHARGE_HYSTERESIS_PCT).toBeGreaterThan(
+			CHARGE_LOW_WARN,
+		);
+
+		expect(TEMP_HYSTERESIS_C).toBe(3);
+		expect(TEMP_HYSTERESIS_C).toBeGreaterThan(0);
+
+		expect(CPU_TEMP_HYSTERESIS_C).toBe(5);
+		expect(CPU_TEMP_HYSTERESIS_C).toBeGreaterThan(0);
+
+		expect(CAP_HYSTERESIS_PCT).toBe(2);
+		expect(CAP_HYSTERESIS_PCT).toBeGreaterThan(0);
+
+		expect(VOLTAGE_OVER_RATIO).toBe(1.15);
+		expect(VOLTAGE_CLEAR_RATIO).toBe(1.1);
+		expect(VOLTAGE_OVER_RATIO).toBeGreaterThan(VOLTAGE_CLEAR_RATIO);
+	});
+
 	test("timing intervals and retention are positive integers", () => {
 		expect(DEBUG_SAMPLE_INTERVAL_MS).toBeGreaterThan(0);
 		expect(Number.isInteger(DEBUG_SAMPLE_INTERVAL_MS)).toBe(true);
@@ -59,7 +91,132 @@ describe("config thresholds and invariants", () => {
 
 	test("file paths are formatted correctly", () => {
 		expect(SYSFS).toMatch(/^\/sys\//);
+		expect(POWER_SUPPLY_BASE).toBe("/sys/class/power_supply");
 		expect(DB_PATH).toBe(`${DB_DIR}/battery.db`);
 		expect(DEBUG_DB_PATH).toBe(`${DB_DIR}/debug.db`);
+	});
+});
+
+describe("discoverBatteryPath auto-discovery", () => {
+	let tempBaseDir: string | null = null;
+
+	afterEach(() => {
+		if (tempBaseDir) {
+			rmSync(tempBaseDir, { recursive: true, force: true });
+			tempBaseDir = null;
+		}
+	});
+
+	test("discovers standard BAT0 when AC adapter and BAT0 are present", () => {
+		tempBaseDir = mkdtempSync(join(tmpdir(), "batmon-ps-test-"));
+
+		const adp = join(tempBaseDir, "ADP1");
+		mkdirSync(adp);
+		writeFileSync(join(adp, "type"), "Mains\n");
+
+		const bat0 = join(tempBaseDir, "BAT0");
+		mkdirSync(bat0);
+		writeFileSync(join(bat0, "type"), "Battery\n");
+
+		const discovered = discoverBatteryPath(tempBaseDir);
+		expect(discovered).toBe(bat0);
+	});
+
+	test("discovers BAT1 when only BAT1 is present", () => {
+		tempBaseDir = mkdtempSync(join(tmpdir(), "batmon-ps-test-"));
+
+		const ac = join(tempBaseDir, "AC");
+		mkdirSync(ac);
+		writeFileSync(join(ac, "type"), "Mains\n");
+
+		const bat1 = join(tempBaseDir, "BAT1");
+		mkdirSync(bat1);
+		writeFileSync(join(bat1, "type"), "Battery\n");
+
+		const discovered = discoverBatteryPath(tempBaseDir);
+		expect(discovered).toBe(bat1);
+	});
+
+	test("prioritizes system battery over peripheral devices (scope: Device)", () => {
+		tempBaseDir = mkdtempSync(join(tmpdir(), "batmon-ps-test-"));
+
+		// Mouse battery appearing first alphabetically
+		const mouse = join(tempBaseDir, "hid-0005:004c:0269-battery");
+		mkdirSync(mouse);
+		writeFileSync(join(mouse, "type"), "Battery\n");
+		writeFileSync(join(mouse, "scope"), "Device\n");
+
+		// Laptop system battery
+		const bat0 = join(tempBaseDir, "BAT0");
+		mkdirSync(bat0);
+		writeFileSync(join(bat0, "type"), "Battery\n");
+		writeFileSync(join(bat0, "scope"), "System\n");
+
+		const discovered = discoverBatteryPath(tempBaseDir);
+		expect(discovered).toBe(bat0);
+	});
+
+	test("discovers non-BAT named system battery like macsmc-battery", () => {
+		tempBaseDir = mkdtempSync(join(tmpdir(), "batmon-ps-test-"));
+
+		const macBat = join(tempBaseDir, "macsmc-battery");
+		mkdirSync(macBat);
+		writeFileSync(join(macBat, "type"), "Battery\n");
+		writeFileSync(join(macBat, "scope"), "System\n");
+
+		const discovered = discoverBatteryPath(tempBaseDir);
+		expect(discovered).toBe(macBat);
+	});
+
+	test("picks BAT0 when multiple system batteries exist (sorted preference)", () => {
+		tempBaseDir = mkdtempSync(join(tmpdir(), "batmon-ps-test-"));
+
+		const bat0 = join(tempBaseDir, "BAT0");
+		mkdirSync(bat0);
+		writeFileSync(join(bat0, "type"), "Battery\n");
+
+		const bat1 = join(tempBaseDir, "BAT1");
+		mkdirSync(bat1);
+		writeFileSync(join(bat1, "type"), "Battery\n");
+
+		const discovered = discoverBatteryPath(tempBaseDir);
+		expect(discovered).toBe(bat0);
+	});
+
+	test("falls back to BAT0 when base directory does not exist", () => {
+		const nonExistent = join(tmpdir(), `non-existent-ps-${Date.now()}`);
+		const discovered = discoverBatteryPath(nonExistent);
+		expect(discovered).toBe(join(nonExistent, "BAT0"));
+	});
+
+	test("falls back to BAT0 when power supply directory contains no batteries", () => {
+		tempBaseDir = mkdtempSync(join(tmpdir(), "batmon-ps-test-"));
+
+		const adp = join(tempBaseDir, "ADP1");
+		mkdirSync(adp);
+		writeFileSync(join(adp, "type"), "Mains\n");
+
+		const usb = join(tempBaseDir, "ucsi-source-psy-USBC000:001");
+		mkdirSync(usb);
+		writeFileSync(join(usb, "type"), "USB\n");
+
+		const discovered = discoverBatteryPath(tempBaseDir);
+		expect(discovered).toBe(join(tempBaseDir, "BAT0"));
+	});
+
+	test("ignores unreadable or corrupt entries and continues scanning", () => {
+		tempBaseDir = mkdtempSync(join(tmpdir(), "batmon-ps-test-"));
+
+		// Directory without type file
+		const emptyDev = join(tempBaseDir, "empty_dev");
+		mkdirSync(emptyDev);
+
+		// Valid battery
+		const bat0 = join(tempBaseDir, "BAT0");
+		mkdirSync(bat0);
+		writeFileSync(join(bat0, "type"), "Battery\n");
+
+		const discovered = discoverBatteryPath(tempBaseDir);
+		expect(discovered).toBe(bat0);
 	});
 });

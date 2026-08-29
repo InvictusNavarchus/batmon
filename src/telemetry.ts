@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { SYSFS } from "./config";
 import type { SystemTemps, TelemetrySample, TopProcessGroup } from "./types";
 
@@ -464,13 +464,28 @@ function readPower(): number {
 }
 
 // ── UPower D-Bus for smoothed time estimates ─────────────────────────
+/**
+ * Formats the UPower D-Bus device object path from a sysfs battery directory.
+ *
+ * Object Path Normalization:
+ * Follows UPower daemon's naming convention (`up-device.c` / `up_device_compute_object_path`):
+ * - Prepends `battery_` prefix to the sysfs power_supply device basename (e.g. `BAT0` -> `battery_BAT0`).
+ * - Sanitizes invalid D-Bus path characters (`-`, `.`, `:`, `@`) into underscores `_`
+ *   (e.g. Linux on Apple Silicon `macsmc-battery` -> `/org/freedesktop/UPower/devices/battery_macsmc_battery`).
+ */
+export function formatUpowerDevicePath(sysfsBatteryDir: string): string {
+	const normalizedBatName = basename(sysfsBatteryDir).replace(/[-.:@]/g, "_");
+	return `/org/freedesktop/UPower/devices/battery_${normalizedBatName}`;
+}
+
 export function upowerProp(prop: string): number | null {
 	try {
+		const devicePath = formatUpowerDevicePath(SYSFS);
 		const { stdout, exitCode } = Bun.spawnSync([
 			"busctl",
 			"get-property",
 			"org.freedesktop.UPower",
-			"/org/freedesktop/UPower/devices/battery_BAT0",
+			devicePath,
 			"org.freedesktop.UPower.Device",
 			prop,
 		]);

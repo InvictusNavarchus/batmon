@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { AlertManager } from "../../src/alerts";
 import * as db from "../../src/db";
 import { runOneshot } from "../../src/index";
 import * as telemetry from "../../src/telemetry";
@@ -56,9 +57,12 @@ describe("runOneshot scenario", () => {
 		);
 		const storeSpy = spyOn(db, "store").mockResolvedValue(null);
 		const storeDebugSpy = spyOn(db, "storeDebug").mockResolvedValue();
+		const alertSpy = spyOn(AlertManager.prototype, "check").mockImplementation(
+			() => {},
+		);
 		const closeSpy = spyOn(db, "closeDbs").mockResolvedValue();
 
-		activeSpies.push(readSpy, storeSpy, storeDebugSpy, closeSpy);
+		activeSpies.push(readSpy, storeSpy, storeDebugSpy, alertSpy, closeSpy);
 
 		await runOneshot();
 
@@ -67,6 +71,9 @@ describe("runOneshot scenario", () => {
 
 		expect(storeDebugSpy).toHaveBeenCalledTimes(1);
 		expect(storeDebugSpy).toHaveBeenCalledWith(mockSample);
+
+		expect(alertSpy).toHaveBeenCalledTimes(1);
+		expect(alertSpy).toHaveBeenCalledWith(mockSample);
 
 		expect(closeSpy).toHaveBeenCalledTimes(1);
 	});
