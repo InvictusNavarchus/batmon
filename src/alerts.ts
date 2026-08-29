@@ -95,9 +95,12 @@ export function alert(
 		if (curr.battery_temp_c >= TEMP_CRIT) {
 			const justCrossed = prevBattTemp === null || prevBattTemp < TEMP_CRIT;
 			if (justCrossed) {
+				const advice = curr.is_charging
+					? "unplug charger immediately"
+					: "reduce system load immediately";
 				notifyFn({
 					title: "CRITICAL: Battery Overheating",
-					body: `Battery at ${curr.battery_temp_c.toFixed(1)} °C – unplug immediately`,
+					body: `Battery at ${curr.battery_temp_c.toFixed(1)} °C – ${advice}`,
 					urgency: "critical",
 					icon: "dialog-warning",
 				});
@@ -127,10 +130,15 @@ export function alert(
 		}
 	}
 
-	if (curr.is_charging && curr.voltage_v > curr.voltage_design_v * 1.15) {
+	if (
+		curr.is_charging &&
+		curr.voltage_design_v > 0 &&
+		curr.voltage_v > curr.voltage_design_v * 1.15
+	) {
 		const prevOvervoltage =
 			prevVoltage !== null &&
 			prevVoltDesign !== null &&
+			prevVoltDesign > 0 &&
 			prevVoltage > prevVoltDesign * 1.15;
 		const justCrossed = prevCharging !== true || !prevOvervoltage;
 		if (justCrossed) {

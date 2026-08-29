@@ -125,18 +125,32 @@ describe("alert logic and edge-crossing triggers", () => {
 		alert(currWarn2, currWarn1, notifyFn);
 		expect(notifications.length).toBe(0);
 
-		// Warning to Critical level (47 -> 51 °C) - should fire Critical
+		// Warning to Critical level (47 -> 51 °C) - should fire Critical with discharging advice
 		notifications.length = 0;
-		const currCrit1 = createMockSample({ battery_temp_c: 51 });
-		alert(currCrit1, currWarn2, notifyFn);
+		const currCritDischarging = createMockSample({
+			battery_temp_c: 51,
+			is_charging: false,
+		});
+		alert(currCritDischarging, currWarn2, notifyFn);
 		expect(notifications.length).toBe(1);
 		expect(notifications[0].title).toBe("CRITICAL: Battery Overheating");
 		expect(notifications[0].urgency).toBe("critical");
+		expect(notifications[0].body).toContain("reduce system load immediately");
+
+		// When charging, critical overheating advises unplugging
+		notifications.length = 0;
+		const currCritCharging = createMockSample({
+			battery_temp_c: 51,
+			is_charging: true,
+		});
+		alert(currCritCharging, currWarn2, notifyFn);
+		expect(notifications.length).toBe(1);
+		expect(notifications[0].body).toContain("unplug charger immediately");
 
 		// Persisting in Critical level (51 -> 52 °C) - should NOT re-fire
 		notifications.length = 0;
 		const currCrit2 = createMockSample({ battery_temp_c: 52 });
-		alert(currCrit2, currCrit1, notifyFn);
+		alert(currCrit2, currCritDischarging, notifyFn);
 		expect(notifications.length).toBe(0);
 	});
 
@@ -158,9 +172,18 @@ describe("alert logic and edge-crossing triggers", () => {
 		expect(notifications.length).toBe(0);
 	});
 
-	test("fires over-voltage warning only on initial crossing while charging", () => {
+	test("fires over-voltage warning only on initial crossing while charging and guards zero design voltage", () => {
 		const notifications: NotificationOptions[] = [];
 		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+
+		// Should not fire over-voltage when voltage_design_v is 0
+		const zeroDesignCurr = createMockSample({
+			is_charging: true,
+			voltage_v: 12.0,
+			voltage_design_v: 0,
+		});
+		alert(zeroDesignCurr, null, notifyFn);
+		expect(notifications.length).toBe(0);
 
 		const prevNormal = createMockSample({
 			is_charging: true,
