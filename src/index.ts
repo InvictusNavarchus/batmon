@@ -19,6 +19,7 @@ import {
 	closeDbs,
 	computeEstimatedCycles,
 	getLatestHistoricalSample,
+	getLatestSample,
 	pruneDebug,
 	store,
 	storeDebug,
@@ -27,6 +28,7 @@ import { readTelemetry } from "./telemetry";
 import type { TelemetrySample } from "./types";
 
 let prevHistorical: TelemetrySample | null = null;
+let prevSample: TelemetrySample | null = null;
 let tickCount = 0;
 let isRunning = true;
 let isTicking = false;
@@ -35,6 +37,10 @@ async function runTick(): Promise<void> {
 	try {
 		const sample = await readTelemetry();
 		if (!sample.is_present) return;
+
+		if (prevSample === null) {
+			prevSample = await getLatestSample();
+		}
 
 		if (prevHistorical === null) {
 			prevHistorical = await getLatestHistoricalSample();
@@ -45,18 +51,20 @@ async function runTick(): Promise<void> {
 			prevHistorical,
 		);
 
-		// 1. Flight recorder: store every 1s sample to debug.db
+		// 1. Flight recorder: store every 1s sample to debug.db and check alert
 		await storeDebug(sample);
 
-		// 2. Historical: store every 60s sample to battery.db and trigger alerts
+		// 2. Alert Check: fire alert on certain battery condition
+		alert(sample, prevSample);
+		prevSample = sample;
+
+		// 3. Historical: store every 60s sample to battery.db and trigger alerts
 		if (tickCount % HISTORICAL_SAMPLE_INTERVAL_TICKS === 0) {
-			const oldPrev = prevHistorical;
 			await store(sample);
-			alert(sample, oldPrev);
 			prevHistorical = sample;
 		}
 
-		// 3. Batch prune debug.db every 5 minutes (300 ticks)
+		// 4. Batch prune debug.db every 5 minutes (300 ticks)
 		if (tickCount > 0 && tickCount % PRUNE_INTERVAL_TICKS === 0) {
 			await pruneDebug(DEBUG_RETENTION_HOURS);
 		}
@@ -94,6 +102,7 @@ export async function shutdown(): Promise<void> {
 }
 
 export function resetDaemonStateForTesting(): void {
+	prevSample = null;
 	prevHistorical = null;
 	tickCount = 0;
 	isRunning = true;

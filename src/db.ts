@@ -86,6 +86,12 @@ async function initDebugDb(): Promise<SQL> {
 	return debugSql;
 }
 
+export async function getLatestSample(): Promise<BatterySample | null> {
+	const sql = await initDebugDb();
+	const rows = await sql`SELECT * FROM samples ORDER BY id DESC LIMIT 1;`;
+	return rows.length > 0 ? (rows[0] as unknown as BatterySample) : null;
+}
+
 export async function storeDebug(s: BatterySample): Promise<void> {
 	const sql = await initDebugDb();
 	await sql`INSERT INTO samples ${sql(s)}`;

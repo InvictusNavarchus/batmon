@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
 	closeDbs,
 	getLatestHistoricalSample,
+	getLatestSample,
 	pruneDebug,
 	setDbConnectionsForTesting,
 	store,
@@ -100,12 +101,32 @@ describe("database operations (store, getLatest, prune)", () => {
 		expect(latestAfterSecond?.estimated_cycle_count).toBe(0.1);
 	});
 
-	test("storeDebug inserts flight recorder samples into debug database", async () => {
-		const sample1 = createMockSample({ ts: "2026-08-28T00:00:01.000Z" });
-		const sample2 = createMockSample({ ts: "2026-08-28T00:00:02.000Z" });
+	test("storeDebug inserts flight recorder samples into debug database and getLatestSample retrieves the most recent record", async () => {
+		expect(await getLatestSample()).toBeNull();
+		const sample1 = createMockSample({
+			ts: "2026-08-28T00:00:01.000Z",
+			charge_pct: 70,
+			estimated_cycle_count: 2,
+		});
+		const sample2 = createMockSample({
+			ts: "2026-08-28T00:00:02.000Z",
+			charge_pct: 80,
+			estimated_cycle_count: 3,
+		});
 
+		// first sample
 		await storeDebug(sample1);
+		let latest = await getLatestSample();
+		expect(latest).not.toBeNull();
+		expect(latest?.charge_pct).toBe(70);
+		expect(latest?.estimated_cycle_count).toBe(2);
+
+		// second sample
 		await storeDebug(sample2);
+		latest = await getLatestSample();
+		expect(latest).not.toBeNull();
+		expect(latest?.charge_pct).toBe(80);
+		expect(latest?.estimated_cycle_count).toBe(3);
 
 		const rows =
 			(await debugSql`SELECT count(*) as count FROM samples;`) as Array<{
