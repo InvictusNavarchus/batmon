@@ -2,7 +2,12 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readSystemTemps, upowerProp } from "../../src/telemetry";
+import { SYSFS } from "../../src/config";
+import {
+	formatUpowerDevicePath,
+	readSystemTemps,
+	upowerProp,
+} from "../../src/telemetry";
 
 describe("telemetry parsers", () => {
 	let spawnSyncSpy: ReturnType<typeof spyOn> | null = null;
@@ -218,35 +223,40 @@ describe("telemetry parsers", () => {
 		});
 	});
 
+	describe("formatUpowerDevicePath", () => {
+		test("constructs normalized UPower D-Bus paths for standard and non-standard battery devices", () => {
+			// 1. Standard BAT0 / BAT1 devices
+			expect(formatUpowerDevicePath("/sys/class/power_supply/BAT0")).toBe(
+				"/org/freedesktop/UPower/devices/battery_BAT0",
+			);
+			expect(formatUpowerDevicePath("/sys/class/power_supply/BAT1")).toBe(
+				"/org/freedesktop/UPower/devices/battery_BAT1",
+			);
+
+			// 2. Non-standard battery with hyphens (e.g. Apple Silicon macsmc-battery)
+			expect(
+				formatUpowerDevicePath("/sys/class/power_supply/macsmc-battery"),
+			).toBe("/org/freedesktop/UPower/devices/battery_macsmc_battery");
+
+			// 3. Complex non-standard name with special characters (., :, @)
+			expect(
+				formatUpowerDevicePath("/sys/class/power_supply/bat.0@aux:1"),
+			).toBe("/org/freedesktop/UPower/devices/battery_bat_0_aux_1");
+		});
+	});
+
 	describe("upowerProp parser", () => {
-		test("parses busctl property output and targets normalized UPower object path for standard and non-standard devices", () => {
+		test("parses busctl property output and targets formatUpowerDevicePath(SYSFS)", () => {
 			spawnSyncSpy = spyOn(Bun, "spawnSync").mockReturnValue({
 				stdout: Buffer.from("x 7200\n"),
 				exitCode: 0,
 			} as unknown as ReturnType<typeof Bun.spawnSync>);
 
-			// 1. Standard BAT0 sysfs device
-			expect(upowerProp("TimeToEmpty", "/sys/class/power_supply/BAT0")).toBe(
-				7200,
-			);
-			expect(spawnSyncSpy).toHaveBeenCalled();
-			let callArgs = spawnSyncSpy.mock.calls[0][0] as string[];
+			expect(upowerProp("TimeToEmpty")).toBe(7200);
+			expect(spawnSyncSpy).toHaveBeenCalledTimes(1);
+			const callArgs = spawnSyncSpy.mock.calls[0][0] as string[];
 			expect(callArgs[0]).toBe("busctl");
-			expect(callArgs[3]).toBe("/org/freedesktop/UPower/devices/battery_BAT0");
-
-			// 2. Non-standard battery with hyphens (e.g. Apple Silicon macsmc-battery)
-			upowerProp("TimeToEmpty", "/sys/class/power_supply/macsmc-battery");
-			callArgs = spawnSyncSpy.mock.calls[1][0] as string[];
-			expect(callArgs[3]).toBe(
-				"/org/freedesktop/UPower/devices/battery_macsmc_battery",
-			);
-
-			// 3. Complex non-standard name with special characters (., :, @)
-			upowerProp("TimeToFull", "/sys/class/power_supply/bat.0@aux:1");
-			callArgs = spawnSyncSpy.mock.calls[2][0] as string[];
-			expect(callArgs[3]).toBe(
-				"/org/freedesktop/UPower/devices/battery_bat_0_aux_1",
-			);
+			expect(callArgs[3]).toBe(formatUpowerDevicePath(SYSFS));
 		});
 
 		test("returns null for non-positive or missing property output", () => {

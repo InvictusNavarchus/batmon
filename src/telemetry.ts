@@ -465,7 +465,7 @@ function readPower(): number {
 
 // ── UPower D-Bus for smoothed time estimates ─────────────────────────
 /**
- * Queries UPower D-Bus interface for smoothed battery estimates (`TimeToEmpty` / `TimeToFull`).
+ * Formats the UPower D-Bus device object path from a sysfs battery directory.
  *
  * Object Path Normalization:
  * Follows UPower daemon's naming convention (`up-device.c` / `up_device_compute_object_path`):
@@ -473,10 +473,14 @@ function readPower(): number {
  * - Sanitizes invalid D-Bus path characters (`-`, `.`, `:`, `@`) into underscores `_`
  *   (e.g. Linux on Apple Silicon `macsmc-battery` -> `/org/freedesktop/UPower/devices/battery_macsmc_battery`).
  */
-export function upowerProp(prop: string, sysfsPath = SYSFS): number | null {
+export function formatUpowerDevicePath(sysfsBatteryDir: string): string {
+	const normalizedBatName = basename(sysfsBatteryDir).replace(/[-.:@]/g, "_");
+	return `/org/freedesktop/UPower/devices/battery_${normalizedBatName}`;
+}
+
+export function upowerProp(prop: string): number | null {
 	try {
-		const normalizedBatName = basename(sysfsPath).replace(/[-.:@]/g, "_");
-		const devicePath = `/org/freedesktop/UPower/devices/battery_${normalizedBatName}`;
+		const devicePath = formatUpowerDevicePath(SYSFS);
 		const { stdout, exitCode } = Bun.spawnSync([
 			"busctl",
 			"get-property",
