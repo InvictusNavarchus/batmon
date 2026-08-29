@@ -5,12 +5,20 @@ export const POWER_SUPPLY_BASE = "/sys/class/power_supply";
 
 /**
  * Auto-discovers the primary system battery sysfs directory.
- * Scans `/sys/class/power_supply/` for power supply devices with type "Battery",
- * prioritizing internal system batteries over peripheral devices.
+ *
+ * Scans `/sys/class/power_supply/` according to Linux kernel sysfs ABI:
+ * - Filters for devices with `type === "Battery"` (excluding AC adapters/USB-C chargers).
+ * - Distinguishes internal system batteries from peripheral devices (`scope === "Device"`,
+ *   e.g. wireless mice/keyboards).
+ * - Falls back safely to `${baseDir}/BAT0` if no batteries are detected to prevent fatal
+ *   top-level import exceptions in battery-less environments (e.g. CI/CD test runners,
+ *   desktop development workstations). Actual hardware presence is deferred to runtime
+ *   via `readTelemetry().is_present`.
  */
 export function discoverBatteryPath(baseDir = POWER_SUPPLY_BASE): string {
 	try {
 		if (!existsSync(baseDir)) {
+			// Fallback for non-existent sysfs (e.g. CI runners or non-Linux test envs)
 			return join(baseDir, "BAT0");
 		}
 
@@ -43,11 +51,12 @@ export function discoverBatteryPath(baseDir = POWER_SUPPLY_BASE): string {
 					/^bat\d*$/i.test(entry) || entry.toLowerCase().startsWith("bat");
 				candidates.push({ path: entryPath, isSystem, isBatName });
 			} catch {
-				// Ignore unreadable entries
+				// Ignore unreadable or transient sysfs entries
 			}
 		}
 
 		if (candidates.length === 0) {
+			// No battery found: return default BAT0 path to maintain safe module evaluation
 			return join(baseDir, "BAT0");
 		}
 
@@ -61,6 +70,7 @@ export function discoverBatteryPath(baseDir = POWER_SUPPLY_BASE): string {
 
 		return bestCandidate.path;
 	} catch {
+		// Defensive fallback on filesystem read error to avoid crashing module import
 		return join(baseDir, "BAT0");
 	}
 }
