@@ -80,6 +80,88 @@ describe("AlertManager stateful engine with hysteresis & suppression", () => {
 		expect(notifications[0].title).toBe("Battery Charge Target Reached");
 	});
 
+	test("does not re-fire high charge alert when charging to 100% full or toggling charge status above 75%", () => {
+		const notifications: NotificationOptions[] = [];
+		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
+
+		// Crosses 80%
+		manager.check(
+			createMockSample({
+				charge_pct: 80,
+				is_charging: true,
+				status: "Charging",
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(1);
+
+		// Continues charging to 90%, 95%, 100%
+		notifications.length = 0;
+		manager.check(
+			createMockSample({
+				charge_pct: 90,
+				is_charging: true,
+				status: "Charging",
+			}),
+			notifyFn,
+		);
+		manager.check(
+			createMockSample({
+				charge_pct: 95,
+				is_charging: true,
+				status: "Charging",
+			}),
+			notifyFn,
+		);
+		manager.check(
+			createMockSample({
+				charge_pct: 100,
+				is_charging: true,
+				status: "Charging",
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Reaches 100% Full (kernel reports is_charging: false, status: "Full")
+		manager.check(
+			createMockSample({ charge_pct: 100, is_charging: false, status: "Full" }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Trickle top-off at 100% toggles status back to "Charging"
+		manager.check(
+			createMockSample({
+				charge_pct: 100,
+				is_charging: true,
+				status: "Charging",
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Momentarily unplugging at 85% and plugging back in at 84% does not re-fire
+		manager.check(
+			createMockSample({
+				charge_pct: 85,
+				is_charging: false,
+				status: "Discharging",
+			}),
+			notifyFn,
+		);
+		manager.check(
+			createMockSample({
+				charge_pct: 84,
+				is_charging: true,
+				status: "Charging",
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+	});
+
 	test("suppresses Low alert when jumping straight to Critical battery level", () => {
 		const notifications: NotificationOptions[] = [];
 		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);

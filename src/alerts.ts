@@ -81,6 +81,11 @@ export class AlertManager {
 		curr: BatterySample,
 		notifyFn: (opts: NotificationOptions) => void,
 	): void {
+		// Re-arm high charge alert strictly when battery level discharges below hysteresis band (< 75%)
+		if (curr.charge_pct < CHARGE_HIGH_WARN - CHARGE_HYSTERESIS_PCT) {
+			this.highChargeFired = false;
+		}
+
 		if (curr.is_charging) {
 			// Reset discharging low/critical alert latches when connected to charger
 			this.lowChargeFired = false;
@@ -96,14 +101,8 @@ export class AlertManager {
 						icon: "battery-full-charging",
 					});
 				}
-			} else if (curr.charge_pct < CHARGE_HIGH_WARN - CHARGE_HYSTERESIS_PCT) {
-				// Re-arm when level drops comfortably below threshold
-				this.highChargeFired = false;
 			}
 		} else {
-			// Re-arm high charge alert when unplugged
-			this.highChargeFired = false;
-
 			if (curr.charge_pct <= CHARGE_CRIT_WARN) {
 				if (!this.critChargeFired) {
 					this.critChargeFired = true;
