@@ -38,18 +38,18 @@
 
 | Category | Metric | Source | Description |
 | :--- | :--- | :--- | :--- |
-| **Electrical & Power** | `voltage_v` | sysfs (`BAT0`) | Instantaneous battery rail voltage (V) |
-| | `power_w` | sysfs (`BAT0`) | Discharge / charge rate (Watts) |
-| | `charge_pct` | sysfs (`BAT0`) | Current state of charge (%) |
-| | `energy_wh` | sysfs (`BAT0`) | Remaining energy (Wh) |
-| | `energy_full_wh` | sysfs (`BAT0`) | Current full charge capacity (Wh) |
-| | `energy_design_wh` | sysfs (`BAT0`) | Factory nominal design capacity (Wh) |
-| | `voltage_design_v` | sysfs (`BAT0`) | Factory design voltage (V) |
-| | `is_charging` | sysfs (`BAT0`) | Charge state boolean |
+| **Electrical & Power** | `voltage_v` | sysfs (battery) | Instantaneous battery rail voltage (V) |
+| | `power_w` | sysfs (battery) | Discharge / charge rate (Watts) |
+| | `charge_pct` | sysfs (battery) | Current state of charge (%) |
+| | `energy_wh` | sysfs (battery) | Remaining energy (Wh) |
+| | `energy_full_wh` | sysfs (battery) | Current full charge capacity (Wh) |
+| | `energy_design_wh` | sysfs (battery) | Factory nominal design capacity (Wh) |
+| | `voltage_design_v` | sysfs (battery) | Factory design voltage (V) |
+| | `is_charging` | sysfs (battery) | Charge state boolean |
 | **Thermal Environment** | `cpu_temp_c` | sysfs (`hwmon`) | CPU package / core temperature (e.g. AMD Tctl / Intel Package id) (°C) |
 | | `gpu_temp_c` | sysfs (`hwmon`) | GPU temperature (e.g. AMD edge / Intel package) (°C) |
 | | `nvme_temp_c` | sysfs (`hwmon`) | NVMe composite temperature (°C) |
-| | `battery_temp_c` | sysfs (`BAT0` / `hwmon`) | Battery sensor temperature (if present) |
+| | `battery_temp_c` | sysfs (battery / `hwmon`) | Battery sensor temperature (if present) |
 | **Clock & SoC Power** | `cpu_freq_mhz` | sysfs (`cpufreq`) / `/proc` | Instantaneous CPU clock frequency (MHz) |
 | | `gpu_power_w` | sysfs (`hwmon`) | AMD APU / GPU package power (PPT via amdgpu) (Watts) |
 | | `gpu_pct` | sysfs (DRM) | GPU compute / shader utilization (%) |
