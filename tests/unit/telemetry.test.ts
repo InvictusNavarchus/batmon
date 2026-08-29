@@ -219,13 +219,19 @@ describe("telemetry parsers", () => {
 	});
 
 	describe("upowerProp parser", () => {
-		test("parses busctl property output correctly", () => {
+		test("parses busctl property output and targets normalized UPower object path", () => {
 			spawnSyncSpy = spyOn(Bun, "spawnSync").mockReturnValue({
 				stdout: Buffer.from("x 7200\n"),
 				exitCode: 0,
 			} as unknown as ReturnType<typeof Bun.spawnSync>);
 
 			expect(upowerProp("TimeToEmpty")).toBe(7200);
+			expect(spawnSyncSpy).toHaveBeenCalled();
+			const callArgs = spawnSyncSpy.mock.calls[0][0] as string[];
+			expect(callArgs[0]).toBe("busctl");
+			expect(callArgs[3]).toMatch(
+				/^\/org\/freedesktop\/UPower\/devices\/battery_/,
+			);
 		});
 
 		test("returns null for non-positive or missing property output", () => {

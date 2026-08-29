@@ -466,10 +466,8 @@ function readPower(): number {
 // ── UPower D-Bus for smoothed time estimates ─────────────────────────
 export function upowerProp(prop: string): number | null {
 	try {
-		const batName = basename(SYSFS);
-		const devicePath = batName.startsWith("battery_")
-			? `/org/freedesktop/UPower/devices/${batName}`
-			: `/org/freedesktop/UPower/devices/battery_${batName}`;
+		const normalizedBatName = basename(SYSFS).replace(/[-.:@]/g, "_");
+		const devicePath = `/org/freedesktop/UPower/devices/battery_${normalizedBatName}`;
 		const { stdout, exitCode } = Bun.spawnSync([
 			"busctl",
 			"get-property",
