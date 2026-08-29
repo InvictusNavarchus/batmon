@@ -8,7 +8,7 @@
  * - Collects sysfs, procfs, UPower D-Bus, sensors -j, and per-PID delta metrics.
  */
 
-import { alert } from "./alerts";
+import { AlertManager } from "./alerts";
 import {
 	DEBUG_RETENTION_HOURS,
 	DEBUG_SAMPLE_INTERVAL_MS,
@@ -27,6 +27,7 @@ import {
 import { readTelemetry } from "./telemetry";
 import type { TelemetrySample } from "./types";
 
+let alertManager = new AlertManager();
 let prevHistorical: TelemetrySample | null = null;
 let prevSample: TelemetrySample | null = null;
 let tickCount = 0;
@@ -36,7 +37,11 @@ let isTicking = false;
 async function runTick(): Promise<void> {
 	try {
 		const sample = await readTelemetry();
-		if (!sample.is_present) return;
+		if (!sample.is_present) {
+			alertManager.reset();
+			prevSample = null;
+			return;
+		}
 
 		if (prevSample === null) {
 			prevSample = await getLatestSample();
@@ -51,14 +56,14 @@ async function runTick(): Promise<void> {
 			prevHistorical,
 		);
 
-		// 1. Flight recorder: store every 1s sample to debug.db and check alert
+		// 1. Flight recorder: store every 1s sample to debug.db
 		await storeDebug(sample);
 
-		// 2. Alert Check: fire alert on certain battery condition
-		alert(sample, prevSample);
+		// 2. Alert Check: stateful evaluation with hysteresis
+		alertManager.check(sample);
 		prevSample = sample;
 
-		// 3. Historical: store every 60s sample to battery.db and trigger alerts
+		// 3. Historical: store downsampled sample to battery.db every 60s
 		if (tickCount % HISTORICAL_SAMPLE_INTERVAL_TICKS === 0) {
 			await store(sample);
 			prevHistorical = sample;
@@ -88,9 +93,10 @@ async function executeTick(): Promise<void> {
 async function runOneshot(): Promise<void> {
 	const sample = await readTelemetry();
 	if (!sample.is_present) process.exit(0);
-	const prev = await store(sample);
+	await store(sample);
 	await storeDebug(sample);
-	alert(sample, prev);
+	const oneshotAlerts = new AlertManager();
+	oneshotAlerts.check(sample);
 	await closeDbs();
 }
 
@@ -102,6 +108,7 @@ export async function shutdown(): Promise<void> {
 }
 
 export function resetDaemonStateForTesting(): void {
+	alertManager = new AlertManager();
 	prevSample = null;
 	prevHistorical = null;
 	tickCount = 0;

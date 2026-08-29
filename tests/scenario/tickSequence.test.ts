@@ -101,7 +101,7 @@ describe("daemon tick cadence scenario", () => {
 		expect(Number(histRows[0].count)).toBe(2);
 	});
 
-	test("skips recording when battery is not present", async () => {
+	test("skips recording and resets alert state when battery is not present", async () => {
 		readSpy = spyOn(telemetry, "readTelemetry").mockImplementation(async () =>
 			createMockSample({ is_present: false }),
 		);
