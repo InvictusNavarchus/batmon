@@ -112,6 +112,8 @@ LIMIT 5;"
 * **Over-Voltage Charging:** Alert when charging voltage exceeds 15% above design voltage (re-arms at or below 10% above design voltage).
 * **Battery Health Degradation:** Warning when full capacity drops below $80\%$ of factory design (re-arms above $82\%$).
 
+> **Note:** The current alert rules focus on battery protection, because by the time the voltage or power really drops, the system will be shutting down anyway. The idea is to prevent these issues from happening in the first place, not to detect them after the fact. The flight recorder is there to capture the data in case something does happen.
+
 ---
 
 ## 🛠️ Requirements
