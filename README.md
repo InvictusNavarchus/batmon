@@ -1,8 +1,10 @@
 # batmon
 
-**Battery health monitor & high-frequency hardware flight recorder for Linux laptops.**
+**Battery health monitor & hardware flight recorder for Linux laptops.**
 
-`batmon` is a zero-dependency, low-overhead background monitor designed to diagnose and prevent battery thermal runaway, lithium-ion swelling, and power delivery (VRM / transient voltage sag) failures before they lead to kernel panics or permanent hardware damage.
+`batmon` is a zero-dependency, low-overhead background daemon that continuously records power, thermal, and system telemetry to local SQLite databases.
+
+It operates as a high-frequency flight recorder, capturing hardware metrics every second to preserve the exact state of the machine in the event of a crash or kernel panic, while simultaneously maintaining a permanent, downsampled historical log for tracking long-term component wear and battery degradation.
 
 ---
 
@@ -177,3 +179,10 @@ bun run typecheck
 bun run uninstall-service
 ```
 *(Databases in `~/.local/share/batmon/` are preserved upon uninstall).*
+
+## Limitations
+
+- Battery cell-level data (individual cell voltages, internal impedance, BMS balancing status) is not available through the Linux `power_supply` sysfs interface and cannot be collected.
+- VRM rail voltages and transient events below ~1 s are not exposed by the kernel on most laptop hardware. The 1-second flight recorder can catch sustained voltage sag but not microsecond-scale transients.
+- The `battery_temp_c` sensor is absent on many laptops. When unavailable, battery thermal protection relies on ambient correlation with CPU/GPU temperatures.
+- `mem_pct` and `load1` are recorded for forensic completeness but are rarely primary indicators of hardware failure.
