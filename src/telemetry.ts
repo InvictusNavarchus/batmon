@@ -81,7 +81,9 @@ const CPU_DRIVERS = new Set([
 ]);
 const GPU_DRIVERS = new Set(["amdgpu", "i915", "xe", "nouveau"]);
 
-export function readSystemTemps(hwmonBase = "/sys/class/hwmon"): SystemTemps {
+export function readSystemTemps(
+	hwmonBase = process.env.BATMON_HWMON_BASE ?? "/sys/class/hwmon",
+): SystemTemps {
 	const result: SystemTemps = {
 		cpu_c: null,
 		gpu_c: null,

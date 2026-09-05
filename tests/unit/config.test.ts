@@ -219,4 +219,20 @@ describe("discoverBatteryPath auto-discovery", () => {
 		const discovered = discoverBatteryPath(tempBaseDir);
 		expect(discovered).toBe(bat0);
 	});
+
+	test("allows direct override via BATMON_SYSFS_PATH environment variable", () => {
+		const originalEnv = process.env.BATMON_SYSFS_PATH;
+		try {
+			process.env.BATMON_SYSFS_PATH = "/custom/mock/battery/BAT99";
+			expect(discoverBatteryPath("/nonexistent/path")).toBe(
+				"/custom/mock/battery/BAT99",
+			);
+		} finally {
+			if (originalEnv !== undefined) {
+				process.env.BATMON_SYSFS_PATH = originalEnv;
+			} else {
+				delete process.env.BATMON_SYSFS_PATH;
+			}
+		}
+	});
 });

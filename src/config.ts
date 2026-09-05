@@ -1,7 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const POWER_SUPPLY_BASE = "/sys/class/power_supply";
+export const POWER_SUPPLY_BASE =
+	process.env.BATMON_POWER_SUPPLY_BASE ?? "/sys/class/power_supply";
 
 /**
  * Auto-discovers the primary system battery sysfs directory.
@@ -16,6 +17,10 @@ export const POWER_SUPPLY_BASE = "/sys/class/power_supply";
  *   via `readTelemetry().is_present`.
  */
 export function discoverBatteryPath(baseDir = POWER_SUPPLY_BASE): string {
+	if (process.env.BATMON_SYSFS_PATH) {
+		return process.env.BATMON_SYSFS_PATH;
+	}
+
 	try {
 		if (!existsSync(baseDir)) {
 			// Fallback for non-existent sysfs (e.g. CI runners or non-Linux test envs)
