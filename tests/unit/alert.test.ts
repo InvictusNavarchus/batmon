@@ -414,6 +414,48 @@ describe("AlertManager stateful engine with hysteresis & suppression", () => {
 		expect(notifications.length).toBe(0);
 	});
 
+	test("fires High CPU Temperature warning when not charging and enforces hysteresis", () => {
+		const notifications: NotificationOptions[] = [];
+		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
+
+		// CPU hot (88 °C >= 85 °C) while not charging (e.g. AC idle or discharging)
+		manager.check(
+			createMockSample({ is_charging: false, cpu_temp_c: 88 }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(1);
+		expect(notifications[0].title).toBe("Warning: High CPU Temperature");
+		expect(notifications[0].body).toBe("CPU at 88 °C");
+
+		// Hovering in deadband (82 °C >= 80 °C) does not re-fire
+		notifications.length = 0;
+		manager.check(
+			createMockSample({ is_charging: false, cpu_temp_c: 82 }),
+			notifyFn,
+		);
+		manager.check(
+			createMockSample({ is_charging: false, cpu_temp_c: 88 }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Cooldown below hysteresis band (< 80 °C) re-arms
+		manager.check(
+			createMockSample({ is_charging: false, cpu_temp_c: 79 }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Rising back above threshold fires again
+		manager.check(
+			createMockSample({ is_charging: false, cpu_temp_c: 86 }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(1);
+		expect(notifications[0].title).toBe("Warning: High CPU Temperature");
+	});
+
 	test("reset() clears all alert latches", () => {
 		const notifications: NotificationOptions[] = [];
 		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);

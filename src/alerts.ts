@@ -236,21 +236,25 @@ export class AlertManager {
 		curr: BatterySample,
 		notifyFn: (opts: NotificationOptions) => void,
 	): void {
-		if (curr.is_charging && curr.cpu_temp_c !== null) {
-			if (curr.cpu_temp_c >= CPU_HOT_CHARGING) {
-				if (!this.cpuHotFired) {
-					this.cpuHotFired = true;
-					notifyFn({
-						title: "Warning: Heat-Soak Risk",
-						body: `Charging while CPU at ${curr.cpu_temp_c.toFixed(0)} °C`,
-						urgency: "normal",
-						icon: "dialog-warning",
-					});
-				}
-			} else if (curr.cpu_temp_c < CPU_HOT_CHARGING - CPU_TEMP_HYSTERESIS_C) {
-				this.cpuHotFired = false;
+		if (curr.cpu_temp_c === null) return;
+
+		if (curr.cpu_temp_c >= CPU_HOT_CHARGING) {
+			if (!this.cpuHotFired) {
+				this.cpuHotFired = true;
+				const title = curr.is_charging
+					? "Warning: Heat-Soak Risk"
+					: "Warning: High CPU Temperature";
+				const body = curr.is_charging
+					? `Charging while CPU at ${curr.cpu_temp_c.toFixed(0)} °C`
+					: `CPU at ${curr.cpu_temp_c.toFixed(0)} °C`;
+				notifyFn({
+					title,
+					body,
+					urgency: "normal",
+					icon: "dialog-warning",
+				});
 			}
-		} else if (!curr.is_charging) {
+		} else if (curr.cpu_temp_c < CPU_HOT_CHARGING - CPU_TEMP_HYSTERESIS_C) {
 			this.cpuHotFired = false;
 		}
 	}
