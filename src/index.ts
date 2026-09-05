@@ -82,9 +82,19 @@ async function executeTick(): Promise<void> {
 	}
 }
 
-async function runOneshot(): Promise<void> {
+async function runOneshot(sampleIntervalMs = 500): Promise<void> {
+	// Sample once to prime CPU and process delta baselines
+	const warmup = await readTelemetry();
+	if (!warmup.is_present) process.exit(0);
+
+	if (sampleIntervalMs > 0) {
+		await Bun.sleep(sampleIntervalMs);
+	}
+
+	// Second sample captures valid non-null CPU% and process CPU delta rankings
 	const sample = await readTelemetry();
 	if (!sample.is_present) process.exit(0);
+
 	await store(sample);
 	await storeDebug(sample);
 	const oneshotAlerts = new AlertManager();

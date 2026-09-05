@@ -65,8 +65,9 @@ describe("runOneshot scenario", () => {
 
 		activeSpies.push(readSpy, storeSpy, storeDebugSpy, alertSpy, closeSpy);
 
-		await runOneshot();
+		await runOneshot(0);
 
+		expect(readSpy).toHaveBeenCalledTimes(2);
 		expect(storeSpy).toHaveBeenCalledTimes(1);
 		expect(storeSpy).toHaveBeenCalledWith(mockSample);
 
