@@ -65,10 +65,10 @@ async function runTick(): Promise<void> {
 		if (tickCount > 0 && tickCount % PRUNE_INTERVAL_TICKS === 0) {
 			await pruneDebug(DEBUG_RETENTION_HOURS);
 		}
-
-		tickCount++;
 	} catch (err) {
 		console.error("batmon tick error:", err);
+	} finally {
+		tickCount++;
 	}
 }
 
