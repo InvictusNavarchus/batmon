@@ -17,18 +17,28 @@ function exists(name: string): boolean {
 	return existsSync(sysfsPath(name));
 }
 
-function read(name: string): string {
-	return readFileSync(sysfsPath(name), "utf-8").trim();
+function readStr(name: string, fallback = ""): string {
+	try {
+		const p = sysfsPath(name);
+		if (!existsSync(p)) return fallback;
+		return readFileSync(p, "utf-8").trim();
+	} catch {
+		return fallback;
+	}
 }
 
-function readNum(name: string): number {
-	return Number(read(name));
+function readNum(name: string, fallback = 0): number {
+	const val = readStr(name);
+	if (!val) return fallback;
+	const num = Number(val);
+	return Number.isFinite(num) ? num : fallback;
 }
 
 function readOpt(name: string): number | null {
-	if (!exists(name)) return null;
-	const v = Number(read(name));
-	return Number.isFinite(v) ? v : null;
+	const val = readStr(name);
+	if (!val) return null;
+	const num = Number(val);
+	return Number.isFinite(num) ? num : null;
 }
 
 // ── temperature limits & sysfs conversion constants ──────────────────
@@ -450,7 +460,8 @@ function readEnergy(): { now: number; full: number; design: number } {
 		};
 	}
 	// charge-based: µAh × design voltage → Wh
-	const vDesign = readNum("voltage_min_design") / 1_000_000;
+	const vDesign =
+		(readOpt("voltage_min_design") ?? readOpt("voltage_now") ?? 0) / 1_000_000;
 	return {
 		now: (readNum("charge_now") / 1_000_000) * vDesign,
 		full: (readNum("charge_full") / 1_000_000) * vDesign,
@@ -528,12 +539,13 @@ export function resetUpowerCacheForTesting(): void {
 
 // ── read ─────────────────────────────────────────────────────────────
 export async function readTelemetry(): Promise<TelemetrySample> {
-	const status = read("status");
+	const status = readStr("status", "Unknown");
 	const powerState = derivePowerState(status);
 	const energy = readEnergy();
 	const powerW = readPower();
 	const voltageV = readNum("voltage_now") / 1_000_000;
-	const voltDesign = readNum("voltage_min_design") / 1_000_000;
+	const voltDesign =
+		(readOpt("voltage_min_design") ?? readOpt("voltage_now") ?? 0) / 1_000_000;
 	const isCharging = powerState === "charging";
 	const sysTemps = readSystemTemps();
 	const battTemp = readBatteryTemp();
@@ -582,7 +594,7 @@ export async function readTelemetry(): Promise<TelemetrySample> {
 				? Math.round((energy.full / energy.design) * 10000) / 100
 				: 100,
 		is_charging: isCharging,
-		is_present: read("present") === "1",
+		is_present: exists("present") ? readStr("present") === "1" : true,
 		time_to_empty_s: tte,
 		time_to_full_s: ttf,
 		cpu_temp_c: sysTemps.cpu_c,
