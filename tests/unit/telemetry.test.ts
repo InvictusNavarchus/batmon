@@ -6,6 +6,7 @@ import { SYSFS } from "../../src/config";
 import {
 	formatUpowerDevicePath,
 	readSystemTemps,
+	resetUpowerCacheForTesting,
 	upowerProp,
 } from "../../src/telemetry";
 
@@ -14,6 +15,7 @@ describe("telemetry parsers", () => {
 	let tempHwmonDir: string | null = null;
 
 	afterEach(() => {
+		resetUpowerCacheForTesting();
 		if (spawnSyncSpy) {
 			spawnSyncSpy.mockRestore();
 			spawnSyncSpy = null;

@@ -513,6 +513,19 @@ export function derivePowerState(status: string): PowerState {
 	}
 }
 
+const UPOWER_CACHE_TTL_MS = 60_000;
+let lastUpowerPollTs = 0;
+let cachedTte: number | null = null;
+let cachedTtf: number | null = null;
+let lastPowerState: PowerState | null = null;
+
+export function resetUpowerCacheForTesting(): void {
+	lastUpowerPollTs = 0;
+	cachedTte = null;
+	cachedTtf = null;
+	lastPowerState = null;
+}
+
 // ── read ─────────────────────────────────────────────────────────────
 export async function readTelemetry(): Promise<TelemetrySample> {
 	const status = read("status");
@@ -525,8 +538,19 @@ export async function readTelemetry(): Promise<TelemetrySample> {
 	const sysTemps = readSystemTemps();
 	const battTemp = readBatteryTemp();
 
-	let tte = upowerProp("TimeToEmpty");
-	let ttf = upowerProp("TimeToFull");
+	const now = Date.now();
+	if (
+		powerState !== lastPowerState ||
+		now - lastUpowerPollTs >= UPOWER_CACHE_TTL_MS
+	) {
+		lastUpowerPollTs = now;
+		lastPowerState = powerState;
+		cachedTte = powerState === "discharging" ? upowerProp("TimeToEmpty") : null;
+		cachedTtf = powerState === "charging" ? upowerProp("TimeToFull") : null;
+	}
+
+	let tte = cachedTte;
+	let ttf = cachedTtf;
 	if (tte === null && !isCharging && powerW > 0.5)
 		tte = Math.round((energy.now / powerW) * 3600);
 	if (ttf === null && isCharging && powerW > 0.5)
