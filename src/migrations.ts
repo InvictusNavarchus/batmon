@@ -139,6 +139,13 @@ export const HISTORICAL_MIGRATIONS: Migration[] = [
 			);
 		},
 	},
+	{
+		version: 6,
+		name: "add_power_state",
+		up: async (sql) => {
+			await addColumnIfNotExists(sql, "samples", "power_state", "TEXT");
+		},
+	},
 ];
 
 // ── Debug Flight Recorder Migrations (debug.db) ───────────────────────
@@ -215,6 +222,13 @@ export const DEBUG_MIGRATIONS: Migration[] = [
 		name: "rename_samples_debug_to_samples",
 		up: async (sql) => {
 			await renameTableIfExists(sql, "samples_debug", "samples");
+		},
+	},
+	{
+		version: 4,
+		name: "add_power_state",
+		up: async (sql) => {
+			await addColumnIfNotExists(sql, "samples", "power_state", "TEXT");
 		},
 	},
 ];

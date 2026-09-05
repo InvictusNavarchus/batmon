@@ -17,6 +17,7 @@ function createMockSample(
 		ts: "2026-08-28T00:00:00.000Z",
 		charge_pct: 75,
 		status: "Discharging",
+		power_state: "discharging",
 		energy_wh: 40,
 		energy_full_wh: 50,
 		energy_design_wh: 50,

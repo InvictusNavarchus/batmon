@@ -20,8 +20,15 @@ export function computeEstimatedCycles(
 	if (!prev || curr.energy_design_wh <= 0) return 0;
 
 	const prevCycles = prev.estimated_cycle_count ?? 0;
+	const powerState =
+		curr.power_state ??
+		(curr.is_charging
+			? "charging"
+			: curr.status === "Discharging"
+				? "discharging"
+				: "ac_idle");
 
-	if (!curr.is_charging && prev.energy_wh > curr.energy_wh) {
+	if (powerState === "discharging" && prev.energy_wh > curr.energy_wh) {
 		const deltaWh = prev.energy_wh - curr.energy_wh;
 		if (deltaWh > 0 && deltaWh <= curr.energy_design_wh) {
 			const deltaCycles = deltaWh / curr.energy_design_wh;

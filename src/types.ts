@@ -1,7 +1,10 @@
+export type PowerState = "charging" | "discharging" | "ac_idle";
+
 export interface TelemetrySample {
 	ts: string;
 	charge_pct: number;
 	status: string;
+	power_state: PowerState;
 	energy_wh: number;
 	energy_full_wh: number;
 	energy_design_wh: number;

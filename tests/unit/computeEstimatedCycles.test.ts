@@ -5,10 +5,22 @@ import type { BatterySample } from "../../src/types";
 function createMockSample(
 	overrides: Partial<BatterySample> = {},
 ): BatterySample {
+	const status =
+		overrides.status ?? (overrides.is_charging ? "Charging" : "Discharging");
+	const isCharging = overrides.is_charging ?? status === "Charging";
+	const powerState =
+		overrides.power_state ??
+		(isCharging
+			? "charging"
+			: status === "Discharging"
+				? "discharging"
+				: "ac_idle");
+
 	return {
 		ts: "2026-08-28T00:00:00.000Z",
 		charge_pct: 80,
-		status: "Discharging",
+		status,
+		power_state: powerState,
 		energy_wh: 40,
 		energy_full_wh: 50,
 		energy_design_wh: 50,
@@ -19,7 +31,7 @@ function createMockSample(
 		estimated_cycle_count: 5.0,
 		battery_temp_c: 30,
 		health_pct: 90,
-		is_charging: false,
+		is_charging: isCharging,
 		is_present: true,
 		time_to_empty_s: 3600,
 		time_to_full_s: null,
@@ -69,6 +81,25 @@ describe("computeEstimatedCycles", () => {
 		});
 
 		expect(computeEstimatedCycles(curr, prev)).toBe(3.5);
+	});
+
+	test("does not increase cycle count when ac_idle / float charge dipping while plugged in", () => {
+		const prev = createMockSample({
+			energy_wh: 50,
+			estimated_cycle_count: 1.0,
+			status: "Full",
+			power_state: "ac_idle",
+			is_charging: false,
+		});
+		const curr = createMockSample({
+			energy_wh: 49.9,
+			energy_design_wh: 50,
+			status: "Full",
+			power_state: "ac_idle",
+			is_charging: false,
+		});
+
+		expect(computeEstimatedCycles(curr, prev)).toBe(1.0);
 	});
 
 	test("increments cycle count proportionally when discharging within 1 cycle", () => {

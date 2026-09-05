@@ -19,10 +19,22 @@ import type { BatterySample } from "../../src/types";
 function createMockSample(
 	overrides: Partial<BatterySample> = {},
 ): BatterySample {
+	const status =
+		overrides.status ?? (overrides.is_charging ? "Charging" : "Discharging");
+	const isCharging = overrides.is_charging ?? status === "Charging";
+	const powerState =
+		overrides.power_state ??
+		(isCharging
+			? "charging"
+			: status === "Discharging"
+				? "discharging"
+				: "ac_idle");
+
 	return {
 		ts: new Date().toISOString(),
 		charge_pct: 85,
-		status: "Discharging",
+		status,
+		power_state: powerState,
 		energy_wh: 45,
 		energy_full_wh: 50,
 		energy_design_wh: 50,

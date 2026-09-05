@@ -21,7 +21,7 @@ describe("migrations", () => {
 		await migrate(sql, HISTORICAL_MIGRATIONS, "battery.db");
 
 		const versionRows = await sql`PRAGMA user_version;`;
-		expect(Number(versionRows[0].user_version)).toBe(5);
+		expect(Number(versionRows[0].user_version)).toBe(6);
 
 		const columns = (await sql`PRAGMA table_info(samples);`) as Array<{
 			name: string;
@@ -44,6 +44,7 @@ describe("migrations", () => {
 		expect(columnNames).toContain("gpu_pct");
 		expect(columnNames).toContain("gpu_power_w");
 		expect(columnNames).toContain("load1");
+		expect(columnNames).toContain("power_state");
 
 		const indexes = (await sql`PRAGMA index_list(samples);`) as Array<{
 			name: string;
@@ -55,7 +56,7 @@ describe("migrations", () => {
 		await migrate(sql, DEBUG_MIGRATIONS, "debug.db");
 
 		const versionRows = await sql`PRAGMA user_version;`;
-		expect(Number(versionRows[0].user_version)).toBe(3);
+		expect(Number(versionRows[0].user_version)).toBe(4);
 
 		const columns = (await sql`PRAGMA table_info(samples);`) as Array<{
 			name: string;
@@ -68,6 +69,7 @@ describe("migrations", () => {
 		expect(columnNames).toContain("charge_pct");
 		expect(columnNames).toContain("estimated_cycle_count");
 		expect(columnNames).toContain("load1");
+		expect(columnNames).toContain("power_state");
 
 		const indexes = (await sql`PRAGMA index_list(samples);`) as Array<{
 			name: string;
@@ -80,7 +82,7 @@ describe("migrations", () => {
 		await migrate(sql, HISTORICAL_MIGRATIONS, "battery.db");
 
 		const versionRows = await sql`PRAGMA user_version;`;
-		expect(Number(versionRows[0].user_version)).toBe(5);
+		expect(Number(versionRows[0].user_version)).toBe(6);
 	});
 
 	test("applies incremental migrations from intermediate version", async () => {
@@ -98,7 +100,7 @@ describe("migrations", () => {
 		await migrate(sql, HISTORICAL_MIGRATIONS, "battery.db");
 
 		const afterVersion = await sql`PRAGMA user_version;`;
-		expect(Number(afterVersion[0].user_version)).toBe(5);
+		expect(Number(afterVersion[0].user_version)).toBe(6);
 
 		const afterCols = (await sql`PRAGMA table_info(samples);`) as Array<{
 			name: string;

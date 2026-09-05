@@ -1,7 +1,12 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { SYSFS } from "./config";
-import type { SystemTemps, TelemetrySample, TopProcessGroup } from "./types";
+import type {
+	PowerState,
+	SystemTemps,
+	TelemetrySample,
+	TopProcessGroup,
+} from "./types";
 
 // ── sysfs helpers ────────────────────────────────────────────────────
 function sysfsPath(name: string): string {
@@ -497,14 +502,26 @@ export function upowerProp(prop: string): number | null {
 	}
 }
 
+export function derivePowerState(status: string): PowerState {
+	switch (status) {
+		case "Charging":
+			return "charging";
+		case "Discharging":
+			return "discharging";
+		default:
+			return "ac_idle";
+	}
+}
+
 // ── read ─────────────────────────────────────────────────────────────
 export async function readTelemetry(): Promise<TelemetrySample> {
 	const status = read("status");
+	const powerState = derivePowerState(status);
 	const energy = readEnergy();
 	const powerW = readPower();
 	const voltageV = readNum("voltage_now") / 1_000_000;
 	const voltDesign = readNum("voltage_min_design") / 1_000_000;
-	const isCharging = status === "Charging";
+	const isCharging = powerState === "charging";
 	const sysTemps = readSystemTemps();
 	const battTemp = readBatteryTemp();
 
@@ -526,6 +543,7 @@ export async function readTelemetry(): Promise<TelemetrySample> {
 		ts: new Date().toISOString(),
 		charge_pct: readNum("capacity"),
 		status,
+		power_state: powerState,
 		energy_wh: Math.round(energy.now * 1000) / 1000,
 		energy_full_wh: Math.round(energy.full * 1000) / 1000,
 		energy_design_wh: Math.round(energy.design * 1000) / 1000,
