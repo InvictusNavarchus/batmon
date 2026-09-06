@@ -124,7 +124,11 @@ struct Candidate {
 /// that does not exist, and presence is settled at runtime instead.
 #[must_use]
 pub fn discover_battery_path(base_dir: &Path, override_path: Option<&Path>) -> PathBuf {
-    if let Some(path) = override_path {
+    // An override exported as an empty string is a shell accident, not a
+    // request to read the root of the filesystem. Treating it as unset matches
+    // how the other environment overrides are read, and avoids a daemon that
+    // starts cleanly, finds no battery, and records nothing.
+    if let Some(path) = override_path.filter(|path| !path.as_os_str().is_empty()) {
         return path.to_path_buf();
     }
 
@@ -290,6 +294,21 @@ mod tests {
         let forced = Path::new("/custom/mock/battery/BAT99");
 
         assert_eq!(discover_battery_path(tmp.path(), Some(forced)), forced);
+    }
+
+    #[test]
+    fn an_empty_override_is_treated_as_unset() {
+        // BATMON_SYSFS_PATH="" would otherwise yield an empty battery path, so
+        // is_present would report false and the daemon would record nothing
+        // while exiting successfully.
+        let tmp = TempDir::new().unwrap();
+        let bat0 = device(tmp.path(), "BAT0", "Battery", None);
+
+        assert_eq!(
+            discover_battery_path(tmp.path(), Some(Path::new(""))),
+            bat0,
+            "an empty override should fall through to discovery"
+        );
     }
 
     #[test]
