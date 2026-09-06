@@ -9,6 +9,7 @@ import {
 	CHARGE_HIGH_WARN,
 	CHARGE_HYSTERESIS_PCT,
 	CHARGE_LOW_WARN,
+	CPU_HEAT_DEBOUNCE_SAMPLES,
 	CPU_HOT_CHARGING,
 	CPU_TEMP_HYSTERESIS_C,
 	DB_DIR,
@@ -66,6 +67,10 @@ describe("config thresholds and invariants", () => {
 
 		expect(CPU_TEMP_HYSTERESIS_C).toBe(5);
 		expect(CPU_TEMP_HYSTERESIS_C).toBeGreaterThan(0);
+
+		expect(CPU_HEAT_DEBOUNCE_SAMPLES).toBe(3);
+		expect(CPU_HEAT_DEBOUNCE_SAMPLES).toBeGreaterThanOrEqual(1);
+		expect(Number.isInteger(CPU_HEAT_DEBOUNCE_SAMPLES)).toBe(true);
 
 		expect(CAP_HYSTERESIS_PCT).toBe(2);
 		expect(CAP_HYSTERESIS_PCT).toBeGreaterThan(0);

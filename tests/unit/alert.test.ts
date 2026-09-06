@@ -400,12 +400,24 @@ describe("AlertManager stateful engine with hysteresis & suppression", () => {
 		expect(notifications.length).toBe(0);
 	});
 
-	test("fires CPU heat-soak risk warning while charging and enforces hysteresis", () => {
+	test("fires CPU heat-soak risk warning while charging after sustained debounce samples and enforces hysteresis", () => {
 		const notifications: NotificationOptions[] = [];
 		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
 		const manager = new AlertManager();
 
-		// CPU hot (88 °C >= 85 °C) while charging
+		// CPU hot (88 °C >= 85 °C) while charging requires 3 sustained samples
+		manager.check(
+			createMockSample({ is_charging: true, cpu_temp_c: 88 }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		manager.check(
+			createMockSample({ is_charging: true, cpu_temp_c: 88 }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
 		manager.check(
 			createMockSample({ is_charging: true, cpu_temp_c: 88 }),
 			notifyFn,
@@ -426,12 +438,50 @@ describe("AlertManager stateful engine with hysteresis & suppression", () => {
 		expect(notifications.length).toBe(0);
 	});
 
-	test("fires High CPU Temperature warning when not charging and enforces hysteresis", () => {
+	test("ignores transient CPU temperature spikes shorter than debounce threshold", () => {
 		const notifications: NotificationOptions[] = [];
 		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
 		const manager = new AlertManager();
 
-		// CPU hot (88 °C >= 85 °C) while not charging (e.g. AC idle or discharging)
+		// 2 spikes at 89 °C followed by a drop to 84 °C
+		manager.check(
+			createMockSample({ is_charging: false, cpu_temp_c: 89 }),
+			notifyFn,
+		);
+		manager.check(
+			createMockSample({ is_charging: false, cpu_temp_c: 89 }),
+			notifyFn,
+		);
+		manager.check(
+			createMockSample({ is_charging: false, cpu_temp_c: 84 }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Single spike again -> counter was reset, so still no alert
+		manager.check(
+			createMockSample({ is_charging: false, cpu_temp_c: 89 }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+	});
+
+	test("fires High CPU Temperature warning when not charging after sustained debounce samples and enforces hysteresis", () => {
+		const notifications: NotificationOptions[] = [];
+		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
+
+		// CPU hot (88 °C >= 85 °C) while not charging requires 3 sustained samples
+		manager.check(
+			createMockSample({ is_charging: false, cpu_temp_c: 88 }),
+			notifyFn,
+		);
+		manager.check(
+			createMockSample({ is_charging: false, cpu_temp_c: 88 }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
 		manager.check(
 			createMockSample({ is_charging: false, cpu_temp_c: 88 }),
 			notifyFn,
@@ -459,7 +509,17 @@ describe("AlertManager stateful engine with hysteresis & suppression", () => {
 		);
 		expect(notifications.length).toBe(0);
 
-		// Rising back above threshold fires again
+		// Rising back above threshold requires 3 sustained samples again
+		manager.check(
+			createMockSample({ is_charging: false, cpu_temp_c: 86 }),
+			notifyFn,
+		);
+		manager.check(
+			createMockSample({ is_charging: false, cpu_temp_c: 86 }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
 		manager.check(
 			createMockSample({ is_charging: false, cpu_temp_c: 86 }),
 			notifyFn,
@@ -468,7 +528,7 @@ describe("AlertManager stateful engine with hysteresis & suppression", () => {
 		expect(notifications[0].title).toBe("Warning: High CPU Temperature");
 	});
 
-	test("reset() clears all alert latches", () => {
+	test("reset() clears all alert latches and debounce counters", () => {
 		const notifications: NotificationOptions[] = [];
 		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
 		const manager = new AlertManager();
@@ -479,14 +539,32 @@ describe("AlertManager stateful engine with hysteresis & suppression", () => {
 		);
 		expect(notifications.length).toBe(1);
 
+		// Partial CPU debounce streak
+		manager.check(
+			createMockSample({ cpu_temp_c: 88, is_charging: false }),
+			notifyFn,
+		);
+		manager.check(
+			createMockSample({ cpu_temp_c: 88, is_charging: false }),
+			notifyFn,
+		);
+
 		notifications.length = 0;
 		manager.reset();
 
-		// After reset, checking same sample fires alert again
+		// After reset, checking same sample fires charge alert again
 		manager.check(
 			createMockSample({ charge_pct: 80, is_charging: true }),
 			notifyFn,
 		);
 		expect(notifications.length).toBe(1);
+
+		// CPU streak was reset, so 1 more sample does not fire CPU alert
+		notifications.length = 0;
+		manager.check(
+			createMockSample({ cpu_temp_c: 88, is_charging: false }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
 	});
 });

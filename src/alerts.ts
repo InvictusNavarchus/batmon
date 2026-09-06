@@ -5,6 +5,7 @@ import {
 	CHARGE_HIGH_WARN,
 	CHARGE_HYSTERESIS_PCT,
 	CHARGE_LOW_WARN,
+	CPU_HEAT_DEBOUNCE_SAMPLES,
 	CPU_HOT_CHARGING,
 	CPU_TEMP_HYSTERESIS_C,
 	TEMP_CRIT,
@@ -54,6 +55,7 @@ export class AlertManager {
 	private healthWarnFired = false;
 	private overvoltageFired = false;
 	private cpuHotFired = false;
+	private cpuHotSamples = 0;
 
 	public reset(): void {
 		this.highChargeFired = false;
@@ -64,6 +66,7 @@ export class AlertManager {
 		this.healthWarnFired = false;
 		this.overvoltageFired = false;
 		this.cpuHotFired = false;
+		this.cpuHotSamples = 0;
 	}
 
 	public check(
@@ -236,10 +239,17 @@ export class AlertManager {
 		curr: BatterySample,
 		notifyFn: (opts: NotificationOptions) => void,
 	): void {
-		if (curr.cpu_temp_c === null) return;
+		if (curr.cpu_temp_c === null) {
+			this.cpuHotSamples = 0;
+			return;
+		}
 
 		if (curr.cpu_temp_c >= CPU_HOT_CHARGING) {
-			if (!this.cpuHotFired) {
+			this.cpuHotSamples++;
+			if (
+				!this.cpuHotFired &&
+				this.cpuHotSamples >= CPU_HEAT_DEBOUNCE_SAMPLES
+			) {
 				this.cpuHotFired = true;
 				const title = curr.is_charging
 					? "Warning: Heat-Soak Risk"
@@ -255,7 +265,14 @@ export class AlertManager {
 				});
 			}
 		} else if (curr.cpu_temp_c < CPU_HOT_CHARGING - CPU_TEMP_HYSTERESIS_C) {
+			this.cpuHotSamples = 0;
 			this.cpuHotFired = false;
+		} else {
+			// In deadband between (CPU_HOT_CHARGING - CPU_TEMP_HYSTERESIS_C) and CPU_HOT_CHARGING:
+			// If not yet tripped, reset consecutive streak so non-sustained spikes do not accumulate.
+			if (!this.cpuHotFired) {
+				this.cpuHotSamples = 0;
+			}
 		}
 	}
 }
