@@ -9,9 +9,11 @@
 pub mod battery;
 pub mod proc;
 pub mod processes;
+pub mod system;
 pub mod thermal;
 
 pub use battery::{BatteryReader, Energy};
 pub use proc::{CpuTimes, ProcReader};
 pub use processes::ProcessReader;
+pub use system::{read_cpu_freq_mhz, read_gpu_pct};
 pub use thermal::{ThermalReader, Thermals};
