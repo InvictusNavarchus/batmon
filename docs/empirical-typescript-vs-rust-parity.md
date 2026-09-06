@@ -22,7 +22,8 @@ compared, and materially cheaper to run:**
   cycles, the two implementations agree to `0.000000000000`.
 * **Alerts are identical.** Both fired the same three alerts, in the same order, with
   byte-identical text, on the same real battery.
-* **5.9× less resident memory.** 7.6 MB against 45.3 MB, with 6 threads against 17.
+* **4.3× less resident memory.** Median 6.3 MB against 26.7 MB, sampled every 30 s
+  across the six-hour run, with 6 threads against 15.
 * **~40% cheaper per sample.** 12.4 ms against 20.3 ms median.
 * **Two subprocess spawns per minute eliminated**, roughly 1,440 process creations a day.
 
@@ -140,10 +141,17 @@ both implementations show gaps at the same moments.
 
 ### 3.6 Resource cost
 
+All memory and thread figures below come from the six-hour run, sampled every
+30 seconds by a third unit — 897 observations per implementation. Medians are
+quoted rather than instantaneous readings, and neither implementation's
+first-quarter and last-quarter means differ meaningfully, so neither grows over
+the course of a day.
+
 | Metric | TypeScript (Bun) | Rust | Change |
 | :--- | :--- | :--- | :--- |
-| Resident memory | 23.9–50.9 MB | 5.7–8.9 MB | **4.2× less** (no growth over 6 h in either) |
-| Threads | 17 | 6 | 2.8× fewer |
+| Resident memory (median) | 26.7 MB | 6.3 MB | **4.3× less** |
+| Resident memory (peak) | 50.9 MB | 8.9 MB | 5.7× less |
+| Threads (median) | 15 | 6 | 2.5× fewer |
 | Median sample cost | 20.3 ms | 12.4 ms | **1.6× faster** |
 | Subprocess spawns | 2/min (`busctl`) | 0 | eliminated |
 | Binary / runtime | Bun runtime + sources | 5.4 MB static binary | — |
