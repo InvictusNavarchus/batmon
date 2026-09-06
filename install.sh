@@ -24,6 +24,13 @@ fi
 
 # ── install source ────────────────────────────────────────────────────
 mkdir -p "$INSTALL_DIR"
+
+# Disable btrfs Copy-on-Write (CoW) to prevent SQLite write amplification and fragmentation
+if command -v chattr &>/dev/null && [ "$(stat -f -c %T "$INSTALL_DIR" 2>/dev/null || true)" = "btrfs" ]; then
+  chattr +C "$INSTALL_DIR" 2>/dev/null || true
+  echo "    btrfs detected: disabled CoW (chattr +C) on $INSTALL_DIR"
+fi
+
 rm -rf "$INSTALL_DIR/src"
 cp -r "$SCRIPT_DIR/src" "$INSTALL_DIR/"
 echo "    source → $INSTALL_DIR/src/"
