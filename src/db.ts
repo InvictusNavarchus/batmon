@@ -106,9 +106,8 @@ export async function storeDebug(s: BatterySample): Promise<void> {
 
 export async function pruneDebug(hours = DEBUG_RETENTION_HOURS): Promise<void> {
 	const sql = await initDebugDb();
-	await sql.unsafe(
-		`DELETE FROM samples WHERE julianday(ts) < julianday('now', '-${hours} hours');`,
-	);
+	const cutoff = new Date(Date.now() - hours * 3600_000).toISOString();
+	await sql`DELETE FROM samples WHERE ts < ${cutoff};`;
 }
 
 // ── cleanup & test helpers ───────────────────────────────────────────
