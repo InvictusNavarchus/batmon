@@ -11,13 +11,25 @@
 //! figure is the one a person can act on.
 
 use std::path::Path;
+use std::time::Duration;
 
-use zbus::blocking::{Connection, Proxy};
+use zbus::blocking::Proxy;
+use zbus::blocking::connection::Builder;
 
 use crate::telemetry::TimeEstimates;
 
 const SERVICE: &str = "org.freedesktop.UPower";
 const INTERFACE: &str = "org.freedesktop.UPower.Device";
+
+/// Ceiling on any single D-Bus call to UPower.
+///
+/// zbus applies no method timeout by default, and these calls are made on the
+/// daemon's only thread. An unresponsive UPower — restarting, wedged, or waiting
+/// on a stuck kernel driver — would otherwise stall the sample loop for as long
+/// as it stayed unresponsive, which is precisely the failure a flight recorder
+/// must not have. Two seconds is far above the microseconds a cached property
+/// read takes, and far below anything a person would call an outage.
+const CALL_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// A connection to UPower's view of one battery.
 pub struct UPower {
@@ -44,7 +56,12 @@ impl UPower {
     pub fn connect(battery_dir: &Path) -> Self {
         let path = device_path(battery_dir);
 
-        let device = match Connection::system() {
+        // Built rather than opened with Connection::system() so a method
+        // timeout can be attached; see CALL_TIMEOUT.
+        let connection =
+            Builder::system().and_then(|builder| builder.method_timeout(CALL_TIMEOUT).build());
+
+        let device = match connection {
             Ok(connection) => match Proxy::new(&connection, SERVICE, path.clone(), INTERFACE) {
                 Ok(proxy) => {
                     tracing::debug!(device = %path, "bound to UPower device");
