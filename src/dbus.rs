@@ -6,6 +6,8 @@
 //! notifications are rare and are moved here for a capability rather than for
 //! speed.
 
+pub mod notifications;
 pub mod upower;
 
+pub use notifications::DesktopNotifier;
 pub use upower::UPower;
