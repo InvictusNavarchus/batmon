@@ -169,17 +169,20 @@ fn scan(hwmon_base: &Path, battery_dir: &Path) -> Sensors {
                 .then(|| locate_gpu_power(&device))
                 .flatten();
 
-            // Take the first GPU seen, but if a later one reports power and no
-            // power has been found yet, adopt both of its readings together.
-            // Pairing matters: a discrete GPU's 90 W beside an integrated GPU's
-            // 42 °C would describe a machine that does not exist.
-            if sensors.gpu_temp.is_none() || (sensors.gpu_power.is_none() && power.is_some()) {
-                if temp.is_some() {
-                    sensors.gpu_temp = temp;
-                }
-                if power.is_some() {
-                    sensors.gpu_power = power;
-                }
+            // Both readings are always adopted together, so they can only ever
+            // describe one device. Reporting a discrete GPU's 90 W beside an
+            // integrated GPU's 42 °C would describe a machine that does not
+            // exist, and a GPU in runtime suspend is exactly how that happens:
+            // temp1_input errors while power1_input still reads.
+            let have_both = sensors.gpu_temp.is_some() && sensors.gpu_power.is_some();
+            let candidate_is_complete = temp.is_some() && power.is_some();
+            let nothing_adopted_yet = sensors.gpu_temp.is_none() && sensors.gpu_power.is_none();
+
+            // Take whatever the first GPU offers, then upgrade only to a later
+            // device that can supply the full pair itself.
+            if nothing_adopted_yet || (!have_both && candidate_is_complete) {
+                sensors.gpu_temp = temp;
+                sensors.gpu_power = power;
             }
         }
 
@@ -500,6 +503,59 @@ mod tests {
             tmp.path(),
             "hwmon0",
             &[("name", "i915"), ("temp1_input", "45000")],
+        );
+        device(
+            tmp.path(),
+            "hwmon1",
+            &[
+                ("name", "amdgpu"),
+                ("temp1_input", "58500"),
+                ("power1_input", "25000000"),
+            ],
+        );
+
+        let thermals = reader(tmp.path()).read();
+
+        assert_eq!(thermals.gpu_c, Some(58.5));
+        assert_eq!(thermals.gpu_power_w, Some(25.0));
+    }
+
+    #[test]
+    fn a_suspended_gpu_cannot_donate_power_to_another_gpus_temperature() {
+        // The concrete trigger: a second GPU in runtime suspend errors on
+        // temp1_input while power1_input still reads. Adopting its power
+        // alongside the first device's temperature would report a machine that
+        // does not exist.
+        let tmp = TempDir::new().unwrap();
+        device(
+            tmp.path(),
+            "hwmon0",
+            &[("name", "amdgpu"), ("temp1_input", "42000")],
+        );
+        device(
+            tmp.path(),
+            "hwmon1",
+            &[("name", "amdgpu"), ("power1_input", "90000000")],
+        );
+
+        let thermals = reader(tmp.path()).read();
+
+        assert_eq!(thermals.gpu_c, Some(42.0));
+        assert_eq!(
+            thermals.gpu_power_w, None,
+            "power was adopted from a device whose temperature was not"
+        );
+    }
+
+    #[test]
+    fn a_later_complete_gpu_upgrades_a_partial_first_one() {
+        // The first device reports only power; a later one reports both, so the
+        // pair should move wholesale rather than staying split.
+        let tmp = TempDir::new().unwrap();
+        device(
+            tmp.path(),
+            "hwmon0",
+            &[("name", "amdgpu"), ("power1_input", "8000000")],
         );
         device(
             tmp.path(),
