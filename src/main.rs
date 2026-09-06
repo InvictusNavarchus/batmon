@@ -172,11 +172,16 @@ fn oneshot(paths: &Paths) -> Result<()> {
 
     let (debug, historical) = stores(paths)?;
 
-    // History first, then the flight recorder, so both rows carry the same
-    // integrated cycle count. Reversing this would give the two databases
-    // different values for the same instant.
-    historical.insert_integrating_cycles(&mut sample)?;
-    debug.insert(&sample)?;
+    // Each database integrates against its own last row, exactly as the daemon
+    // does. Sharing one integration between them — which is what the TypeScript
+    // did, by mutating a single object — makes the flight recorder adopt the
+    // history's coarser baseline. Where the daemon has been running since the
+    // last downsampled write, that baseline is behind, and the debug count goes
+    // *backwards*: a cycle total that decreases, which the integrator's own
+    // property tests forbid.
+    let mut downsampled = sample.clone();
+    historical.insert_integrating_cycles(&mut downsampled)?;
+    debug.insert_integrating_cycles(&mut sample)?;
 
     let mut engine = AlertEngine::new();
     let mut notifier = DesktopNotifier::connect();

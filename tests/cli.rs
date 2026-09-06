@@ -196,6 +196,65 @@ fn oneshot_is_idempotent_and_appends() {
 }
 
 #[test]
+fn oneshot_never_moves_the_flight_recorder_cycle_count_backwards() {
+    use batmon::db::{Database, Store};
+    use batmon::types::{PowerState, Sample};
+
+    let (home, battery) = environment();
+    let databases = database_dir(home.path());
+    std::fs::create_dir_all(&databases).unwrap();
+
+    // The state a running daemon leaves: the flight recorder has integrated
+    // past the last downsampled history row.
+    let seed = |count: f64| Sample {
+        ts: "2026-09-06T00:00:00.000Z".to_owned(),
+        charge_pct: 72.0,
+        status: "Discharging".to_owned(),
+        power_state: PowerState::Discharging,
+        energy_wh: 42.0,
+        energy_full_wh: 58.0,
+        energy_design_wh: 60.0,
+        estimated_cycle_count: count,
+        is_present: true,
+        ..Sample::default()
+    };
+    Store::open(&databases.join("debug.db"), Database::Debug)
+        .unwrap()
+        .insert(&seed(1.500))
+        .unwrap();
+    Store::open(&databases.join("battery.db"), Database::Historical)
+        .unwrap()
+        .insert(&seed(1.400))
+        .unwrap();
+
+    assert!(
+        batmon(home.path(), battery.path())
+            .arg("--oneshot")
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    let debug_count: f64 = query(
+        &databases.join("debug.db"),
+        "SELECT estimated_cycle_count FROM samples ORDER BY id DESC LIMIT 1",
+    );
+    assert!(
+        debug_count >= 1.5,
+        "flight recorder count regressed to {debug_count}; it adopted the history baseline"
+    );
+
+    let history_count: f64 = query(
+        &databases.join("battery.db"),
+        "SELECT estimated_cycle_count FROM samples ORDER BY id DESC LIMIT 1",
+    );
+    assert!(
+        history_count >= 1.4,
+        "history count regressed to {history_count}"
+    );
+}
+
+#[test]
 fn an_absent_battery_exits_cleanly_without_creating_databases() {
     let home = TempDir::new().unwrap();
     let absent = Path::new("/nonexistent/batmon/BAT0");
