@@ -12,6 +12,7 @@ pub mod alerts;
 pub mod config;
 pub mod cycles;
 pub mod db;
+pub mod dbus;
 pub mod migrations;
 pub mod parity;
 pub mod paths;
