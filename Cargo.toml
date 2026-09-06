@@ -12,6 +12,7 @@ publish = false
 jiff = { version = "0.2.35", default-features = false, features = ["std"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde_json = "1.0.151"
+signal-hook = "0.4.4"
 thiserror = "2.0.20"
 tracing = "0.1.44"
 zbus = { version = "5.19.0", features = ["blocking-api"] }

@@ -11,6 +11,7 @@
 pub mod alerts;
 pub mod config;
 pub mod cycles;
+pub mod daemon;
 pub mod db;
 pub mod dbus;
 pub mod migrations;
