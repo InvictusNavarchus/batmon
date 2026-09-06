@@ -129,7 +129,7 @@ impl ThermalReader {
 /// stored values identical. Normalising it is a behaviour change for its own
 /// commit.
 fn attribute_temp(battery_dir: &Path) -> Option<Celsius> {
-    read_number(&battery_dir.join("temp")).and_then(Celsius::from_tenths)
+    read_attribute_number(&battery_dir.join("temp")).and_then(Celsius::from_tenths)
 }
 
 /// Locate every sensor of interest under `hwmon_base`.
@@ -256,6 +256,22 @@ fn scan_battery_hwmon(battery_dir: &Path) -> Option<PathBuf> {
 /// The path, if it currently holds a plausible temperature.
 fn usable_temp(path: &Path) -> Option<PathBuf> {
     read_millidegrees(path).map(|_| path.to_path_buf())
+}
+
+/// A `power_supply` attribute, treating an empty file as absent.
+///
+/// Deliberately different from [`read_number`], which the hwmon paths use. There
+/// an empty file reads as 0 °C, because the TypeScript passed trimmed contents
+/// straight to `Number()` and `Number("")` is zero — verified against it, and
+/// pinned by a test. The battery reader discards empty attributes before
+/// parsing, and this has to match it: otherwise an empty `temp` file reports a
+/// plausible 0 °C and masks the hwmon fallback that would have answered.
+fn read_attribute_number(path: &Path) -> Option<f64> {
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|contents| contents.trim().to_owned())
+        .filter(|contents| !contents.is_empty())
+        .and_then(|contents| js_number(&contents))
 }
 
 fn read_number(path: &Path) -> Option<f64> {
@@ -641,6 +657,22 @@ mod tests {
 
         // Deliberately unrounded, unlike every system temperature.
         assert_eq!(reader.read().battery_c, Some(31.25));
+    }
+
+    #[test]
+    fn an_empty_battery_attribute_falls_through_to_hwmon() {
+        // An empty `temp` file previously parsed as 0 °C, which is plausible
+        // enough to look like a reading and masked the hwmon sensor that had
+        // the real answer. The TypeScript discarded empty attributes first.
+        let tmp = TempDir::new().unwrap();
+        let battery = tmp.path().join("BAT0");
+        std::fs::create_dir_all(battery.join("hwmon3")).unwrap();
+        std::fs::write(battery.join("temp"), "\n").unwrap();
+        std::fs::write(battery.join("hwmon3").join("temp1_input"), "31000\n").unwrap();
+
+        let mut reader = ThermalReader::new(&battery, tmp.path().join("hwmon"));
+
+        assert_eq!(reader.read().battery_c, Some(31.0));
     }
 
     #[test]
