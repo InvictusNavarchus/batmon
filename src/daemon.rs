@@ -30,6 +30,9 @@ pub struct Daemon<S: TelemetrySource, N: Notifier> {
     schedule: Schedule,
     /// The previous sample, for integrating cycles at flight-recorder resolution.
     previous: Option<Sample>,
+    /// Set while the battery is away, so the sample that follows carries the
+    /// cycle count forward rather than integrating across the absence.
+    battery_was_absent: bool,
     tick_count: u64,
 }
 
@@ -63,6 +66,7 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
             thresholds,
             schedule,
             previous: None,
+            battery_was_absent: false,
             tick_count: 0,
         }
     }
@@ -94,6 +98,7 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
         // hardware that is no longer there.
         if !sample.is_present {
             self.engine.reset();
+            self.battery_was_absent = true;
             return Ok(());
         }
 
@@ -108,7 +113,20 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
             };
         }
 
-        sample.estimated_cycle_count = compute_estimated_cycles(&sample, self.previous.as_ref());
+        // A pack that went away and came back may not be the same pack, and
+        // whatever energy difference spans the absence did not pass through a
+        // load. That is the reboot situation exactly, and gets the same
+        // treatment: carry the count forward, integrate nothing.
+        //
+        // Clearing `previous` instead would not work — the next tick would
+        // simply re-adopt the same pre-removal row from the database.
+        sample.estimated_cycle_count = if std::mem::take(&mut self.battery_was_absent) {
+            self.previous
+                .as_ref()
+                .map_or(0.0, |previous| previous.estimated_cycle_count)
+        } else {
+            compute_estimated_cycles(&sample, self.previous.as_ref())
+        };
 
         // 1. Flight recorder, every tick.
         self.debug.insert(&sample)?;
@@ -312,6 +330,75 @@ mod tests {
 
         daemon.run_tick();
         assert_eq!(daemon.debug.latest().unwrap().unwrap().charge_pct, 79.0);
+    }
+
+    #[test]
+    fn a_battery_that_comes_back_does_not_have_the_gap_counted_as_discharge() {
+        // A pack removed at 58 Wh and replaced by one at 20 Wh would otherwise
+        // integrate the 38 Wh difference as if it had gone through a load.
+        let mut daemon = daemon(Scripted::new(vec![
+            present(100.0, 58.0),
+            Sample {
+                is_present: false,
+                ..present(100.0, 58.0)
+            },
+            present(34.0, 20.0),
+        ]));
+
+        daemon.run_tick();
+        daemon.run_tick();
+        daemon.run_tick();
+
+        let latest = daemon.debug.latest().unwrap().unwrap();
+        assert_eq!(
+            latest.estimated_cycle_count, 0.0,
+            "the absence was integrated as discharge"
+        );
+    }
+
+    #[test]
+    fn a_returning_battery_carries_the_accumulated_count_forward() {
+        // Carrying forward, not resetting: the wear already recorded is real.
+        let debug = Store::open_in_memory(Database::Debug).unwrap();
+        debug
+            .insert(&Sample {
+                estimated_cycle_count: 12.5,
+                ..present(100.0, 58.0)
+            })
+            .unwrap();
+
+        let mut daemon = Daemon::new(
+            Scripted::new(vec![
+                Sample {
+                    is_present: false,
+                    ..present(100.0, 58.0)
+                },
+                present(34.0, 20.0),
+                present(33.0, 19.42),
+            ]),
+            RecordingNotifier::new(),
+            debug,
+            Store::open_in_memory(Database::Historical).unwrap(),
+            Thresholds::default(),
+            Schedule::default(),
+        );
+
+        daemon.run_tick();
+        daemon.run_tick();
+        let after_return = daemon.debug.latest().unwrap().unwrap();
+        assert_eq!(
+            after_return.estimated_cycle_count, 12.5,
+            "count was not carried"
+        );
+
+        // And normal integration resumes on the tick after that.
+        daemon.run_tick();
+        let resumed = daemon.debug.latest().unwrap().unwrap();
+        assert!(
+            resumed.estimated_cycle_count > 12.5,
+            "integration did not resume: {}",
+            resumed.estimated_cycle_count
+        );
     }
 
     #[test]
