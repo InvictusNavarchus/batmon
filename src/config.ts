@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const POWER_SUPPLY_BASE =
-	process.env.BATMON_POWER_SUPPLY_BASE ?? "/sys/class/power_supply";
+	process.env.BATMON_POWER_SUPPLY_BASE || "/sys/class/power_supply";
 
 /**
  * Auto-discovers the primary system battery sysfs directory.
@@ -21,13 +21,14 @@ export function discoverBatteryPath(baseDir = POWER_SUPPLY_BASE): string {
 		return process.env.BATMON_SYSFS_PATH;
 	}
 
+	const dir = baseDir || POWER_SUPPLY_BASE;
 	try {
-		if (!existsSync(baseDir)) {
+		if (!existsSync(dir)) {
 			// Fallback for non-existent sysfs (e.g. CI runners or non-Linux test envs)
-			return join(baseDir, "BAT0");
+			return join(dir, "BAT0");
 		}
 
-		const entries = readdirSync(baseDir).sort();
+		const entries = readdirSync(dir).sort();
 		const candidates: Array<{
 			path: string;
 			isSystem: boolean;
@@ -35,7 +36,7 @@ export function discoverBatteryPath(baseDir = POWER_SUPPLY_BASE): string {
 		}> = [];
 
 		for (const entry of entries) {
-			const entryPath = join(baseDir, entry);
+			const entryPath = join(dir, entry);
 			const typeFile = join(entryPath, "type");
 			if (!existsSync(typeFile)) continue;
 
@@ -62,7 +63,7 @@ export function discoverBatteryPath(baseDir = POWER_SUPPLY_BASE): string {
 
 		if (candidates.length === 0) {
 			// No battery found: return default BAT0 path to maintain safe module evaluation
-			return join(baseDir, "BAT0");
+			return join(dir, "BAT0");
 		}
 
 		// 1. Prefer system-level battery with standard BAT* naming (e.g. BAT0, BAT1)

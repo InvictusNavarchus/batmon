@@ -251,4 +251,17 @@ describe("discoverBatteryPath auto-discovery", () => {
 			}
 		}
 	});
+
+	test("falls back to default /sys/class/power_supply when baseDir is empty", () => {
+		const originalEnv = process.env.BATMON_SYSFS_PATH;
+		delete process.env.BATMON_SYSFS_PATH;
+		try {
+			const discovered = discoverBatteryPath("");
+			expect(discovered.startsWith("/sys/class/power_supply")).toBe(true);
+		} finally {
+			if (originalEnv !== undefined) {
+				process.env.BATMON_SYSFS_PATH = originalEnv;
+			}
+		}
+	});
 });

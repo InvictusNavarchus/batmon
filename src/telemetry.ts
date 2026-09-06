@@ -633,7 +633,11 @@ export async function readTelemetry(): Promise<TelemetrySample> {
 				? Math.round((energy.full / energy.design) * 10000) / 100
 				: 100,
 		is_charging: isCharging,
-		is_present: exists("present") ? readStr("present") === "1" : true,
+		is_present: existsSync(SYSFS)
+			? exists("present")
+				? readStr("present") === "1"
+				: true
+			: false,
 		time_to_empty_s: tte,
 		time_to_full_s: ttf,
 		cpu_temp_c: sysTemps.cpu_c,

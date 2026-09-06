@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SYSFS } from "../../src/config";
@@ -296,21 +302,30 @@ describe("telemetry parsers", () => {
 		test("reads kernel boot_id or returns null when unavailable", () => {
 			resetBootIdCacheForTesting();
 			const bootId = readBootId();
-			if (bootId !== null) {
+			if (
+				process.platform === "linux" &&
+				existsSync("/proc/sys/kernel/random/boot_id")
+			) {
+				expect(bootId).not.toBeNull();
 				// Linux UUID format (8-4-4-4-12 hex)
 				expect(bootId).toMatch(
 					/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
 				);
 				// Second call returns cached value
 				expect(readBootId()).toBe(bootId);
+			} else {
+				expect(bootId).toBeNull();
 			}
 		});
 
 		test("reads monotonic uptime in seconds or returns null when unavailable", () => {
 			const uptime = readUptimeS();
-			if (uptime !== null) {
+			if (process.platform === "linux" && existsSync("/proc/uptime")) {
+				expect(typeof uptime).toBe("number");
 				expect(uptime).toBeGreaterThan(0);
 				expect(Number.isFinite(uptime)).toBe(true);
+			} else {
+				expect(uptime).toBeNull();
 			}
 		});
 	});
