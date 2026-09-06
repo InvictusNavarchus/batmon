@@ -14,9 +14,14 @@ compared, and materially cheaper to run:**
 * **Schema parity is exact.** Both migration ladders transform seven distinct starting
   states into byte-identical schemas, compared on column names, declared types,
   `NOT NULL`, defaults, primary-key ordinals, indexes and `user_version`.
-* **Sample parity is exact where values are stable.** Across 185 joined sample pairs,
-  14 of 30 columns matched bit-for-bit. Every column that diverged is one that genuinely
-  changes between two instants sampled 185 ms apart.
+* **Sample parity is exact where values are stable.** Across ~21,500 joined sample pairs
+  spanning six hours, every static and categorical column matched bit-for-bit. Every
+  column that diverged is one that genuinely changes between two instants sampled
+  250 ms apart.
+* **The cycle integral does not drift.** After 21,700 ticks and 1.335 accumulated
+  cycles, the two implementations agree to `0.000000000000`.
+* **Alerts are identical.** Both fired the same three alerts, in the same order, with
+  byte-identical text, on the same real battery.
 * **5.9× less resident memory.** 7.6 MB against 45.3 MB, with 6 threads against 17.
 * **~40% cheaper per sample.** 12.4 ms against 20.3 ms median.
 * **Two subprocess spawns per minute eliminated**, roughly 1,440 process creations a day.
@@ -32,10 +37,15 @@ compared, and materially cheaper to run:**
 * **OS:** Linux 7.1.13 (Fedora, systemd user session)
 * **Toolchains:** Bun 1.4.2, rustc 1.96.0 (release profile, thin LTO)
 
-Both daemons were run concurrently for 180 seconds against separate database
-directories, isolated by `$HOME`. The production daemon and its databases were not
-touched. Samples were joined on nearest timestamp; the median join offset was 185 ms,
-which is the irreducible floor for two independent processes on a one-second cadence.
+Both daemons were run concurrently against separate database directories, isolated by
+`$HOME`, started in the same `systemctl` call so their rate-measurement windows stayed
+in phase. The production daemon and its databases were not touched. Samples were joined
+on nearest timestamp; the median join offset was 250 ms, which is the irreducible floor
+for two independent processes on a one-second cadence.
+
+Two runs are reported. A 180-second smoke run established column parity; a **six-hour
+run** covering a full discharge, a charge to 80%, and a second discharge to 18%
+established everything that requires time to accumulate.
 
 ---
 
@@ -58,36 +68,88 @@ versions, the ladder was a no-op, and the schema hash was unchanged before and a
 
 ### 3.2 Column-by-column sample parity
 
+Over ~21,500 joined pairs across six hours:
+
 | Verdict | Columns |
 | :--- | :--- |
-| **Bit-identical** (185/185 pairs) | `charge_pct`, `status`, `power_state`, `energy_full_wh`, `energy_design_wh`, `power_w`, `voltage_v`, `voltage_design_v`, `cycle_count`, `health_pct`, `is_charging`, `is_present`, `load1`, `boot_id` |
-| **Varies within sampling jitter** | `energy_wh` (max Δ 0.023 Wh, 0.05%), `estimated_cycle_count` (max Δ 0.0004), `uptime_s` (max Δ 0.32 s), `mem_pct` (max Δ 0.9), `cpu_temp_c` (max Δ 0.6 °C), `nvme_temp_c` (max Δ 1 °C) |
-| **Genuinely instantaneous** | `cpu_pct`, `cpu_freq_mhz`, `gpu_pct`, `gpu_power_w`, `gpu_temp_c`, `top_processes` |
-| **Externally sourced** | `time_to_empty_s` — UPower's own smoothed estimate, which both implementations read verbatim and which updates on its own schedule |
-| **No data on this hardware** | `battery_temp_c` (no pack sensor), `time_to_full_s` (never charged during the window) |
+| **Bit-identical** | `energy_design_wh`, `voltage_design_v`, `cycle_count`, `boot_id`, `health_pct`, `energy_full_wh`, `status`, `power_state`, `is_charging`, `is_present` |
+| **Varies within sampling jitter** | `charge_pct` (max Δ 1), `load1`, `mem_pct`, `uptime_s` (max Δ 0.51 s), `energy_wh` (max Δ 0.104 Wh) |
+| **Genuinely instantaneous** | `power_w`, `voltage_v`, `cpu_pct`, `cpu_freq_mhz`, `gpu_pct`, `gpu_power_w`, all temperatures, `top_processes` |
+| **Externally sourced** | `time_to_empty_s`, `time_to_full_s` — UPower's own smoothed estimates, read verbatim by both |
+| **No data on this hardware** | `battery_temp_c` — no pack sensor |
 
-`power_w` and `voltage_v` matching exactly across all 185 pairs is not a coincidence:
-the kernel refreshes fuel-gauge attributes more slowly than 1 Hz, so consecutive reads
-return the same driver-cached value.
+### 3.3 The cycle integral
 
-`top_processes` differed in 183 of 185 pairs. This is expected and not a defect: the
-ranking is computed from a one-second CPU delta measured over a different second, and
-ties among idle processes resolve by `/proc` enumeration order in both implementations.
-The **format** was verified separately as byte-identical, including that whole numbers
-render as `6` rather than `6.0`.
+The check a point-in-time comparison structurally cannot make. The count is accumulated
+one tick at a time, so a per-tick divergence too small to see in one sample compounds.
 
-### 3.3 Resource cost
+```
+rust final       1.335224935
+typescript final 1.335224935
+final gap        0.000000000000 cycles
+```
+
+Expressed in the only meaningful unit — one tick of discharge accrues ~6.0e-4 cycles —
+the mean gap never exceeded **0.11 ticks** and the worst single excursion was **2.31
+ticks**, which is what a 250 ms sampling offset produces. Several windows sat at
+`2.220e-16`, one double-precision ulp. Critically the gap **oscillates and returns to
+zero rather than accumulating**: if a per-tick divergence ε existed, the gap after
+21,700 ticks would be ~21,700ε.
+
+Both daemons were also restarted mid-run and each resumed at exactly `1.335224935`,
+verifying the adopt-last-stored-sample path on real data.
+
+### 3.4 Rail states and alerts
+
+| | Result |
+| :--- | :--- |
+| Charging pairs | 9,714 — **0** `power_state` and **0** `is_charging` mismatches |
+| Discharging pairs | 11,832 |
+| `ac_idle` | **0 — not reached** |
+| Rail transitions | 3 in each implementation, same order |
+| Charge range | 18% → 74% → 80% → 20% |
+
+Both fired exactly three alerts, in the same order, with byte-identical bodies:
+
+```
+Low Battery: 20% remaining – plug in charger
+Battery Charge Target Reached: Level reached 80% – unplug charger to preserve health
+Low Battery: 20% remaining – plug in charger
+```
+
+Three alerts across six hours spanning a full charge cycle is the hysteresis engine
+working: no storms, and the 80% unplug reminder — previously exercised only by synthetic
+tests — fired correctly on real hardware.
+
+### 3.5 Cadence and retention
+
+Both crossed the six-hour retention boundary and pruned correctly; their retained
+windows differed by 114 s, which is the offset between their five-minute prune cycles.
+
+The tick cadence difference is the deadline-scheduling claim, measured:
+
+| | median tick | rows in 6.02 h |
+| :--- | :--- | :--- |
+| Rust (sleeps toward a deadline) | 1.0000 s | 21,570 |
+| TypeScript (`setInterval`) | 1.0050 s | 21,457 |
+
+**The TypeScript daemon recorded 113 fewer samples from the same window**, about
+7.5 minutes of lost coverage per day. Thirteen tick overruns were logged by the Rust
+daemon, all inside a single 90-second window — one system event, 0.06% of ticks — and
+both implementations show gaps at the same moments.
+
+### 3.6 Resource cost
 
 | Metric | TypeScript (Bun) | Rust | Change |
 | :--- | :--- | :--- | :--- |
-| Resident memory | 45.3 MB | 7.6 MB | **5.9× less** |
+| Resident memory | 23.9–50.9 MB | 5.7–8.9 MB | **4.2× less** (no growth over 6 h in either) |
 | Threads | 17 | 6 | 2.8× fewer |
 | Median sample cost | 20.3 ms | 12.4 ms | **1.6× faster** |
 | Subprocess spawns | 2/min (`busctl`) | 0 | eliminated |
 | Binary / runtime | Bun runtime + sources | 5.4 MB static binary | — |
-| Tick interval deviation | not measured | ≤ 2 ms | drift-free |
+| Samples recorded in 6 h | 21,457 | **21,570** | 113 more |
 
-### 3.4 Where the speedup actually came from
+### 3.7 Where the speedup actually came from
 
 Decomposing the per-sample cost corrected an expectation set during planning, which
 had predicted the process scan would fall from ~13 ms to 2–4 ms:
@@ -108,28 +170,22 @@ every tick**.
 
 ## 4. Limitations
 
-The differential run was **180 seconds, not 24 hours**. It ran entirely on battery, so
-the following were exercised only by unit and property tests and have **never met real
-hardware**:
+The six-hour run covered a full discharge, a charge, and a second discharge. What it did
+**not** reach is not a matter of running longer — each needs a specific condition:
 
-* The charging branch of the charge ladder (the 80% unplug reminder)
-* Heat-soak, which only evaluates while charging
-* Over-voltage, which only evaluates while charging
-* The rail transition that invalidates the cached UPower estimate
-* The 6-hour prune boundary
-* Suspend/resume, and the deadline-resynchronisation path it triggers
-* A reboot boundary in the cycle integrator's carry-forward
+* **`ac_idle`** — the battery never sat at Full or at a vendor charge limit. This is a
+  three-line branch in the charge ladder with four unit tests.
+* **A reboot boundary** — one boot session only, so the cycle integrator's carry-forward
+  was exercised only by its unit and property tests. This is the gap that matters most,
+  because getting carry-forward wrong silently corrupts the long-term number with no
+  alert.
+* **Heat-soak and thermal anomaly** — the CPU never reached 85 °C while charging or
+  80 °C while idle. Both are covered by the shared debounce latch's own tests.
+* **`battery_temp_c`** — null in all rows. This hardware has no pack sensor, so the
+  battery thermal family cannot be differentially tested here at all, ever.
 
-`estimated_cycle_count` deserves particular note. It is an integral accumulated one tick
-at a time — the field history runs from 0 to 46.83 — so a per-tick divergence too small
-to see in a single comparison compounds. A 180-second window cannot detect that; a
-multi-day run comparing the accumulated totals can.
-
-`battery_temp_c` is null in all 19,361 historical rows on this hardware. The battery
-thermal alert family cannot be differentially tested here at all, and its synthetic tests
-are the only coverage it will ever have on this machine.
-
-**Recommendation:** run both daemons against separate database directories for at least
-one full charge/discharge cycle, including a suspend and a reboot, before treating the
-port as fully validated. The `$HOME` redirection used here makes that safe to do
-alongside the production daemon.
+One artefact worth recording: three notifications failed with
+`ExcessNotificationGeneration`. That is the notification server rate-limiting because
+*three* daemons — production plus both differential instances — alerted on the same
+battery simultaneously. The daemon logged it and continued, which is the designed
+degradation, but it is an artefact of the experiment rather than a property of the port.
