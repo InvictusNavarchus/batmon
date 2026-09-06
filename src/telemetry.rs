@@ -8,8 +8,10 @@
 
 pub mod battery;
 pub mod proc;
+pub mod processes;
 pub mod thermal;
 
 pub use battery::{BatteryReader, Energy};
 pub use proc::{CpuTimes, ProcReader};
+pub use processes::ProcessReader;
 pub use thermal::{ThermalReader, Thermals};
