@@ -29,7 +29,7 @@ It operates as a high-frequency flight recorder, capturing hardware metrics ever
 ```
 
 1. **High-Frequency Flight Recorder (`debug.db`):**  
-   Records every 1 second directly to SQLite using WAL mode (`PRAGMA synchronous = NORMAL`). Commits are written directly to the Linux kernel page cache via `write()` without invoking an `fsync()` on each tick, consuming negligible disk I/O and power (<15 mW). Data is immediately queryable across processes, and disk durability occurs seamlessly upon WAL auto-checkpoints (`wal_autocheckpoint = 100`, ~100s) and Linux kernel dirty page writeback. Auto-prunes older records on a rolling window (default: 6 hours).
+   Records every 1 second directly to SQLite using WAL mode (`PRAGMA synchronous = NORMAL`). Commits are written to the Linux kernel page cache via `write()` without invoking an `fsync()` on each tick, consuming negligible disk I/O and power (<15 mW). Data is immediately queryable across processes. Disk durability operates on a best-effort basis via SQLite's automatic WAL checkpoints (`wal_autocheckpoint = 100` pages) and standard Linux dirty page writeback—preventing database corruption during crashes while trading immediate per-second fsync persistence for drive longevity. Auto-prunes older records on a rolling window (default: 6 hours).
 
 2. **Long-Term Historical Telemetry (`battery.db`):**  
    Records downsampled samples every 60 seconds. Tracks long-term battery degradation, design wear capacity, and software-integrated cycle count over months and years.
