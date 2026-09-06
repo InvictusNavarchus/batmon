@@ -275,9 +275,40 @@ proptest! {
         prop_assert!(announced.is_empty(), "{announced:?}");
     }
 
-    /// Non-finite readings reach the engine when a sensor misbehaves. They must
-    /// not panic it, and they must not be mistaken for a threshold crossing —
-    /// every comparison against NaN is false, which is the behaviour we want.
+    /// A NaN reading must not be mistaken for a threshold crossing.
+    ///
+    /// Every comparison against NaN is false, so no ladder can advance and no
+    /// alert can fire. That is the behaviour the engine relies on when a sensor
+    /// misbehaves, and asserting only that it does not panic would pass even if
+    /// a NaN started producing critical alerts.
+    #[test]
+    fn nan_readings_produce_no_alerts(ticks in 1usize..20) {
+        let mut engine = AlertEngine::new();
+        let thresholds = Thresholds::default();
+        let sample = Sample {
+            charge_pct: f64::NAN,
+            battery_temp_c: Some(f64::NAN),
+            cpu_temp_c: Some(f64::NAN),
+            cpu_pct: Some(f64::NAN),
+            power_w: f64::NAN,
+            voltage_v: f64::NAN,
+            voltage_design_v: f64::NAN,
+            health_pct: f64::NAN,
+            power_state: PowerState::Discharging,
+            is_present: true,
+            ..Sample::default()
+        };
+
+        for _ in 0..ticks {
+            let alerts = engine.evaluate(&sample, &thresholds);
+            prop_assert!(alerts.is_empty(), "NaN produced {alerts:?}");
+        }
+    }
+
+    /// Infinities and arbitrary magnitudes must not panic the engine.
+    ///
+    /// Kept separate from the NaN property: an infinite reading legitimately
+    /// crosses every threshold, so alerts here are correct rather than a defect.
     #[test]
     fn pathological_readings_never_panic_the_engine(
         charge in prop::num::f64::ANY,
