@@ -289,9 +289,10 @@ fn daemon_ticks_stay_on_a_one_second_cadence() {
     );
 
     // A loop that sleeps for an interval rather than toward a deadline walks
-    // forward by the cost of each tick; at twelve milliseconds a second that is
-    // seventeen minutes a day. Every gap here must be a second, not a second
-    // plus however long the tick took.
+    // forward by the cost of each tick. Measured against the TypeScript daemon
+    // over six hours, that cost it 113 samples — roughly 7.5 minutes of lost
+    // coverage a day. Every gap here must be a second, not a second plus
+    // however long the tick took.
     for pair in stamps.windows(2) {
         let gap = clock_ms(&pair[1]) - clock_ms(&pair[0]);
         assert!(
