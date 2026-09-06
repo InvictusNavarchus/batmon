@@ -18,9 +18,20 @@ fi
 echo "==> Building (this takes a minute the first time)…"
 cargo build --release --manifest-path "$SCRIPT_DIR/Cargo.toml"
 
+# Cargo does not always write to ./target: CARGO_TARGET_DIR, or a build.target-dir
+# in any .cargo/config.toml, moves it elsewhere. Ask cargo instead of assuming.
+TARGET_DIR="$(cargo metadata --format-version 1 --no-deps --manifest-path "$SCRIPT_DIR/Cargo.toml" 2>/dev/null \
+  | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
+BINARY="${TARGET_DIR:-$SCRIPT_DIR/target}/release/batmon"
+
+if [ ! -x "$BINARY" ]; then
+  echo "ERROR: build succeeded but no binary at $BINARY" >&2
+  exit 1
+fi
+
 # ── install binary ────────────────────────────────────────────────────
 mkdir -p "$BIN_DIR"
-install -m 755 "$SCRIPT_DIR/target/release/batmon" "$BIN_DIR/batmon"
+install -m 755 "$BINARY" "$BIN_DIR/batmon"
 echo "    binary → $BIN_DIR/batmon"
 
 case ":$PATH:" in
@@ -63,7 +74,9 @@ Documentation=https://github.com/InvictusNavarchus/batmon
 
 [Service]
 Type=simple
-ExecStart=${BIN_DIR}/batmon
+# %h rather than the expanded path: systemd splits ExecStart on whitespace, so
+# an interpolated home directory containing a space would become two arguments.
+ExecStart=%h/.local/bin/batmon
 Restart=on-failure
 RestartSec=5s
 Nice=10
