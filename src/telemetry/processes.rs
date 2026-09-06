@@ -1,10 +1,21 @@
 //! Per-process CPU and memory accounting.
 //!
-//! The most expensive thing the daemon does — roughly four hundred `/proc/PID`
-//! directories opened, read and parsed every second — and therefore the part
-//! where allocation discipline actually shows up in the power budget. Nothing
-//! here allocates per process: the read buffer, both process maps and the group
-//! table are owned by the reader and reused across ticks.
+//! The most expensive thing the daemon does: roughly four hundred `/proc/PID`
+//! directories opened, read and parsed every second.
+//!
+//! The read buffer, both PID maps and the group table are owned by the reader
+//! and reused across ticks, so none of them is rebuilt. Two things still
+//! allocate per process — the path passed to `open`, and the command name — and
+//! that is a deliberate stopping point rather than an oversight.
+//!
+//! Measured on this machine at 490 processes: listing `/proc` costs 0.35 ms,
+//! listing plus opening and reading every `stat` costs 7.28 ms, and the complete
+//! scan including parsing, grouping, ranking and rendering costs 8.08 ms. Ninety
+//! percent of it is kernel-side `open`/`read`/`close` that no amount of
+//! allocation discipline touches; the remaining user-space work is around
+//! 0.8 ms out of a 12 ms sample. Removing the last two allocations would buy a
+//! fraction of that, at the cost of a reusable path buffer and borrowed names
+//! threaded through the grouping — which is not a trade worth making here.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
