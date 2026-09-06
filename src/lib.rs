@@ -10,6 +10,7 @@
 
 pub mod config;
 pub mod cycles;
+pub mod db;
 pub mod migrations;
 pub mod parity;
 pub mod paths;
