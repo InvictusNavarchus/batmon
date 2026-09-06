@@ -268,7 +268,19 @@ pub const DEBUG_MIGRATIONS: &[Migration] = &[
     Migration {
         version: 3,
         name: "rename_samples_debug_to_samples",
-        up: |conn| rename_table_if_exists(conn, "samples_debug", "samples"),
+        up: |conn| {
+            rename_table_if_exists(conn, "samples_debug", "samples")?;
+            // Migration 1 created this index on `samples`. When the rename above
+            // takes the empty-placeholder branch it drops that table, and the
+            // index goes with it — leaving a 1 Hz recorder to prune by full
+            // table scan for the rest of the database's life. The TypeScript
+            // had the same hole; recreating the index here is a deliberate
+            // divergence, and a schema-only one that changes no stored value.
+            if has_table(conn, "samples")? {
+                conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_debug_ts ON samples(ts);")?;
+            }
+            Ok(())
+        },
     },
     Migration {
         version: 4,
@@ -499,6 +511,40 @@ mod tests {
             .unwrap();
         assert!((charge - 77.7).abs() < f64::EPSILON);
         assert!(!has_table(&conn, "samples_debug").unwrap());
+    }
+
+    #[test]
+    fn the_flight_recorder_index_survives_the_table_rename() {
+        // The rename's empty-placeholder branch drops the destination table,
+        // taking migration 1's index with it. Without recreating it, every
+        // prune on a 1 Hz recorder becomes a full table scan.
+        let conn = memory();
+        conn.execute_batch(
+            "CREATE TABLE samples_debug (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, charge_pct REAL
+            );
+            INSERT INTO samples_debug (ts, charge_pct) VALUES ('2026-08-28T00:00:00.000Z', 77.7);
+            CREATE TABLE samples (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, charge_pct REAL
+            );
+            CREATE INDEX idx_debug_ts ON samples(ts);",
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 2).unwrap();
+
+        migrate(&conn, DEBUG_MIGRATIONS).unwrap();
+
+        assert!(
+            indexes(&conn, "samples")
+                .iter()
+                .any(|i| i == "idx_debug_ts"),
+            "prune would fall back to a full table scan"
+        );
+        // And the rows still made it across.
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM samples", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
     }
 
     #[test]
