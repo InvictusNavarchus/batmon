@@ -42,10 +42,29 @@ async function renameTableIfExists(
 ): Promise<void> {
 	const tables =
 		await sql`SELECT name FROM sqlite_master WHERE type='table' AND name=${oldTable};`;
+	if (tables.length === 0) return;
+
 	const newTables =
 		await sql`SELECT name FROM sqlite_master WHERE type='table' AND name=${newTable};`;
-	if (tables.length > 0 && newTables.length === 0) {
+
+	if (newTables.length === 0) {
 		await sql.unsafe(`ALTER TABLE ${oldTable} RENAME TO ${newTable};`);
+		return;
+	}
+
+	// Target table exists: check if it is an empty placeholder
+	const newCountRows = (await sql.unsafe(
+		`SELECT count(*) as count FROM ${newTable};`,
+	)) as Array<{ count: number }>;
+
+	if (Number(newCountRows[0]?.count ?? 0) === 0) {
+		await sql.unsafe(`DROP TABLE ${newTable};`);
+		await sql.unsafe(`ALTER TABLE ${oldTable} RENAME TO ${newTable};`);
+	} else {
+		await sql.unsafe(
+			`INSERT OR IGNORE INTO ${newTable} SELECT * FROM ${oldTable};`,
+		);
+		await sql.unsafe(`DROP TABLE ${oldTable};`);
 	}
 }
 

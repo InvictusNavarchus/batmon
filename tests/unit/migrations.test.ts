@@ -145,4 +145,42 @@ describe("migrations", () => {
 		expect(rows[0].voltage_design_v).toBe(11.4);
 		expect(rows[0].battery_temp_c).toBe(32.1);
 	});
+
+	test("renames samples_debug to samples even when empty samples table already exists", async () => {
+		await sql`
+			CREATE TABLE samples_debug (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				ts TEXT NOT NULL,
+				charge_pct REAL
+			);
+		`;
+		await sql`
+			INSERT INTO samples_debug (ts, charge_pct)
+			VALUES ('2026-08-28T00:00:00.000Z', 77.7);
+		`;
+
+		// v1 creates samples table (empty)
+		await sql`
+			CREATE TABLE samples (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				ts TEXT NOT NULL,
+				charge_pct REAL
+			);
+		`;
+		await sql.unsafe("PRAGMA user_version = 2;");
+
+		// Run debug migrations from v2 -> v4
+		await migrate(sql, DEBUG_MIGRATIONS, "debug.db");
+
+		const rows = (await sql`SELECT * FROM samples WHERE id = 1;`) as Array<{
+			charge_pct: number;
+		}>;
+
+		expect(rows.length).toBe(1);
+		expect(rows[0].charge_pct).toBe(77.7);
+
+		const oldTables =
+			await sql`SELECT name FROM sqlite_master WHERE type='table' AND name='samples_debug';`;
+		expect(oldTables.length).toBe(0);
+	});
 });
