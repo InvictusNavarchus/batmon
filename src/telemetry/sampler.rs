@@ -180,9 +180,11 @@ impl TelemetrySource for Sampler {
         // it separately for utilisation and for the process scan.
         let cpu_times = self.proc.cpu_times();
         let cpu_pct = cpu_times.and_then(|times| self.proc.cpu_pct(times));
-        let mem_total_kb = self.proc.mem_total_kb();
-        let top_processes =
-            cpu_times.and_then(|times| self.processes.read(times.total, mem_total_kb));
+        // Both are required: process memory is a percentage of total, and
+        // without a denominator the ranking is omitted rather than invented.
+        let top_processes = cpu_times
+            .zip(self.proc.mem_total_kb())
+            .and_then(|(times, mem_total_kb)| self.processes.read(times.total, mem_total_kb));
 
         Sample {
             ts: now_iso8601_millis(),

@@ -111,16 +111,25 @@ impl ProcReader {
 
     /// Total physical memory in kilobytes, resolved once.
     ///
-    /// Falls back to 1 rather than 0 so callers computing a percentage of it
-    /// cannot divide by zero.
-    pub fn mem_total_kb(&self) -> u64 {
-        *self.mem_total_kb.get_or_init(|| {
-            std::fs::read_to_string(self.base.join("meminfo"))
-                .ok()
-                .and_then(|meminfo| meminfo_field(&meminfo, "MemTotal"))
-                .filter(|kb| *kb > 0)
-                .unwrap_or(1)
-        })
+    /// Only a successful read is cached. A sentinel would be cached forever,
+    /// and every later `top_processes` row would report memory as a percentage
+    /// of that sentinel — wrong in a way that looks like data, long after
+    /// `/proc/meminfo` had recovered.
+    ///
+    /// [`None`] means the denominator is unknown, and the caller should omit
+    /// the metrics that need it rather than invent one.
+    pub fn mem_total_kb(&self) -> Option<u64> {
+        if let Some(cached) = self.mem_total_kb.get() {
+            return Some(*cached);
+        }
+
+        let total = std::fs::read_to_string(self.base.join("meminfo"))
+            .ok()
+            .and_then(|meminfo| meminfo_field(&meminfo, "MemTotal"))
+            .filter(|kb| *kb > 0)?;
+
+        let _ = self.mem_total_kb.set(total);
+        Some(total)
     }
 
     /// One-minute load average.
@@ -370,16 +379,30 @@ mod tests {
     #[test]
     fn total_memory_is_resolved_once_and_cached() {
         let (tmp, reader) = procfs(&[("meminfo", "MemTotal:       1000000 kB\n")]);
-        assert_eq!(reader.mem_total_kb(), 1_000_000);
+        assert_eq!(reader.mem_total_kb(), Some(1_000_000));
 
         std::fs::remove_file(tmp.path().join("meminfo")).unwrap();
-        assert_eq!(reader.mem_total_kb(), 1_000_000, "value was not cached");
+        assert_eq!(
+            reader.mem_total_kb(),
+            Some(1_000_000),
+            "value was not cached"
+        );
     }
 
     #[test]
-    fn total_memory_falls_back_to_one_so_callers_cannot_divide_by_zero() {
-        let (_tmp, reader) = procfs(&[("stat", "cpu  1 1 1 1\n")]);
-        assert_eq!(reader.mem_total_kb(), 1);
+    fn an_unreadable_total_memory_is_not_cached_and_recovers() {
+        // Caching a sentinel would make every later top_processes row report
+        // memory against it, wrong in a way that looks like data.
+        let (tmp, reader) = procfs(&[("stat", "cpu  1 1 1 1\n")]);
+        assert_eq!(reader.mem_total_kb(), None);
+
+        std::fs::write(tmp.path().join("meminfo"), "MemTotal: 1000000 kB\n").unwrap();
+
+        assert_eq!(
+            reader.mem_total_kb(),
+            Some(1_000_000),
+            "a failed read was cached and blocked recovery"
+        );
     }
 
     #[test]
