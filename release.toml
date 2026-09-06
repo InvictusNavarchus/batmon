@@ -1,0 +1,27 @@
+# cargo-release configuration, replacing the release-it setup that went with
+# package.json.
+#
+#   cargo install cargo-release
+#   cargo release patch|minor|major
+#
+# The version lives only in Cargo.toml now; nothing else needs to be kept in
+# step with it.
+
+# Match the commit and tag conventions the repository already used.
+pre-release-commit-message = "chore(release): bump version to v{{version}}"
+tag-name = "v{{version}}"
+tag-message = "Release v{{version}}"
+
+# Not a crates.io package — this ships as a binary built from source.
+publish = false
+
+push = true
+sign-tag = false
+
+# Refuse to release from a branch other than master, or with a dirty tree.
+allow-branch = ["master"]
+
+# GitHub releases are not created here. cargo-release stops at the tag; publish
+# the release from it with:
+#
+#   gh release create "v$(cargo pkgid | sed 's/.*#//')" --generate-notes
