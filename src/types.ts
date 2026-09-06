@@ -29,6 +29,8 @@ export interface TelemetrySample {
 	gpu_pct: number | null;
 	gpu_power_w: number | null;
 	load1: number | null;
+	boot_id: string | null;
+	uptime_s: number | null;
 }
 
 export type BatterySample = TelemetrySample;

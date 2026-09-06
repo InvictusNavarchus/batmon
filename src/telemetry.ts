@@ -452,6 +452,40 @@ function readSysfsLoad1(): number | null {
 	return null;
 }
 
+let cachedBootId: string | null = null;
+
+export function resetBootIdCacheForTesting(): void {
+	cachedBootId = null;
+}
+
+export function readBootId(): string | null {
+	if (cachedBootId !== null) return cachedBootId;
+	try {
+		const p = "/proc/sys/kernel/random/boot_id";
+		if (existsSync(p)) {
+			cachedBootId = readFileSync(p, "utf-8").trim();
+			return cachedBootId;
+		}
+	} catch {
+		/* no boot_id */
+	}
+	return null;
+}
+
+export function readUptimeS(): number | null {
+	try {
+		const p = "/proc/uptime";
+		if (existsSync(p)) {
+			const [uptimeStr] = readFileSync(p, "utf-8").trim().split(/\s+/);
+			const num = Number(uptimeStr);
+			return Number.isFinite(num) ? num : null;
+		}
+	} catch {
+		/* no /proc/uptime */
+	}
+	return null;
+}
+
 // ── energy: auto-detect energy_* (µWh) vs charge_* (µAh) ────────────
 function readEnergy(): { now: number; full: number; design: number } {
 	if (exists("energy_now")) {
@@ -609,5 +643,7 @@ export async function readTelemetry(): Promise<TelemetrySample> {
 		gpu_pct: gpuPct,
 		gpu_power_w: sysTemps.gpu_power_w,
 		load1,
+		boot_id: readBootId(),
+		uptime_s: readUptimeS(),
 	};
 }

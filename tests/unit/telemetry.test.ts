@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { SYSFS } from "../../src/config";
 import {
 	formatUpowerDevicePath,
+	readBootId,
 	readSystemTemps,
+	readUptimeS,
+	resetBootIdCacheForTesting,
 	resetUpowerCacheForTesting,
 	upowerProp,
 } from "../../src/telemetry";
@@ -285,6 +288,29 @@ describe("telemetry parsers", () => {
 			});
 
 			expect(upowerProp("TimeToEmpty")).toBeNull();
+		});
+	});
+
+	describe("readBootId and readUptimeS", () => {
+		test("reads kernel boot_id or returns null when unavailable", () => {
+			resetBootIdCacheForTesting();
+			const bootId = readBootId();
+			if (bootId !== null) {
+				// Linux UUID format (8-4-4-4-12 hex)
+				expect(bootId).toMatch(
+					/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+				);
+				// Second call returns cached value
+				expect(readBootId()).toBe(bootId);
+			}
+		});
+
+		test("reads monotonic uptime in seconds or returns null when unavailable", () => {
+			const uptime = readUptimeS();
+			if (uptime !== null) {
+				expect(uptime).toBeGreaterThan(0);
+				expect(Number.isFinite(uptime)).toBe(true);
+			}
 		});
 	});
 });

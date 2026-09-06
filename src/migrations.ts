@@ -165,6 +165,14 @@ export const HISTORICAL_MIGRATIONS: Migration[] = [
 			await addColumnIfNotExists(sql, "samples", "power_state", "TEXT");
 		},
 	},
+	{
+		version: 7,
+		name: "add_boot_id_and_uptime",
+		up: async (sql) => {
+			await addColumnIfNotExists(sql, "samples", "boot_id", "TEXT");
+			await addColumnIfNotExists(sql, "samples", "uptime_s", "REAL");
+		},
+	},
 ];
 
 // ── Debug Flight Recorder Migrations (debug.db) ───────────────────────
@@ -248,6 +256,14 @@ export const DEBUG_MIGRATIONS: Migration[] = [
 		name: "add_power_state",
 		up: async (sql) => {
 			await addColumnIfNotExists(sql, "samples", "power_state", "TEXT");
+		},
+	},
+	{
+		version: 5,
+		name: "add_boot_id_and_uptime",
+		up: async (sql) => {
+			await addColumnIfNotExists(sql, "samples", "boot_id", "TEXT");
+			await addColumnIfNotExists(sql, "samples", "uptime_s", "REAL");
 		},
 	},
 ];

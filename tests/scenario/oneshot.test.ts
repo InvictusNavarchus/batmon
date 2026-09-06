@@ -37,6 +37,8 @@ function createMockSample(
 		gpu_pct: null,
 		gpu_power_w: null,
 		load1: 0.3,
+		boot_id: "mock-boot-id",
+		uptime_s: 12345.6,
 		...overrides,
 	};
 }
