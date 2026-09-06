@@ -1,7 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const POWER_SUPPLY_BASE = "/sys/class/power_supply";
+export const POWER_SUPPLY_BASE =
+	process.env.BATMON_POWER_SUPPLY_BASE || "/sys/class/power_supply";
 
 /**
  * Auto-discovers the primary system battery sysfs directory.
@@ -16,13 +17,18 @@ export const POWER_SUPPLY_BASE = "/sys/class/power_supply";
  *   via `readTelemetry().is_present`.
  */
 export function discoverBatteryPath(baseDir = POWER_SUPPLY_BASE): string {
+	if (process.env.BATMON_SYSFS_PATH) {
+		return process.env.BATMON_SYSFS_PATH;
+	}
+
+	const dir = baseDir || POWER_SUPPLY_BASE;
 	try {
-		if (!existsSync(baseDir)) {
+		if (!existsSync(dir)) {
 			// Fallback for non-existent sysfs (e.g. CI runners or non-Linux test envs)
-			return join(baseDir, "BAT0");
+			return join(dir, "BAT0");
 		}
 
-		const entries = readdirSync(baseDir).sort();
+		const entries = readdirSync(dir).sort();
 		const candidates: Array<{
 			path: string;
 			isSystem: boolean;
@@ -30,7 +36,7 @@ export function discoverBatteryPath(baseDir = POWER_SUPPLY_BASE): string {
 		}> = [];
 
 		for (const entry of entries) {
-			const entryPath = join(baseDir, entry);
+			const entryPath = join(dir, entry);
 			const typeFile = join(entryPath, "type");
 			if (!existsSync(typeFile)) continue;
 
@@ -57,7 +63,7 @@ export function discoverBatteryPath(baseDir = POWER_SUPPLY_BASE): string {
 
 		if (candidates.length === 0) {
 			// No battery found: return default BAT0 path to maintain safe module evaluation
-			return join(baseDir, "BAT0");
+			return join(dir, "BAT0");
 		}
 
 		// 1. Prefer system-level battery with standard BAT* naming (e.g. BAT0, BAT1)
@@ -94,11 +100,17 @@ export const CHARGE_HIGH_WARN = 80; // % – unplug reminder
 export const CHARGE_LOW_WARN = 20; // % – plug-in reminder
 export const CHARGE_CRIT_WARN = 10; // % – critical low battery
 export const CPU_HOT_CHARGING = 85; // °C – warn if charging while system is hot
+export const CPU_ANOMALY_TEMP = 80; // °C – abnormal temperature during low system load
+export const CPU_ANOMALY_MAX_LOAD_PCT = 20; // % – max CPU usage considered low workload / idle
+export const CPU_ANOMALY_MAX_POWER_W = 12; // W – max discharge power considered low workload
 
 // ── hysteresis & deadband constants ──────────────────────────────────
 export const CHARGE_HYSTERESIS_PCT = 5; // % band before re-arming charge alerts
 export const TEMP_HYSTERESIS_C = 3; // °C band before re-arming thermal alerts
 export const CPU_TEMP_HYSTERESIS_C = 5; // °C band before re-arming CPU heat-soak
+export const CPU_HEAT_DEBOUNCE_SAMPLES = 3; // Sustained samples required to trip CPU heat alert
+export const CPU_ANOMALY_HYSTERESIS_C = 5; // °C band before re-arming thermal anomaly alert
+export const CPU_ANOMALY_DEBOUNCE_SAMPLES = 3; // Sustained samples required to trip thermal anomaly
 export const CAP_HYSTERESIS_PCT = 2; // % band before re-arming capacity health alert
 export const VOLTAGE_OVER_RATIO = 1.15; // 15% above design voltage triggers overvoltage
 export const VOLTAGE_CLEAR_RATIO = 1.1; // Drops below 10% above design to clear overvoltage

@@ -1,7 +1,10 @@
+export type PowerState = "charging" | "discharging" | "ac_idle" | "unknown";
+
 export interface TelemetrySample {
 	ts: string;
 	charge_pct: number;
 	status: string;
+	power_state: PowerState;
 	energy_wh: number;
 	energy_full_wh: number;
 	energy_design_wh: number;
@@ -26,6 +29,8 @@ export interface TelemetrySample {
 	gpu_pct: number | null;
 	gpu_power_w: number | null;
 	load1: number | null;
+	boot_id: string | null;
+	uptime_s: number | null;
 }
 
 export type BatterySample = TelemetrySample;

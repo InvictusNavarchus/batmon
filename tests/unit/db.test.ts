@@ -4,6 +4,7 @@ import {
 	closeDbs,
 	getLatestHistoricalSample,
 	getLatestSample,
+	mapRowToSample,
 	pruneDebug,
 	setDbConnectionsForTesting,
 	store,
@@ -19,10 +20,22 @@ import type { BatterySample } from "../../src/types";
 function createMockSample(
 	overrides: Partial<BatterySample> = {},
 ): BatterySample {
+	const status =
+		overrides.status ?? (overrides.is_charging ? "Charging" : "Discharging");
+	const isCharging = overrides.is_charging ?? status === "Charging";
+	const powerState =
+		overrides.power_state ??
+		(isCharging
+			? "charging"
+			: status === "Discharging"
+				? "discharging"
+				: "ac_idle");
+
 	return {
 		ts: new Date().toISOString(),
 		charge_pct: 85,
-		status: "Discharging",
+		status,
+		power_state: powerState,
 		energy_wh: 45,
 		energy_full_wh: 50,
 		energy_design_wh: 50,
@@ -33,7 +46,7 @@ function createMockSample(
 		estimated_cycle_count: 5.0,
 		battery_temp_c: 28.5,
 		health_pct: 90.0,
-		is_charging: false,
+		is_charging: isCharging,
 		is_present: true,
 		time_to_empty_s: 12000,
 		time_to_full_s: null,
@@ -49,6 +62,8 @@ function createMockSample(
 		gpu_pct: null,
 		gpu_power_w: null,
 		load1: 0.85,
+		boot_id: "mock-boot-id",
+		uptime_s: 12345.6,
 		...overrides,
 	};
 }
@@ -160,5 +175,28 @@ describe("database operations (store, getLatest, prune)", () => {
 		}>;
 		expect(survivingRows.length).toBe(1);
 		expect(survivingRows[0].ts).toBe(nowSample.ts);
+	});
+
+	test("mapRowToSample converts SQLite numeric 0 and 1 into strict booleans and normalizes legacy power_state", () => {
+		const rawRow = {
+			ts: new Date().toISOString(),
+			is_charging: 1,
+			is_present: 0,
+			charge_pct: 50,
+			status: "Charging",
+			power_state: null,
+		};
+		const mapped = mapRowToSample(rawRow);
+		expect(mapped.is_charging).toBe(true);
+		expect(mapped.is_present).toBe(false);
+		expect(mapped.power_state).toBe("charging");
+
+		const rawRowDischarging = {
+			is_charging: 0,
+			is_present: 1,
+			status: "Discharging",
+		};
+		const mappedDischarging = mapRowToSample(rawRowDischarging);
+		expect(mappedDischarging.power_state).toBe("discharging");
 	});
 });

@@ -12,6 +12,7 @@ function createMockSample(
 		ts: "2026-08-28T00:00:00.000Z",
 		charge_pct: 80,
 		status: "Charging",
+		power_state: "charging",
 		energy_wh: 40,
 		energy_full_wh: 50,
 		energy_design_wh: 50,
@@ -36,6 +37,8 @@ function createMockSample(
 		gpu_pct: null,
 		gpu_power_w: null,
 		load1: 0.3,
+		boot_id: "mock-boot-id",
+		uptime_s: 12345.6,
 		...overrides,
 	};
 }
@@ -64,8 +67,9 @@ describe("runOneshot scenario", () => {
 
 		activeSpies.push(readSpy, storeSpy, storeDebugSpy, alertSpy, closeSpy);
 
-		await runOneshot();
+		await runOneshot(0);
 
+		expect(readSpy).toHaveBeenCalledTimes(2);
 		expect(storeSpy).toHaveBeenCalledTimes(1);
 		expect(storeSpy).toHaveBeenCalledWith(mockSample);
 

@@ -19,6 +19,7 @@ import {
 	closeDbs,
 	computeEstimatedCycles,
 	getLatestHistoricalSample,
+	getLatestSample,
 	pruneDebug,
 	store,
 	storeDebug,
@@ -27,7 +28,7 @@ import { readTelemetry } from "./telemetry";
 import type { TelemetrySample } from "./types";
 
 let alertManager = new AlertManager();
-let prevHistorical: TelemetrySample | null = null;
+let prevDebugSample: TelemetrySample | null = null;
 let tickCount = 0;
 let isRunning = true;
 let isTicking = false;
@@ -40,14 +41,16 @@ async function runTick(): Promise<void> {
 			return;
 		}
 
-		if (prevHistorical === null) {
-			prevHistorical = await getLatestHistoricalSample();
+		if (prevDebugSample === null) {
+			prevDebugSample =
+				(await getLatestSample()) ?? (await getLatestHistoricalSample());
 		}
 
 		sample.estimated_cycle_count = computeEstimatedCycles(
 			sample,
-			prevHistorical,
+			prevDebugSample,
 		);
+		prevDebugSample = sample;
 
 		// 1. Flight recorder: store every 1s sample to debug.db
 		await storeDebug(sample);
@@ -57,18 +60,18 @@ async function runTick(): Promise<void> {
 
 		// 3. Historical: store downsampled sample to battery.db every 60s
 		if (tickCount % HISTORICAL_SAMPLE_INTERVAL_TICKS === 0) {
-			await store(sample);
-			prevHistorical = sample;
+			const histSample = { ...sample };
+			await store(histSample);
 		}
 
 		// 4. Batch prune debug.db every 5 minutes (300 ticks)
 		if (tickCount > 0 && tickCount % PRUNE_INTERVAL_TICKS === 0) {
 			await pruneDebug(DEBUG_RETENTION_HOURS);
 		}
-
-		tickCount++;
 	} catch (err) {
 		console.error("batmon tick error:", err);
+	} finally {
+		tickCount++;
 	}
 }
 
@@ -82,9 +85,19 @@ async function executeTick(): Promise<void> {
 	}
 }
 
-async function runOneshot(): Promise<void> {
+async function runOneshot(sampleIntervalMs = 500): Promise<void> {
+	// Sample once to prime CPU and process delta baselines
+	const warmup = await readTelemetry();
+	if (!warmup.is_present) process.exit(0);
+
+	if (sampleIntervalMs > 0) {
+		await Bun.sleep(sampleIntervalMs);
+	}
+
+	// Second sample captures valid non-null CPU% and process CPU delta rankings
 	const sample = await readTelemetry();
 	if (!sample.is_present) process.exit(0);
+
 	await store(sample);
 	await storeDebug(sample);
 	const oneshotAlerts = new AlertManager();
@@ -101,7 +114,7 @@ export async function shutdown(): Promise<void> {
 
 export function resetDaemonStateForTesting(): void {
 	alertManager = new AlertManager();
-	prevHistorical = null;
+	prevDebugSample = null;
 	tickCount = 0;
 	isRunning = true;
 	isTicking = false;

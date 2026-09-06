@@ -9,6 +9,12 @@ import {
 	CHARGE_HIGH_WARN,
 	CHARGE_HYSTERESIS_PCT,
 	CHARGE_LOW_WARN,
+	CPU_ANOMALY_DEBOUNCE_SAMPLES,
+	CPU_ANOMALY_HYSTERESIS_C,
+	CPU_ANOMALY_MAX_LOAD_PCT,
+	CPU_ANOMALY_MAX_POWER_W,
+	CPU_ANOMALY_TEMP,
+	CPU_HEAT_DEBOUNCE_SAMPLES,
 	CPU_HOT_CHARGING,
 	CPU_TEMP_HYSTERESIS_C,
 	DB_DIR,
@@ -66,6 +72,16 @@ describe("config thresholds and invariants", () => {
 
 		expect(CPU_TEMP_HYSTERESIS_C).toBe(5);
 		expect(CPU_TEMP_HYSTERESIS_C).toBeGreaterThan(0);
+
+		expect(CPU_HEAT_DEBOUNCE_SAMPLES).toBe(3);
+		expect(CPU_HEAT_DEBOUNCE_SAMPLES).toBeGreaterThanOrEqual(1);
+		expect(Number.isInteger(CPU_HEAT_DEBOUNCE_SAMPLES)).toBe(true);
+
+		expect(CPU_ANOMALY_TEMP).toBe(80);
+		expect(CPU_ANOMALY_MAX_LOAD_PCT).toBe(20);
+		expect(CPU_ANOMALY_MAX_POWER_W).toBe(12);
+		expect(CPU_ANOMALY_DEBOUNCE_SAMPLES).toBe(3);
+		expect(CPU_ANOMALY_HYSTERESIS_C).toBe(5);
 
 		expect(CAP_HYSTERESIS_PCT).toBe(2);
 		expect(CAP_HYSTERESIS_PCT).toBeGreaterThan(0);
@@ -218,5 +234,34 @@ describe("discoverBatteryPath auto-discovery", () => {
 
 		const discovered = discoverBatteryPath(tempBaseDir);
 		expect(discovered).toBe(bat0);
+	});
+
+	test("allows direct override via BATMON_SYSFS_PATH environment variable", () => {
+		const originalEnv = process.env.BATMON_SYSFS_PATH;
+		try {
+			process.env.BATMON_SYSFS_PATH = "/custom/mock/battery/BAT99";
+			expect(discoverBatteryPath("/nonexistent/path")).toBe(
+				"/custom/mock/battery/BAT99",
+			);
+		} finally {
+			if (originalEnv !== undefined) {
+				process.env.BATMON_SYSFS_PATH = originalEnv;
+			} else {
+				delete process.env.BATMON_SYSFS_PATH;
+			}
+		}
+	});
+
+	test("falls back to default /sys/class/power_supply when baseDir is empty", () => {
+		const originalEnv = process.env.BATMON_SYSFS_PATH;
+		delete process.env.BATMON_SYSFS_PATH;
+		try {
+			const discovered = discoverBatteryPath("");
+			expect(discovered.startsWith("/sys/class/power_supply")).toBe(true);
+		} finally {
+			if (originalEnv !== undefined) {
+				process.env.BATMON_SYSFS_PATH = originalEnv;
+			}
+		}
 	});
 });

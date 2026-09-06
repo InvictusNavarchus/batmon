@@ -21,7 +21,7 @@ describe("migrations", () => {
 		await migrate(sql, HISTORICAL_MIGRATIONS, "battery.db");
 
 		const versionRows = await sql`PRAGMA user_version;`;
-		expect(Number(versionRows[0].user_version)).toBe(5);
+		expect(Number(versionRows[0].user_version)).toBe(7);
 
 		const columns = (await sql`PRAGMA table_info(samples);`) as Array<{
 			name: string;
@@ -44,6 +44,9 @@ describe("migrations", () => {
 		expect(columnNames).toContain("gpu_pct");
 		expect(columnNames).toContain("gpu_power_w");
 		expect(columnNames).toContain("load1");
+		expect(columnNames).toContain("power_state");
+		expect(columnNames).toContain("boot_id");
+		expect(columnNames).toContain("uptime_s");
 
 		const indexes = (await sql`PRAGMA index_list(samples);`) as Array<{
 			name: string;
@@ -55,7 +58,7 @@ describe("migrations", () => {
 		await migrate(sql, DEBUG_MIGRATIONS, "debug.db");
 
 		const versionRows = await sql`PRAGMA user_version;`;
-		expect(Number(versionRows[0].user_version)).toBe(3);
+		expect(Number(versionRows[0].user_version)).toBe(5);
 
 		const columns = (await sql`PRAGMA table_info(samples);`) as Array<{
 			name: string;
@@ -68,6 +71,9 @@ describe("migrations", () => {
 		expect(columnNames).toContain("charge_pct");
 		expect(columnNames).toContain("estimated_cycle_count");
 		expect(columnNames).toContain("load1");
+		expect(columnNames).toContain("power_state");
+		expect(columnNames).toContain("boot_id");
+		expect(columnNames).toContain("uptime_s");
 
 		const indexes = (await sql`PRAGMA index_list(samples);`) as Array<{
 			name: string;
@@ -80,7 +86,7 @@ describe("migrations", () => {
 		await migrate(sql, HISTORICAL_MIGRATIONS, "battery.db");
 
 		const versionRows = await sql`PRAGMA user_version;`;
-		expect(Number(versionRows[0].user_version)).toBe(5);
+		expect(Number(versionRows[0].user_version)).toBe(7);
 	});
 
 	test("applies incremental migrations from intermediate version", async () => {
@@ -98,12 +104,14 @@ describe("migrations", () => {
 		await migrate(sql, HISTORICAL_MIGRATIONS, "battery.db");
 
 		const afterVersion = await sql`PRAGMA user_version;`;
-		expect(Number(afterVersion[0].user_version)).toBe(5);
+		expect(Number(afterVersion[0].user_version)).toBe(7);
 
 		const afterCols = (await sql`PRAGMA table_info(samples);`) as Array<{
 			name: string;
 		}>;
 		expect(afterCols.map((c) => c.name)).toContain("cpu_pct");
+		expect(afterCols.map((c) => c.name)).toContain("boot_id");
+		expect(afterCols.map((c) => c.name)).toContain("uptime_s");
 	});
 
 	test("renames legacy columns correctly without losing data", async () => {
@@ -142,5 +150,43 @@ describe("migrations", () => {
 		expect(rows[0].energy_design_wh).toBe(52.4);
 		expect(rows[0].voltage_design_v).toBe(11.4);
 		expect(rows[0].battery_temp_c).toBe(32.1);
+	});
+
+	test("renames samples_debug to samples even when empty samples table already exists", async () => {
+		await sql`
+			CREATE TABLE samples_debug (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				ts TEXT NOT NULL,
+				charge_pct REAL
+			);
+		`;
+		await sql`
+			INSERT INTO samples_debug (ts, charge_pct)
+			VALUES ('2026-08-28T00:00:00.000Z', 77.7);
+		`;
+
+		// v1 creates samples table (empty)
+		await sql`
+			CREATE TABLE samples (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				ts TEXT NOT NULL,
+				charge_pct REAL
+			);
+		`;
+		await sql.unsafe("PRAGMA user_version = 2;");
+
+		// Run debug migrations from v2 -> v5
+		await migrate(sql, DEBUG_MIGRATIONS, "debug.db");
+
+		const rows = (await sql`SELECT * FROM samples WHERE id = 1;`) as Array<{
+			charge_pct: number;
+		}>;
+
+		expect(rows.length).toBe(1);
+		expect(rows[0].charge_pct).toBe(77.7);
+
+		const oldTables =
+			await sql`SELECT name FROM sqlite_master WHERE type='table' AND name='samples_debug';`;
+		expect(oldTables.length).toBe(0);
 	});
 });

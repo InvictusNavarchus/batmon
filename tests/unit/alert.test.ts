@@ -5,10 +5,24 @@ import type { BatterySample, NotificationOptions } from "../../src/types";
 function createMockSample(
 	overrides: Partial<BatterySample> = {},
 ): BatterySample {
+	const status =
+		overrides.status ?? (overrides.is_charging ? "Charging" : "Discharging");
+	const isCharging = overrides.is_charging ?? status === "Charging";
+	const powerState =
+		overrides.power_state ??
+		(isCharging
+			? "charging"
+			: status === "Discharging"
+				? "discharging"
+				: status === "Full" || status === "Not charging"
+					? "ac_idle"
+					: "unknown");
+
 	return {
 		ts: "2026-08-28T00:00:00.000Z",
 		charge_pct: 50,
-		status: "Discharging",
+		status,
+		power_state: powerState,
 		energy_wh: 30,
 		energy_full_wh: 60,
 		energy_design_wh: 60,
@@ -19,7 +33,7 @@ function createMockSample(
 		estimated_cycle_count: 50,
 		battery_temp_c: 30,
 		health_pct: 95,
-		is_charging: false,
+		is_charging: isCharging,
 		is_present: true,
 		time_to_empty_s: 7200,
 		time_to_full_s: null,
@@ -33,6 +47,8 @@ function createMockSample(
 		gpu_pct: null,
 		gpu_power_w: null,
 		load1: 0.5,
+		boot_id: "mock-boot-id",
+		uptime_s: 12345.6,
 		...overrides,
 	};
 }
@@ -250,6 +266,84 @@ describe("AlertManager stateful engine with hysteresis & suppression", () => {
 		expect(notifications[0].title).toBe("Low Battery");
 	});
 
+	test("does not fire low or critical battery alert when on AC power (ac_idle) or unknown", () => {
+		const notifications: NotificationOptions[] = [];
+		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
+
+		// Capped at 15% on AC power (status: "Not charging" -> power_state: "ac_idle")
+		manager.check(
+			createMockSample({
+				charge_pct: 15,
+				is_charging: false,
+				status: "Not charging",
+				power_state: "ac_idle",
+			}),
+			notifyFn,
+		);
+		// Even at 5% critical level, should not nag to connect charger if already on AC
+		manager.check(
+			createMockSample({
+				charge_pct: 5,
+				is_charging: false,
+				status: "Not charging",
+				power_state: "ac_idle",
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Unknown power state (e.g. unreadable sysfs) should also stay silent
+		manager.check(
+			createMockSample({
+				charge_pct: 10,
+				is_charging: false,
+				status: "Unknown",
+				power_state: "unknown",
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Now unplugging and discharging at 10% critical should fire critical alert
+		manager.check(
+			createMockSample({
+				charge_pct: 10,
+				is_charging: false,
+				status: "Discharging",
+				power_state: "discharging",
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(1);
+		expect(notifications[0].title).toBe("CRITICAL: Battery Low");
+
+		// Re-connecting charger (entering ac_idle) resets the alert latch
+		notifications.length = 0;
+		manager.check(
+			createMockSample({
+				charge_pct: 10,
+				is_charging: false,
+				status: "Not charging",
+				power_state: "ac_idle",
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Discharging again fires alert again
+		manager.check(
+			createMockSample({
+				charge_pct: 10,
+				is_charging: false,
+				status: "Discharging",
+				power_state: "discharging",
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(1);
+	});
+
 	test("handles battery temperature warning, critical escalation, and thermal hysteresis", () => {
 		const notifications: NotificationOptions[] = [];
 		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
@@ -388,18 +482,33 @@ describe("AlertManager stateful engine with hysteresis & suppression", () => {
 		expect(notifications.length).toBe(0);
 	});
 
-	test("fires CPU heat-soak risk warning while charging and enforces hysteresis", () => {
+	test("fires CPU heat-soak risk warning while charging after sustained debounce samples and enforces hysteresis", () => {
 		const notifications: NotificationOptions[] = [];
 		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
 		const manager = new AlertManager();
 
-		// CPU hot (88 °C >= 85 °C) while charging
+		// CPU hot (88 °C >= 85 °C) while charging requires 3 sustained samples
+		manager.check(
+			createMockSample({ is_charging: true, cpu_temp_c: 88 }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		manager.check(
+			createMockSample({ is_charging: true, cpu_temp_c: 88 }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
 		manager.check(
 			createMockSample({ is_charging: true, cpu_temp_c: 88 }),
 			notifyFn,
 		);
 		expect(notifications.length).toBe(1);
 		expect(notifications[0].title).toBe("Warning: Heat-Soak Risk");
+		expect(notifications[0].body).toContain(
+			"unplug charger to preserve health",
+		);
 
 		// Flapping (88 -> 82 -> 88 °C, deadband is < 80 °C)
 		notifications.length = 0;
@@ -414,7 +523,155 @@ describe("AlertManager stateful engine with hysteresis & suppression", () => {
 		expect(notifications.length).toBe(0);
 	});
 
-	test("reset() clears all alert latches", () => {
+	test("ignores transient CPU temperature spikes shorter than debounce threshold", () => {
+		const notifications: NotificationOptions[] = [];
+		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
+
+		// 2 spikes at 89 °C followed by a drop to 84 °C while charging
+		manager.check(
+			createMockSample({ is_charging: true, cpu_temp_c: 89 }),
+			notifyFn,
+		);
+		manager.check(
+			createMockSample({ is_charging: true, cpu_temp_c: 89 }),
+			notifyFn,
+		);
+		manager.check(
+			createMockSample({ is_charging: true, cpu_temp_c: 84 }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Single spike again -> counter was reset, so still no alert
+		manager.check(
+			createMockSample({ is_charging: true, cpu_temp_c: 89 }),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+	});
+
+	test("fires CRITICAL Thermal Anomaly alert on high temperature during low workload (Aug 20 scenario)", () => {
+		const notifications: NotificationOptions[] = [];
+		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
+
+		// August 20 incident: CPU at 84.1 °C during near-idle (8% CPU, 2.5W draw)
+		const idleSample = createMockSample({
+			is_charging: false,
+			cpu_temp_c: 84.1,
+			cpu_pct: 8,
+			power_w: 2.5,
+		});
+
+		manager.check(idleSample, notifyFn);
+		manager.check(idleSample, notifyFn);
+		expect(notifications.length).toBe(0);
+
+		// 3rd sustained sample triggers critical thermal anomaly
+		manager.check(idleSample, notifyFn);
+		expect(notifications.length).toBe(1);
+		expect(notifications[0].title).toBe("CRITICAL: Thermal Anomaly");
+		expect(notifications[0].urgency).toBe("critical");
+		expect(notifications[0].body).toContain("84 °C");
+		expect(notifications[0].body).toContain("8% CPU");
+
+		// Deadband test: temperature in deadband (78 °C >= 75 °C) does not re-fire
+		notifications.length = 0;
+		manager.check(
+			createMockSample({
+				is_charging: false,
+				cpu_temp_c: 78,
+				cpu_pct: 8,
+				power_w: 2.5,
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Cooldown below hysteresis band (< 75 °C) clears anomaly latch
+		manager.check(
+			createMockSample({
+				is_charging: false,
+				cpu_temp_c: 74,
+				cpu_pct: 8,
+				power_w: 2.5,
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Heating back up requires 3 sustained samples again
+		manager.check(idleSample, notifyFn);
+		manager.check(idleSample, notifyFn);
+		expect(notifications.length).toBe(0);
+
+		manager.check(idleSample, notifyFn);
+		expect(notifications.length).toBe(1);
+		expect(notifications[0].title).toBe("CRITICAL: Thermal Anomaly");
+	});
+
+	test("stays completely silent during high-workload gaming or compilation even at 88 °C", () => {
+		const notifications: NotificationOptions[] = [];
+		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
+
+		// Heavy workload (85% CPU / 45W discharging): 88 °C is expected dissipation
+		const gamingSample = createMockSample({
+			is_charging: false,
+			cpu_temp_c: 88,
+			cpu_pct: 85,
+			power_w: 45.0,
+		});
+
+		for (let i = 0; i < 5; i++) {
+			manager.check(gamingSample, notifyFn);
+		}
+
+		// Zero alerts generated because workload is active, not anomalous
+		expect(notifications.length).toBe(0);
+	});
+
+	test("resets thermal anomaly latch when connected to charger and formats qualifying workload metric", () => {
+		const notifications: NotificationOptions[] = [];
+		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
+
+		// Trigger anomaly with low power (10W) but elevated CPU% (60%): body should show power, not 60% CPU
+		const lowPowerSample = createMockSample({
+			is_charging: false,
+			cpu_temp_c: 84,
+			cpu_pct: 60,
+			power_w: 10.0,
+		});
+
+		for (let i = 0; i < 3; i++) {
+			manager.check(lowPowerSample, notifyFn);
+		}
+		expect(notifications.length).toBe(1);
+		expect(notifications[0].title).toBe("CRITICAL: Thermal Anomaly");
+		expect(notifications[0].body).toContain("10.0 W");
+		expect(notifications[0].body).not.toContain("60% CPU");
+
+		// Connecting to charger resets the anomaly fired latch
+		notifications.length = 0;
+		manager.check(
+			createMockSample({
+				is_charging: true,
+				cpu_temp_c: 72,
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Unplugging and experiencing 3 sustained anomaly samples re-fires the alert
+		for (let i = 0; i < 3; i++) {
+			manager.check(lowPowerSample, notifyFn);
+		}
+		expect(notifications.length).toBe(1);
+	});
+
+	test("reset() clears all alert latches and debounce counters", () => {
 		const notifications: NotificationOptions[] = [];
 		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
 		const manager = new AlertManager();
@@ -425,14 +682,47 @@ describe("AlertManager stateful engine with hysteresis & suppression", () => {
 		);
 		expect(notifications.length).toBe(1);
 
+		// Partial CPU anomaly debounce streak
+		manager.check(
+			createMockSample({
+				cpu_temp_c: 84,
+				cpu_pct: 5,
+				power_w: 3.0,
+				is_charging: false,
+			}),
+			notifyFn,
+		);
+		manager.check(
+			createMockSample({
+				cpu_temp_c: 84,
+				cpu_pct: 5,
+				power_w: 3.0,
+				is_charging: false,
+			}),
+			notifyFn,
+		);
+
 		notifications.length = 0;
 		manager.reset();
 
-		// After reset, checking same sample fires alert again
+		// After reset, checking same sample fires charge alert again
 		manager.check(
 			createMockSample({ charge_pct: 80, is_charging: true }),
 			notifyFn,
 		);
 		expect(notifications.length).toBe(1);
+
+		// Anomaly streak was reset, so 1 more sample does not fire anomaly alert
+		notifications.length = 0;
+		manager.check(
+			createMockSample({
+				cpu_temp_c: 84,
+				cpu_pct: 5,
+				power_w: 3.0,
+				is_charging: false,
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
 	});
 });

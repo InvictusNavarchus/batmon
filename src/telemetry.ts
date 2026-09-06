@@ -1,7 +1,12 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { SYSFS } from "./config";
-import type { SystemTemps, TelemetrySample, TopProcessGroup } from "./types";
+import type {
+	PowerState,
+	SystemTemps,
+	TelemetrySample,
+	TopProcessGroup,
+} from "./types";
 
 // ── sysfs helpers ────────────────────────────────────────────────────
 function sysfsPath(name: string): string {
@@ -12,18 +17,28 @@ function exists(name: string): boolean {
 	return existsSync(sysfsPath(name));
 }
 
-function read(name: string): string {
-	return readFileSync(sysfsPath(name), "utf-8").trim();
+function readStr(name: string, fallback = ""): string {
+	try {
+		const p = sysfsPath(name);
+		if (!existsSync(p)) return fallback;
+		return readFileSync(p, "utf-8").trim();
+	} catch {
+		return fallback;
+	}
 }
 
-function readNum(name: string): number {
-	return Number(read(name));
+function readNum(name: string, fallback = 0): number {
+	const val = readStr(name);
+	if (!val) return fallback;
+	const num = Number(val);
+	return Number.isFinite(num) ? num : fallback;
 }
 
 function readOpt(name: string): number | null {
-	if (!exists(name)) return null;
-	const v = Number(read(name));
-	return Number.isFinite(v) ? v : null;
+	const val = readStr(name);
+	if (!val) return null;
+	const num = Number(val);
+	return Number.isFinite(num) ? num : null;
 }
 
 // ── temperature limits & sysfs conversion constants ──────────────────
@@ -66,7 +81,9 @@ const CPU_DRIVERS = new Set([
 ]);
 const GPU_DRIVERS = new Set(["amdgpu", "i915", "xe", "nouveau"]);
 
-export function readSystemTemps(hwmonBase = "/sys/class/hwmon"): SystemTemps {
+export function readSystemTemps(
+	hwmonBase = process.env.BATMON_HWMON_BASE ?? "/sys/class/hwmon",
+): SystemTemps {
 	const result: SystemTemps = {
 		cpu_c: null,
 		gpu_c: null,
@@ -435,6 +452,40 @@ function readSysfsLoad1(): number | null {
 	return null;
 }
 
+let cachedBootId: string | null = null;
+
+export function resetBootIdCacheForTesting(): void {
+	cachedBootId = null;
+}
+
+export function readBootId(): string | null {
+	if (cachedBootId !== null) return cachedBootId;
+	try {
+		const p = "/proc/sys/kernel/random/boot_id";
+		if (existsSync(p)) {
+			cachedBootId = readFileSync(p, "utf-8").trim();
+			return cachedBootId;
+		}
+	} catch {
+		/* no boot_id */
+	}
+	return null;
+}
+
+export function readUptimeS(): number | null {
+	try {
+		const p = "/proc/uptime";
+		if (existsSync(p)) {
+			const [uptimeStr] = readFileSync(p, "utf-8").trim().split(/\s+/);
+			const num = Number(uptimeStr);
+			return Number.isFinite(num) ? num : null;
+		}
+	} catch {
+		/* no /proc/uptime */
+	}
+	return null;
+}
+
 // ── energy: auto-detect energy_* (µWh) vs charge_* (µAh) ────────────
 function readEnergy(): { now: number; full: number; design: number } {
 	if (exists("energy_now")) {
@@ -445,7 +496,8 @@ function readEnergy(): { now: number; full: number; design: number } {
 		};
 	}
 	// charge-based: µAh × design voltage → Wh
-	const vDesign = readNum("voltage_min_design") / 1_000_000;
+	const vDesign =
+		(readOpt("voltage_min_design") ?? readOpt("voltage_now") ?? 0) / 1_000_000;
 	return {
 		now: (readNum("charge_now") / 1_000_000) * vDesign,
 		full: (readNum("charge_full") / 1_000_000) * vDesign,
@@ -497,20 +549,60 @@ export function upowerProp(prop: string): number | null {
 	}
 }
 
+export function derivePowerState(status: string): PowerState {
+	switch (status) {
+		case "Charging":
+			return "charging";
+		case "Discharging":
+			return "discharging";
+		case "Full":
+		case "Not charging":
+			return "ac_idle";
+		default:
+			return "unknown";
+	}
+}
+
+const UPOWER_CACHE_TTL_MS = 60_000;
+let lastUpowerPollTs = 0;
+let cachedTte: number | null = null;
+let cachedTtf: number | null = null;
+let lastPowerState: PowerState | null = null;
+
+export function resetUpowerCacheForTesting(): void {
+	lastUpowerPollTs = 0;
+	cachedTte = null;
+	cachedTtf = null;
+	lastPowerState = null;
+}
+
 // ── read ─────────────────────────────────────────────────────────────
 export async function readTelemetry(): Promise<TelemetrySample> {
-	const status = read("status");
+	const status = readStr("status", "Unknown");
+	const powerState = derivePowerState(status);
 	const energy = readEnergy();
 	const powerW = readPower();
 	const voltageV = readNum("voltage_now") / 1_000_000;
-	const voltDesign = readNum("voltage_min_design") / 1_000_000;
-	const isCharging = status === "Charging";
+	const voltDesign =
+		(readOpt("voltage_min_design") ?? readOpt("voltage_now") ?? 0) / 1_000_000;
+	const isCharging = powerState === "charging";
 	const sysTemps = readSystemTemps();
 	const battTemp = readBatteryTemp();
 
-	let tte = upowerProp("TimeToEmpty");
-	let ttf = upowerProp("TimeToFull");
-	if (tte === null && !isCharging && powerW > 0.5)
+	const now = Date.now();
+	if (
+		powerState !== lastPowerState ||
+		now - lastUpowerPollTs >= UPOWER_CACHE_TTL_MS
+	) {
+		lastUpowerPollTs = now;
+		lastPowerState = powerState;
+		cachedTte = powerState === "discharging" ? upowerProp("TimeToEmpty") : null;
+		cachedTtf = powerState === "charging" ? upowerProp("TimeToFull") : null;
+	}
+
+	let tte = cachedTte;
+	let ttf = cachedTtf;
+	if (tte === null && powerState === "discharging" && powerW > 0.5)
 		tte = Math.round((energy.now / powerW) * 3600);
 	if (ttf === null && isCharging && powerW > 0.5)
 		ttf = Math.round(((energy.full - energy.now) / powerW) * 3600);
@@ -526,6 +618,7 @@ export async function readTelemetry(): Promise<TelemetrySample> {
 		ts: new Date().toISOString(),
 		charge_pct: readNum("capacity"),
 		status,
+		power_state: powerState,
 		energy_wh: Math.round(energy.now * 1000) / 1000,
 		energy_full_wh: Math.round(energy.full * 1000) / 1000,
 		energy_design_wh: Math.round(energy.design * 1000) / 1000,
@@ -540,7 +633,11 @@ export async function readTelemetry(): Promise<TelemetrySample> {
 				? Math.round((energy.full / energy.design) * 10000) / 100
 				: 100,
 		is_charging: isCharging,
-		is_present: read("present") === "1",
+		is_present: existsSync(SYSFS)
+			? exists("present")
+				? readStr("present") === "1"
+				: true
+			: false,
 		time_to_empty_s: tte,
 		time_to_full_s: ttf,
 		cpu_temp_c: sysTemps.cpu_c,
@@ -553,5 +650,7 @@ export async function readTelemetry(): Promise<TelemetrySample> {
 		gpu_pct: gpuPct,
 		gpu_power_w: sysTemps.gpu_power_w,
 		load1,
+		boot_id: readBootId(),
+		uptime_s: readUptimeS(),
 	};
 }

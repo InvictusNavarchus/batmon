@@ -42,10 +42,29 @@ async function renameTableIfExists(
 ): Promise<void> {
 	const tables =
 		await sql`SELECT name FROM sqlite_master WHERE type='table' AND name=${oldTable};`;
+	if (tables.length === 0) return;
+
 	const newTables =
 		await sql`SELECT name FROM sqlite_master WHERE type='table' AND name=${newTable};`;
-	if (tables.length > 0 && newTables.length === 0) {
+
+	if (newTables.length === 0) {
 		await sql.unsafe(`ALTER TABLE ${oldTable} RENAME TO ${newTable};`);
+		return;
+	}
+
+	// Target table exists: check if it is an empty placeholder
+	const newCountRows = (await sql.unsafe(
+		`SELECT count(*) as count FROM ${newTable};`,
+	)) as Array<{ count: number }>;
+
+	if (Number(newCountRows[0]?.count ?? 0) === 0) {
+		await sql.unsafe(`DROP TABLE ${newTable};`);
+		await sql.unsafe(`ALTER TABLE ${oldTable} RENAME TO ${newTable};`);
+	} else {
+		await sql.unsafe(
+			`INSERT OR IGNORE INTO ${newTable} SELECT * FROM ${oldTable};`,
+		);
+		await sql.unsafe(`DROP TABLE ${oldTable};`);
 	}
 }
 
@@ -139,6 +158,21 @@ export const HISTORICAL_MIGRATIONS: Migration[] = [
 			);
 		},
 	},
+	{
+		version: 6,
+		name: "add_power_state",
+		up: async (sql) => {
+			await addColumnIfNotExists(sql, "samples", "power_state", "TEXT");
+		},
+	},
+	{
+		version: 7,
+		name: "add_boot_id_and_uptime",
+		up: async (sql) => {
+			await addColumnIfNotExists(sql, "samples", "boot_id", "TEXT");
+			await addColumnIfNotExists(sql, "samples", "uptime_s", "REAL");
+		},
+	},
 ];
 
 // ── Debug Flight Recorder Migrations (debug.db) ───────────────────────
@@ -215,6 +249,21 @@ export const DEBUG_MIGRATIONS: Migration[] = [
 		name: "rename_samples_debug_to_samples",
 		up: async (sql) => {
 			await renameTableIfExists(sql, "samples_debug", "samples");
+		},
+	},
+	{
+		version: 4,
+		name: "add_power_state",
+		up: async (sql) => {
+			await addColumnIfNotExists(sql, "samples", "power_state", "TEXT");
+		},
+	},
+	{
+		version: 5,
+		name: "add_boot_id_and_uptime",
+		up: async (sql) => {
+			await addColumnIfNotExists(sql, "samples", "boot_id", "TEXT");
+			await addColumnIfNotExists(sql, "samples", "uptime_s", "REAL");
 		},
 	},
 ];

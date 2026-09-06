@@ -1,11 +1,22 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SYSFS } from "../../src/config";
 import {
+	derivePowerState,
 	formatUpowerDevicePath,
+	readBootId,
 	readSystemTemps,
+	readUptimeS,
+	resetBootIdCacheForTesting,
+	resetUpowerCacheForTesting,
 	upowerProp,
 } from "../../src/telemetry";
 
@@ -14,6 +25,7 @@ describe("telemetry parsers", () => {
 	let tempHwmonDir: string | null = null;
 
 	afterEach(() => {
+		resetUpowerCacheForTesting();
 		if (spawnSyncSpy) {
 			spawnSyncSpy.mockRestore();
 			spawnSyncSpy = null;
@@ -283,6 +295,50 @@ describe("telemetry parsers", () => {
 			});
 
 			expect(upowerProp("TimeToEmpty")).toBeNull();
+		});
+	});
+
+	describe("readBootId and readUptimeS", () => {
+		test("reads kernel boot_id or returns null when unavailable", () => {
+			resetBootIdCacheForTesting();
+			const bootId = readBootId();
+			if (
+				process.platform === "linux" &&
+				existsSync("/proc/sys/kernel/random/boot_id")
+			) {
+				expect(bootId).not.toBeNull();
+				// Linux UUID format (8-4-4-4-12 hex)
+				expect(bootId).toMatch(
+					/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+				);
+				// Second call returns cached value
+				expect(readBootId()).toBe(bootId);
+			} else {
+				expect(bootId).toBeNull();
+			}
+		});
+
+		test("reads monotonic uptime in seconds or returns null when unavailable", () => {
+			const uptime = readUptimeS();
+			if (process.platform === "linux" && existsSync("/proc/uptime")) {
+				expect(typeof uptime).toBe("number");
+				expect(uptime).toBeGreaterThan(0);
+				expect(Number.isFinite(uptime)).toBe(true);
+			} else {
+				expect(uptime).toBeNull();
+			}
+		});
+	});
+
+	describe("derivePowerState", () => {
+		test("maps Linux power supply status strings to correct PowerState union", () => {
+			expect(derivePowerState("Charging")).toBe("charging");
+			expect(derivePowerState("Discharging")).toBe("discharging");
+			expect(derivePowerState("Full")).toBe("ac_idle");
+			expect(derivePowerState("Not charging")).toBe("ac_idle");
+			expect(derivePowerState("Unknown")).toBe("unknown");
+			expect(derivePowerState("")).toBe("unknown");
+			expect(derivePowerState("SomeDriverSpecificState")).toBe("unknown");
 		});
 	});
 });

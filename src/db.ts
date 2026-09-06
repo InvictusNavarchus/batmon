@@ -7,7 +7,8 @@ import {
 	DEBUG_RETENTION_HOURS,
 } from "./config";
 import { DEBUG_MIGRATIONS, HISTORICAL_MIGRATIONS, migrate } from "./migrations";
-import type { BatterySample } from "./types";
+import { derivePowerState } from "./telemetry";
+import type { BatterySample, PowerState } from "./types";
 
 let histSql: SQL | null = null;
 let debugSql: SQL | null = null;
@@ -20,12 +21,26 @@ export function computeEstimatedCycles(
 	if (!prev || curr.energy_design_wh <= 0) return 0;
 
 	const prevCycles = prev.estimated_cycle_count ?? 0;
+	const powerState =
+		curr.power_state ?? derivePowerState((curr.status as string) || "");
 
-	if (!curr.is_charging && prev.energy_wh > curr.energy_wh) {
+	const isBootBoundary =
+		(prev.boot_id !== null &&
+			curr.boot_id !== null &&
+			prev.boot_id !== curr.boot_id) ||
+		(prev.uptime_s !== null &&
+			curr.uptime_s !== null &&
+			curr.uptime_s < prev.uptime_s);
+
+	if (isBootBoundary) {
+		return prevCycles;
+	}
+
+	if (powerState === "discharging" && prev.energy_wh > curr.energy_wh) {
 		const deltaWh = prev.energy_wh - curr.energy_wh;
 		if (deltaWh > 0 && deltaWh <= curr.energy_design_wh) {
 			const deltaCycles = deltaWh / curr.energy_design_wh;
-			return Math.round((prevCycles + deltaCycles) * 10000) / 10000;
+			return prevCycles + deltaCycles;
 		}
 	}
 
@@ -50,17 +65,28 @@ async function initHistoricalDb(): Promise<SQL> {
 	return histSql;
 }
 
+export function mapRowToSample(row: Record<string, unknown>): BatterySample {
+	return {
+		...(row as unknown as BatterySample),
+		power_state:
+			(row.power_state as PowerState) ??
+			derivePowerState((row.status as string) || ""),
+		is_charging: Boolean(row.is_charging),
+		is_present: Boolean(row.is_present),
+	};
+}
+
 export async function getLatestHistoricalSample(): Promise<BatterySample | null> {
 	const sql = await initHistoricalDb();
 	const rows = await sql`SELECT * FROM samples ORDER BY id DESC LIMIT 1;`;
-	return rows.length > 0 ? (rows[0] as unknown as BatterySample) : null;
+	return rows.length > 0 ? mapRowToSample(rows[0]) : null;
 }
 
 export async function store(s: BatterySample): Promise<BatterySample | null> {
 	const sql = await initHistoricalDb();
 
 	const rows = await sql`SELECT * FROM samples ORDER BY id DESC LIMIT 1;`;
-	const prev = rows.length > 0 ? (rows[0] as unknown as BatterySample) : null;
+	const prev = rows.length > 0 ? mapRowToSample(rows[0]) : null;
 
 	s.estimated_cycle_count = computeEstimatedCycles(s, prev);
 
@@ -89,7 +115,7 @@ async function initDebugDb(): Promise<SQL> {
 export async function getLatestSample(): Promise<BatterySample | null> {
 	const sql = await initDebugDb();
 	const rows = await sql`SELECT * FROM samples ORDER BY id DESC LIMIT 1;`;
-	return rows.length > 0 ? (rows[0] as unknown as BatterySample) : null;
+	return rows.length > 0 ? mapRowToSample(rows[0]) : null;
 }
 
 export async function storeDebug(s: BatterySample): Promise<void> {
@@ -99,9 +125,8 @@ export async function storeDebug(s: BatterySample): Promise<void> {
 
 export async function pruneDebug(hours = DEBUG_RETENTION_HOURS): Promise<void> {
 	const sql = await initDebugDb();
-	await sql.unsafe(
-		`DELETE FROM samples WHERE julianday(ts) < julianday('now', '-${hours} hours');`,
-	);
+	const cutoff = new Date(Date.now() - hours * 3600_000).toISOString();
+	await sql`DELETE FROM samples WHERE ts < ${cutoff};`;
 }
 
 // ── cleanup & test helpers ───────────────────────────────────────────
