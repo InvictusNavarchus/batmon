@@ -20,6 +20,8 @@ pub mod debounce;
 pub(crate) mod fixtures;
 pub mod health;
 pub mod notify;
+#[cfg(test)]
+mod properties;
 pub mod thermal;
 pub mod voltage;
 
