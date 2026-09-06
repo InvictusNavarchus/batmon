@@ -1,6 +1,5 @@
+# Left over from the Bun-era toolchain; untracked, delete when convenient.
 node_modules/
-bin/
-dist/
 *.db
 *.db-wal
 *.db-shm

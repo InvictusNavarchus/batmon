@@ -12,13 +12,3 @@ pre-commit:
     - name: cargo-test
       glob: "{*.rs,Cargo.toml,Cargo.lock}"
       run: cargo test --quiet
-    - name: typecheck
-      glob: "legacy/**/*.ts"
-      run: bun run typecheck
-    - name: lint
-      glob: "legacy/**/*.ts"
-      run: bun run lint
-    - name: format
-      glob: "legacy/**/*.ts"
-      run: bun run format {staged_files}
-      stage_fixed: true
