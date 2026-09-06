@@ -9,6 +9,7 @@ license = "UNLICENSED"
 publish = false
 
 [dependencies]
+jiff = { version = "0.2.35", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 
