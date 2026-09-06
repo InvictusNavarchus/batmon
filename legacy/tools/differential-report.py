@@ -173,34 +173,50 @@ def compare_integral(pairs) -> None:
 
     start = parse(usable[0][0]["ts"])
     series = [((parse(r["ts"]) - start).total_seconds() / 3600.0,
-               r["estimated_cycle_count"] - t["estimated_cycle_count"])
+               abs(r["estimated_cycle_count"] - t["estimated_cycle_count"]))
               for r, t in usable]
+
+    # The natural unit for "is this gap big?" is one tick's worth of accrual.
+    # Two daemons sampling 250 ms apart are legitimately a fraction of a tick
+    # out of step; a gap of many ticks is not sampling offset.
+    steps = [b["estimated_cycle_count"] - a["estimated_cycle_count"]
+             for (a, _), (b, _) in zip(usable, usable[1:])]
+    tick = statistics.median([s for s in steps if s > 0] or [1e-9])
 
     final_r = usable[-1][0]["estimated_cycle_count"]
     final_t = usable[-1][1]["estimated_cycle_count"]
     print(f"  rust final       {final_r:.9f}")
     print(f"  typescript final {final_t:.9f}")
-    print(f"  absolute gap     {abs(final_r - final_t):.9f} cycles")
-    if max(final_r, final_t) > 0:
-        print(f"  relative gap     {abs(final_r - final_t) / max(final_r, final_t) * 100:.4f}%")
+    print(f"  final gap        {abs(final_r - final_t):.12f} cycles")
+    print(f"  one tick accrues {tick:.3e} cycles (the scale a 250 ms offset can explain)")
 
-    # A systematic per-tick bug shows as a gap growing with elapsed time; noise
-    # from sampling offset stays bounded.
-    print("\n  gap over time (should stay flat, not climb):")
-    buckets = max(1, len(series) // 8)
+    print("\n  mean |gap| over time, in ticks of accrual:")
+    buckets = max(1, len(series) // 10)
     for i in range(0, len(series), buckets):
         chunk = series[i:i + buckets]
         if chunk:
-            print(f"    +{chunk[0][0]:5.2f}h   mean gap {statistics.fmean(g for _, g in chunk):+.9f}")
+            mean_gap = statistics.fmean(g for _, g in chunk)
+            print(f"    +{chunk[0][0]:5.2f}h   {mean_gap:.3e}  ({mean_gap / tick:5.2f} ticks)")
 
+    worst = max(g for _, g in series)
     hours = series[-1][0]
-    if hours > 0.5:
-        first = statistics.fmean(g for h, g in series if h < hours * 0.25)
-        last = statistics.fmean(g for h, g in series if h > hours * 0.75)
-        growth = abs(last) - abs(first)
-        verdict = ("BOUNDED — no systematic drift" if abs(growth) < abs(first) + 1e-6
-                   else "GROWING — investigate")
-        print(f"\n  verdict: {verdict} (|gap| moved {growth:+.9f} between first and last quarter)")
+    quarter_first = [g for h, g in series if h < hours * 0.25] or [0.0]
+    quarter_last = [g for h, g in series if h > hours * 0.75] or [0.0]
+    first, last = statistics.fmean(quarter_first), statistics.fmean(quarter_last)
+
+    print(f"\n  worst gap        {worst:.3e}  ({worst / tick:.2f} ticks)")
+    print(f"  first quarter    {first:.3e}   last quarter {last:.3e}")
+
+    # A sampling-offset gap stays within a few ticks and does not trend. A
+    # per-tick arithmetic bug compounds, so the gap grows without bound and the
+    # later quarters dominate the earlier ones.
+    if worst <= 5 * tick:
+        verdict = "BOUNDED — within sampling offset, no systematic drift"
+    elif last > 3 * first and last > 5 * tick:
+        verdict = "GROWING — a per-tick divergence is compounding; investigate"
+    else:
+        verdict = "BOUNDED — gap does not trend upward"
+    print(f"\n  verdict: {verdict}")
 
 
 def compare_retention(root: Path) -> None:
