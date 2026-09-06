@@ -15,5 +15,6 @@ pub mod db;
 pub mod migrations;
 pub mod parity;
 pub mod paths;
+pub mod telemetry;
 pub mod types;
 pub mod units;
