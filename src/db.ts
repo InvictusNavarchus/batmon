@@ -57,17 +57,25 @@ async function initHistoricalDb(): Promise<SQL> {
 	return histSql;
 }
 
+export function mapRowToSample(row: Record<string, unknown>): BatterySample {
+	return {
+		...(row as unknown as BatterySample),
+		is_charging: Boolean(row.is_charging),
+		is_present: Boolean(row.is_present),
+	};
+}
+
 export async function getLatestHistoricalSample(): Promise<BatterySample | null> {
 	const sql = await initHistoricalDb();
 	const rows = await sql`SELECT * FROM samples ORDER BY id DESC LIMIT 1;`;
-	return rows.length > 0 ? (rows[0] as unknown as BatterySample) : null;
+	return rows.length > 0 ? mapRowToSample(rows[0]) : null;
 }
 
 export async function store(s: BatterySample): Promise<BatterySample | null> {
 	const sql = await initHistoricalDb();
 
 	const rows = await sql`SELECT * FROM samples ORDER BY id DESC LIMIT 1;`;
-	const prev = rows.length > 0 ? (rows[0] as unknown as BatterySample) : null;
+	const prev = rows.length > 0 ? mapRowToSample(rows[0]) : null;
 
 	s.estimated_cycle_count = computeEstimatedCycles(s, prev);
 
@@ -96,7 +104,7 @@ async function initDebugDb(): Promise<SQL> {
 export async function getLatestSample(): Promise<BatterySample | null> {
 	const sql = await initDebugDb();
 	const rows = await sql`SELECT * FROM samples ORDER BY id DESC LIMIT 1;`;
-	return rows.length > 0 ? (rows[0] as unknown as BatterySample) : null;
+	return rows.length > 0 ? mapRowToSample(rows[0]) : null;
 }
 
 export async function storeDebug(s: BatterySample): Promise<void> {

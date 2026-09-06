@@ -4,6 +4,7 @@ import {
 	closeDbs,
 	getLatestHistoricalSample,
 	getLatestSample,
+	mapRowToSample,
 	pruneDebug,
 	setDbConnectionsForTesting,
 	store,
@@ -172,5 +173,17 @@ describe("database operations (store, getLatest, prune)", () => {
 		}>;
 		expect(survivingRows.length).toBe(1);
 		expect(survivingRows[0].ts).toBe(nowSample.ts);
+	});
+
+	test("mapRowToSample converts SQLite numeric 0 and 1 into strict booleans", () => {
+		const rawRow = {
+			ts: new Date().toISOString(),
+			is_charging: 1,
+			is_present: 0,
+			charge_pct: 50,
+		};
+		const mapped = mapRowToSample(rawRow);
+		expect(mapped.is_charging).toBe(true);
+		expect(mapped.is_present).toBe(false);
 	});
 });
