@@ -45,8 +45,12 @@ impl Celsius {
     }
 
     fn plausible(degrees: f64) -> Option<Self> {
+        // Finiteness is checked explicitly rather than left to the comparison.
+        // NaN would fail it anyway, since every comparison against NaN is
+        // false, but positive infinity would not — and an infinite temperature
+        // is a broken sensor, not a hot one.
         let value = Self(degrees);
-        (value >= Self::MIN_PLAUSIBLE).then_some(value)
+        (degrees.is_finite() && value >= Self::MIN_PLAUSIBLE).then_some(value)
     }
 
     /// Rounded to one decimal place with JavaScript tie semantics.
@@ -96,6 +100,17 @@ mod tests {
         // degrees and catches the absolute-zero placeholder instead.
         assert_eq!(Celsius::from_millidegrees(-273_150.0), None);
         assert_eq!(Celsius::from_millidegrees(-50_001.0), None);
+    }
+
+    #[test]
+    fn non_finite_readings_are_not_temperatures() {
+        // Reachable only through the public constructors, since js_number
+        // filters these out of sysfs — but an infinite reading would otherwise
+        // pass the floor and reach a sample and an alert threshold.
+        for raw in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+            assert_eq!(Celsius::from_millidegrees(raw), None, "millidegrees {raw}");
+            assert_eq!(Celsius::from_tenths(raw), None, "tenths {raw}");
+        }
     }
 
     #[test]
