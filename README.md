@@ -14,7 +14,7 @@ It operates as a high-frequency flight recorder, capturing hardware metrics ever
 
 ```text
                       ┌───────────────────────────────────────────────┐
-                      │             batmon Daemon (Bun)               │
+                      │            batmon Daemon (Rust)               │
                       └───────┬───────────────────────────────┬───────┘
                               │ (Every 1 sec)                 │ (Every 60 sec)
                               ▼                               ▼
@@ -69,7 +69,7 @@ It operates as a high-frequency flight recorder, capturing hardware metrics ever
 | | `time_to_full_s` | UPower D-Bus | Smoothed charge completion estimate (seconds) |
 
 * Auto-detects `energy_*` (µWh) vs `charge_*` (µAh) battery drivers.
-* **Low-Overhead Native Reads:** All CPU, memory, clock, GPU, thermal, and process metrics are gathered directly via Linux kernel VFS interfaces (`/proc` and `/sys`) and standard POSIX process accounting (~5–8 ms execution per sample cycle) with zero child processes or external daemons. See empirical evaluations on [Kernel VFS vs. Glances](docs/empirical-glances-vs-native-comparison.md) and [Sysfs Hwmon vs. lm-sensors](docs/empirical-lm-sensors-vs-native-hwmon.md) for detailed benchmark results.
+* **Low-Overhead Native Reads:** All CPU, memory, clock, GPU, thermal, and process metrics are gathered directly via Linux kernel VFS interfaces (`/proc` and `/sys`) and standard POSIX process accounting (~12 ms per sample cycle) with **zero child processes**. UPower and desktop notifications are spoken to over D-Bus directly rather than by spawning `busctl` and `notify-send`. Resident memory is ~7.6 MB. See empirical evaluations on [Kernel VFS vs. Glances](docs/empirical-glances-vs-native-comparison.md), [Sysfs Hwmon vs. lm-sensors](docs/empirical-lm-sensors-vs-native-hwmon.md), and [TypeScript vs. Rust parity](docs/empirical-typescript-vs-rust-parity.md) for detailed benchmark results.
 * **Automatic Migrations:** Database schema updates and column additions are handled seamlessly and automatically on startup using SQLite's native `user_version` tracking with zero manual migration steps required.
 
 ---
@@ -115,6 +115,8 @@ LIMIT 5;"
 * **Over-Voltage Charging:** Alert when charging voltage exceeds 15% above design voltage (re-arms at or below 10% above design voltage).
 * **Battery Health Degradation:** Warning when full capacity drops below $80\%$ of factory design (re-arms above $82\%$).
 
+Re-fired alerts **replace** their previous notification rather than stacking beside it, so a flapping sensor cannot bury the desktop even if it defeats the deadband.
+
 > **Note:** The current alert rules focus on battery protection, because by the time the voltage or power really drops, the system will be shutting down anyway. The idea is to prevent these issues from happening in the first place, not to detect them after the fact. The flight recorder is there to capture the data in case something does happen.
 
 ---
@@ -122,12 +124,9 @@ LIMIT 5;"
 ## 🛠️ Requirements
 
 - **Linux** with systemd (Fedora, Ubuntu, Debian, Arch, etc.)
-- **[Bun](https://bun.sh)** runtime ($\ge 1.3$)
-- **`libnotify` / `notify-send`** (optional, for desktop notifications):
-  ```bash
-  sudo dnf install libnotify     # Fedora/RHEL
-  sudo apt install libnotify-bin # Ubuntu/Debian
-  ```
+- **[Rust](https://rustup.rs)** toolchain ($\ge 1.87$) — to build only. The installed daemon is a single static binary with no runtime dependency.
+- **UPower** (optional) — supplies smoothed runtime estimates. Without it, `batmon` falls back to dividing remaining energy by present draw.
+- **A notification server** (optional) — any desktop provides one. Without it, alerts are still written to the journal.
 - **`sqlite3` CLI** (optional, for querying databases): `sudo dnf install sqlite`
 
 ---
@@ -138,14 +137,15 @@ LIMIT 5;"
 git clone https://github.com/InvictusNavarchus/batmon.git
 cd batmon
 ./install.sh
-# or using bun:
-bun run install-service
 ```
 
 The installer will:
-1. Copy the application to `~/.local/share/batmon/src/`.
+1. Build the release binary and install it to `~/.local/bin/batmon`.
 2. Configure and start a `systemd` user service (`batmon.service`).
 3. Run an initial test verification.
+
+Upgrading from a Bun-based installation is handled automatically: the superseded
+TypeScript sources are removed and **your existing databases are kept and continued**.
 
 ### Managing the Service
 
@@ -157,21 +157,25 @@ systemctl --user status batmon.service
 journalctl --user -u batmon.service -f
 
 # Run a one-off diagnostic sample
-bun run src/index.ts --oneshot
+batmon --oneshot
+
+# Raise log verbosity (standard tracing filter syntax)
+BATMON_LOG=batmon=debug batmon
 ```
 
 ---
 
 ## 🧪 Development & Testing
 
-Run unit tests and typechecks using Bun:
-
 ```bash
-# Run test suite
-bun test
+# Run the full test suite (unit, property, and end-to-end binary tests)
+cargo test
 
-# Run typechecker
-bun run typecheck
+# Lints, denied in the pre-commit hook
+cargo clippy --all-targets -- -D warnings
+
+# Formatting
+cargo fmt --all
 ```
 
 ---
@@ -180,8 +184,6 @@ bun run typecheck
 
 ```bash
 ./uninstall.sh
-# or using bun:
-bun run uninstall-service
 ```
 *(Databases in `~/.local/share/batmon/` are preserved upon uninstall).*
 
