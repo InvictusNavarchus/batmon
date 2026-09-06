@@ -8,6 +8,7 @@
 //! The daemon is synchronous and single-threaded by design: SQLite, sysfs and
 //! procfs all block, so an async runtime would buy nothing and cost a scheduler.
 
+pub mod alerts;
 pub mod config;
 pub mod cycles;
 pub mod db;
