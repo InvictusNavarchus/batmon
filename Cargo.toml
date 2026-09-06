@@ -12,6 +12,7 @@ publish = false
 jiff = { version = "0.2.35", default-features = false, features = ["std"] }
 
 [dev-dependencies]
+tempfile = "3.27.0"
 
 [lints.rust]
 unsafe_code = "forbid"
