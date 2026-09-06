@@ -5,6 +5,11 @@ import {
 	CHARGE_HIGH_WARN,
 	CHARGE_HYSTERESIS_PCT,
 	CHARGE_LOW_WARN,
+	CPU_ANOMALY_DEBOUNCE_SAMPLES,
+	CPU_ANOMALY_HYSTERESIS_C,
+	CPU_ANOMALY_MAX_LOAD_PCT,
+	CPU_ANOMALY_MAX_POWER_W,
+	CPU_ANOMALY_TEMP,
 	CPU_HEAT_DEBOUNCE_SAMPLES,
 	CPU_HOT_CHARGING,
 	CPU_TEMP_HYSTERESIS_C,
@@ -56,6 +61,8 @@ export class AlertManager {
 	private overvoltageFired = false;
 	private cpuHotFired = false;
 	private cpuHotSamples = 0;
+	private anomalyFired = false;
+	private anomalySamples = 0;
 
 	public reset(): void {
 		this.highChargeFired = false;
@@ -67,6 +74,8 @@ export class AlertManager {
 		this.overvoltageFired = false;
 		this.cpuHotFired = false;
 		this.cpuHotSamples = 0;
+		this.anomalyFired = false;
+		this.anomalySamples = 0;
 	}
 
 	public check(
@@ -78,6 +87,7 @@ export class AlertManager {
 		this.checkHealth(curr, notifyFn);
 		this.checkVoltage(curr, notifyFn);
 		this.checkCpuHeat(curr, notifyFn);
+		this.checkThermalAnomaly(curr, notifyFn);
 	}
 
 	private checkCharge(
@@ -239,8 +249,12 @@ export class AlertManager {
 		curr: BatterySample,
 		notifyFn: (opts: NotificationOptions) => void,
 	): void {
-		if (curr.cpu_temp_c === null) {
+		// Heat-soak warning protects battery health specifically while charging
+		if (curr.cpu_temp_c === null || !curr.is_charging) {
 			this.cpuHotSamples = 0;
+			if (!curr.is_charging) {
+				this.cpuHotFired = false;
+			}
 			return;
 		}
 
@@ -251,15 +265,9 @@ export class AlertManager {
 				this.cpuHotSamples >= CPU_HEAT_DEBOUNCE_SAMPLES
 			) {
 				this.cpuHotFired = true;
-				const title = curr.is_charging
-					? "Warning: Heat-Soak Risk"
-					: "Warning: High CPU Temperature";
-				const body = curr.is_charging
-					? `Charging while CPU at ${curr.cpu_temp_c.toFixed(0)} °C`
-					: `CPU at ${curr.cpu_temp_c.toFixed(0)} °C`;
 				notifyFn({
-					title,
-					body,
+					title: "Warning: Heat-Soak Risk",
+					body: `Charging while CPU at ${curr.cpu_temp_c.toFixed(0)} °C – unplug charger to preserve health`,
 					urgency: "normal",
 					icon: "dialog-warning",
 				});
@@ -273,6 +281,52 @@ export class AlertManager {
 			if (!this.cpuHotFired) {
 				this.cpuHotSamples = 0;
 			}
+		}
+	}
+
+	private checkThermalAnomaly(
+		curr: BatterySample,
+		notifyFn: (opts: NotificationOptions) => void,
+	): void {
+		// When charging, thermal management is handled by checkCpuHeat (heat-soak warning)
+		if (curr.cpu_temp_c === null || curr.is_charging) {
+			this.anomalySamples = 0;
+			return;
+		}
+
+		// Low workload indicator: low CPU% (<= 20%) or low discharge power (<= 12W)
+		const isLowCpu =
+			curr.cpu_pct !== null && curr.cpu_pct <= CPU_ANOMALY_MAX_LOAD_PCT;
+		const isLowPower =
+			curr.power_w > 0 && curr.power_w <= CPU_ANOMALY_MAX_POWER_W;
+		const isLowLoad = isLowCpu || isLowPower;
+
+		if (curr.cpu_temp_c >= CPU_ANOMALY_TEMP && isLowLoad) {
+			this.anomalySamples++;
+			if (
+				!this.anomalyFired &&
+				this.anomalySamples >= CPU_ANOMALY_DEBOUNCE_SAMPLES
+			) {
+				this.anomalyFired = true;
+				const loadDetail =
+					curr.cpu_pct !== null
+						? `${curr.cpu_pct.toFixed(0)}% CPU`
+						: `${curr.power_w.toFixed(1)} W`;
+				notifyFn({
+					title: "CRITICAL: Thermal Anomaly",
+					body: `CPU at ${curr.cpu_temp_c.toFixed(0)} °C during low workload (${loadDetail}) – check cooling fans & ventilation`,
+					urgency: "critical",
+					icon: "dialog-error",
+				});
+			}
+		} else if (curr.cpu_temp_c < CPU_ANOMALY_TEMP - CPU_ANOMALY_HYSTERESIS_C) {
+			this.anomalySamples = 0;
+			this.anomalyFired = false;
+		} else if (!isLowLoad && !this.anomalyFired) {
+			// Active workload (e.g. gaming / compilation) -> reset debounce streak
+			this.anomalySamples = 0;
+		} else if (!this.anomalyFired) {
+			this.anomalySamples = 0;
 		}
 	}
 }

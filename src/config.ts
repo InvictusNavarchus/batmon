@@ -99,12 +99,17 @@ export const CHARGE_HIGH_WARN = 80; // % – unplug reminder
 export const CHARGE_LOW_WARN = 20; // % – plug-in reminder
 export const CHARGE_CRIT_WARN = 10; // % – critical low battery
 export const CPU_HOT_CHARGING = 85; // °C – warn if charging while system is hot
+export const CPU_ANOMALY_TEMP = 80; // °C – abnormal temperature during low system load
+export const CPU_ANOMALY_MAX_LOAD_PCT = 20; // % – max CPU usage considered low workload / idle
+export const CPU_ANOMALY_MAX_POWER_W = 12; // W – max discharge power considered low workload
 
 // ── hysteresis & deadband constants ──────────────────────────────────
 export const CHARGE_HYSTERESIS_PCT = 5; // % band before re-arming charge alerts
 export const TEMP_HYSTERESIS_C = 3; // °C band before re-arming thermal alerts
 export const CPU_TEMP_HYSTERESIS_C = 5; // °C band before re-arming CPU heat-soak
 export const CPU_HEAT_DEBOUNCE_SAMPLES = 3; // Sustained samples required to trip CPU heat alert
+export const CPU_ANOMALY_HYSTERESIS_C = 5; // °C band before re-arming thermal anomaly alert
+export const CPU_ANOMALY_DEBOUNCE_SAMPLES = 3; // Sustained samples required to trip thermal anomaly
 export const CAP_HYSTERESIS_PCT = 2; // % band before re-arming capacity health alert
 export const VOLTAGE_OVER_RATIO = 1.15; // 15% above design voltage triggers overvoltage
 export const VOLTAGE_CLEAR_RATIO = 1.1; // Drops below 10% above design to clear overvoltage
