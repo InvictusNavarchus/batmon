@@ -220,11 +220,39 @@ mod tests {
         assert_eq!(Urgency::Critical.as_hint(), 2);
     }
 
+    /// A notifier in the state a headless machine produces.
+    ///
+    /// Constructed directly rather than through `connect()`, which would bind to
+    /// whatever session bus happens to be running and — on a desktop — deliver
+    /// real notifications during `cargo test` while never reaching the branch
+    /// the test claims to cover.
+    fn disconnected() -> DesktopNotifier {
+        DesktopNotifier {
+            server: None,
+            replacements: ReplacementIds::default(),
+        }
+    }
+
     #[test]
     fn delivering_without_a_notification_server_does_not_panic() {
-        // Headless machines and pre-session starts must still record.
-        let mut notifier = DesktopNotifier::connect();
+        // Headless machines and daemons started before a graphical session must
+        // still record; the journal is the durable half.
+        let mut notifier = disconnected();
         notifier.deliver(&notification(AlertFamily::Charge));
         notifier.deliver(&notification(AlertFamily::BatteryTemp));
+    }
+
+    #[test]
+    fn a_disconnected_notifier_records_no_replacement_ids() {
+        // Nothing was delivered, so there is no bubble to replace next time.
+        // Storing an id here would ask a future server to replace something
+        // that never existed.
+        let mut notifier = disconnected();
+        notifier.deliver(&notification(AlertFamily::Charge));
+
+        assert_eq!(
+            notifier.replacements.previous(AlertFamily::Charge),
+            NO_REPLACEMENT
+        );
     }
 }
