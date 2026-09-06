@@ -26,6 +26,8 @@ pub enum StoreError {
     },
     #[error("timestamp arithmetic failed: {0}")]
     Time(#[from] jiff::Error),
+    #[error("retention window must be positive, got {hours} hours")]
+    InvalidRetention { hours: i64 },
 }
 
 type Result<T> = std::result::Result<T, StoreError>;
@@ -179,6 +181,15 @@ impl Store {
 
     /// Drop rows older than `hours`, returning how many went.
     pub fn prune_older_than(&self, hours: i64) -> Result<usize> {
+        // A negative window puts the cutoff in the future, and this statement
+        // deletes everything older than it — which is every row. Schedule
+        // validation already rejects that, but the guard belongs here too: this
+        // is the boundary where the destructive statement is issued, and it is
+        // public.
+        if hours <= 0 {
+            return Err(StoreError::InvalidRetention { hours });
+        }
+
         let cutoff = Timestamp::now().checked_sub(SignedDuration::from_hours(hours))?;
         // Compared as text, which is only sound because every timestamp is
         // written fixed-width. See parity::iso8601_millis.
@@ -401,6 +412,29 @@ mod tests {
 
         assert_eq!(removed, 1);
         assert_eq!(store.latest().unwrap().unwrap().ts, recent);
+    }
+
+    #[test]
+    fn prune_refuses_a_non_positive_retention_window() {
+        let store = Store::open_in_memory(Database::Debug).unwrap();
+        store
+            .insert(&sample("2026-09-06T00:00:00.000Z", 80.0))
+            .unwrap();
+
+        for hours in [0, -6] {
+            assert!(
+                matches!(
+                    store.prune_older_than(hours),
+                    Err(StoreError::InvalidRetention { .. })
+                ),
+                "retention of {hours} hours should be refused"
+            );
+        }
+
+        assert!(
+            store.latest().unwrap().is_some(),
+            "a refused prune must not have deleted anything"
+        );
     }
 
     #[test]
