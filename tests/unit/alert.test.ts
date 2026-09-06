@@ -14,7 +14,9 @@ function createMockSample(
 			? "charging"
 			: status === "Discharging"
 				? "discharging"
-				: "ac_idle");
+				: status === "Full" || status === "Not charging"
+					? "ac_idle"
+					: "unknown");
 
 	return {
 		ts: "2026-08-28T00:00:00.000Z",
@@ -262,6 +264,84 @@ describe("AlertManager stateful engine with hysteresis & suppression", () => {
 		);
 		expect(notifications.length).toBe(1);
 		expect(notifications[0].title).toBe("Low Battery");
+	});
+
+	test("does not fire low or critical battery alert when on AC power (ac_idle) or unknown", () => {
+		const notifications: NotificationOptions[] = [];
+		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
+
+		// Capped at 15% on AC power (status: "Not charging" -> power_state: "ac_idle")
+		manager.check(
+			createMockSample({
+				charge_pct: 15,
+				is_charging: false,
+				status: "Not charging",
+				power_state: "ac_idle",
+			}),
+			notifyFn,
+		);
+		// Even at 5% critical level, should not nag to connect charger if already on AC
+		manager.check(
+			createMockSample({
+				charge_pct: 5,
+				is_charging: false,
+				status: "Not charging",
+				power_state: "ac_idle",
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Unknown power state (e.g. unreadable sysfs) should also stay silent
+		manager.check(
+			createMockSample({
+				charge_pct: 10,
+				is_charging: false,
+				status: "Unknown",
+				power_state: "unknown",
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Now unplugging and discharging at 10% critical should fire critical alert
+		manager.check(
+			createMockSample({
+				charge_pct: 10,
+				is_charging: false,
+				status: "Discharging",
+				power_state: "discharging",
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(1);
+		expect(notifications[0].title).toBe("CRITICAL: Battery Low");
+
+		// Re-connecting charger (entering ac_idle) resets the alert latch
+		notifications.length = 0;
+		manager.check(
+			createMockSample({
+				charge_pct: 10,
+				is_charging: false,
+				status: "Not charging",
+				power_state: "ac_idle",
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Discharging again fires alert again
+		manager.check(
+			createMockSample({
+				charge_pct: 10,
+				is_charging: false,
+				status: "Discharging",
+				power_state: "discharging",
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(1);
 	});
 
 	test("handles battery temperature warning, critical escalation, and thermal hysteresis", () => {

@@ -555,8 +555,11 @@ export function derivePowerState(status: string): PowerState {
 			return "charging";
 		case "Discharging":
 			return "discharging";
-		default:
+		case "Full":
+		case "Not charging":
 			return "ac_idle";
+		default:
+			return "unknown";
 	}
 }
 
@@ -599,7 +602,7 @@ export async function readTelemetry(): Promise<TelemetrySample> {
 
 	let tte = cachedTte;
 	let ttf = cachedTtf;
-	if (tte === null && !isCharging && powerW > 0.5)
+	if (tte === null && powerState === "discharging" && powerW > 0.5)
 		tte = Math.round((energy.now / powerW) * 3600);
 	if (ttf === null && isCharging && powerW > 0.5)
 		ttf = Math.round(((energy.full - energy.now) / powerW) * 3600);

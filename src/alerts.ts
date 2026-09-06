@@ -99,7 +99,7 @@ export class AlertManager {
 			this.highChargeFired = false;
 		}
 
-		if (curr.is_charging) {
+		if (curr.is_charging || curr.power_state === "charging") {
 			// Reset discharging low/critical alert latches when connected to charger
 			this.lowChargeFired = false;
 			this.critChargeFired = false;
@@ -115,7 +115,11 @@ export class AlertManager {
 					});
 				}
 			}
-		} else {
+		} else if (curr.power_state === "ac_idle") {
+			// Connected to AC but idle/capped: reset low/critical alert latches without prompting to connect charger
+			this.lowChargeFired = false;
+			this.critChargeFired = false;
+		} else if (curr.power_state === "discharging") {
 			if (curr.charge_pct <= CHARGE_CRIT_WARN) {
 				if (!this.critChargeFired) {
 					this.critChargeFired = true;

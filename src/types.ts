@@ -1,4 +1,4 @@
-export type PowerState = "charging" | "discharging" | "ac_idle";
+export type PowerState = "charging" | "discharging" | "ac_idle" | "unknown";
 
 export interface TelemetrySample {
 	ts: string;

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SYSFS } from "../../src/config";
 import {
+	derivePowerState,
 	formatUpowerDevicePath,
 	readBootId,
 	readSystemTemps,
@@ -311,6 +312,18 @@ describe("telemetry parsers", () => {
 				expect(uptime).toBeGreaterThan(0);
 				expect(Number.isFinite(uptime)).toBe(true);
 			}
+		});
+	});
+
+	describe("derivePowerState", () => {
+		test("maps Linux power supply status strings to correct PowerState union", () => {
+			expect(derivePowerState("Charging")).toBe("charging");
+			expect(derivePowerState("Discharging")).toBe("discharging");
+			expect(derivePowerState("Full")).toBe("ac_idle");
+			expect(derivePowerState("Not charging")).toBe("ac_idle");
+			expect(derivePowerState("Unknown")).toBe("unknown");
+			expect(derivePowerState("")).toBe("unknown");
+			expect(derivePowerState("SomeDriverSpecificState")).toBe("unknown");
 		});
 	});
 });

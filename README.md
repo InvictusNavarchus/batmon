@@ -40,7 +40,7 @@ It operates as a high-frequency flight recorder, capturing hardware metrics ever
 
 | Category | Metric | Source | Description |
 | :--- | :--- | :--- | :--- |
-| **Electrical & Power** | `power_state` | sysfs / state machine | Three-state rail status (`charging`, `discharging`, `ac_idle`) |
+| **Electrical & Power** | `power_state` | sysfs / state machine | Rail power status (`charging`, `discharging`, `ac_idle`, `unknown`) |
 | | `voltage_v` | sysfs (battery) | Instantaneous battery rail voltage (V) |
 | | `power_w` | sysfs (battery) | Discharge / charge rate (Watts) |
 | | `charge_pct` | sysfs (battery) | Current state of charge (%) |
