@@ -124,7 +124,7 @@ Re-fired alerts **replace** their previous notification rather than stacking bes
 ## 🛠️ Requirements
 
 - **Linux** with systemd (Fedora, Ubuntu, Debian, Arch, etc.)
-- **[Rust](https://rustup.rs)** toolchain ($\ge 1.87$) — to build only. The installed daemon is a single static binary with no runtime dependency.
+- **[Rust](https://rustup.rs)** toolchain ($\ge 1.87$) — to build only. The installed daemon is a single binary with SQLite compiled in; it links nothing beyond the system C library, and needs no language runtime installed.
 - **UPower** (optional) — supplies smoothed runtime estimates. Without it, `batmon` falls back to dividing remaining energy by present draw.
 - **A notification server** (optional) — any desktop provides one. Without it, alerts are still written to the journal.
 - **`sqlite3` CLI** (optional, for querying databases): `sudo dnf install sqlite`

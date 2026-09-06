@@ -154,7 +154,7 @@ the course of a day.
 | Threads (median) | 15 | 6 | 2.5× fewer |
 | Median sample cost | 20.3 ms | 12.4 ms | **1.6× faster** |
 | Subprocess spawns | 2/min (`busctl`) | 0 | eliminated |
-| Binary / runtime | Bun runtime + sources | 5.4 MB static binary | — |
+| Binary / runtime | Bun runtime + sources | 5.2 MB binary, SQLite compiled in, links only libc/libm/libgcc | — |
 | Samples recorded in 6 h | 21,457 | **21,570** | 113 more |
 
 ### 3.7 Where the speedup actually came from
