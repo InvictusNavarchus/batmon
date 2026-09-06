@@ -29,6 +29,19 @@ const MAX_LABELLED_SENSORS: u8 = 16;
 /// Highest `tempN_input` index searched under a battery's own hwmon directory.
 const MAX_BATTERY_SENSORS: u8 = 3;
 
+/// Reads between rescans while any sensor class is still missing.
+///
+/// A sensor that was absent when the tree was scanned cannot be detected as
+/// stale, because there is no path to fail — so without this an incomplete set
+/// would stay incomplete for the life of the process. Drivers genuinely do
+/// appear late: a module loaded towards the end of boot, a discrete GPU
+/// resuming from runtime suspend, a battery re-registering its hwmon child.
+///
+/// At one read per second this retries about once a minute, so the scan's ~4 ms
+/// costs well under a tenth of a millisecond per tick amortised — while a
+/// machine that simply has no such sensor pays exactly that and nothing more.
+const RESCAN_INTERVAL: u32 = 60;
+
 /// One tick of thermal readings.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Thermals {
@@ -53,12 +66,25 @@ struct Sensors {
     battery: Option<PathBuf>,
 }
 
+impl Sensors {
+    /// Whether any sensor class went unlocated, and so is worth looking for again.
+    fn is_incomplete(&self) -> bool {
+        self.cpu.is_none()
+            || self.gpu_temp.is_none()
+            || self.gpu_power.is_none()
+            || self.nvme.is_none()
+            || self.battery.is_none()
+    }
+}
+
 /// Reads temperatures, remembering where it found them.
 #[derive(Debug)]
 pub struct ThermalReader {
     battery_dir: PathBuf,
     hwmon_base: PathBuf,
     sensors: Option<Sensors>,
+    /// Reads since the last scan, for retrying an incomplete set.
+    reads_since_scan: u32,
 }
 
 impl ThermalReader {
@@ -68,6 +94,7 @@ impl ThermalReader {
             battery_dir: battery_dir.into(),
             hwmon_base: hwmon_base.into(),
             sensors: None,
+            reads_since_scan: 0,
         }
     }
 
@@ -78,6 +105,19 @@ impl ThermalReader {
     /// a GPU going into runtime suspend, an external device disconnecting —
     /// without paying for a scan when nothing has moved.
     pub fn read(&mut self) -> Thermals {
+        // Two ways the cache is dropped. A located path that stops reading is
+        // detected below; a class that was never located at all cannot be, so
+        // an incomplete set is retried on the slow cadence instead.
+        self.reads_since_scan = self.reads_since_scan.saturating_add(1);
+        if self.reads_since_scan >= RESCAN_INTERVAL
+            && self.sensors.as_ref().is_some_and(Sensors::is_incomplete)
+        {
+            self.sensors = None;
+        }
+        if self.sensors.is_none() {
+            self.reads_since_scan = 0;
+        }
+
         let sensors = self
             .sensors
             .get_or_insert_with(|| scan(&self.hwmon_base, &self.battery_dir));
@@ -746,6 +786,87 @@ mod tests {
             reader.read().cpu_c,
             Some(52.0),
             "cached path was not reused"
+        );
+    }
+
+    #[test]
+    fn a_driver_that_loads_after_the_first_scan_is_eventually_found() {
+        // A daemon started early in boot scans before k10temp is loaded. The
+        // absent CPU sensor has no path to fail, so staleness cannot detect it
+        // and without the slow retry cpu_c would stay None for the life of the
+        // process — silencing the heat-soak and thermal-anomaly families.
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path()).unwrap();
+        let mut reader = reader(tmp.path());
+
+        assert_eq!(reader.read().cpu_c, None, "nothing is loaded yet");
+
+        device(
+            tmp.path(),
+            "hwmon0",
+            &[("name", "k10temp"), ("temp1_input", "48000")],
+        );
+
+        // Not on the very next read — the whole point is that rescanning is
+        // rare, since it is the ~4 ms cost the caching removed.
+        assert_eq!(reader.read().cpu_c, None, "should not rescan every read");
+
+        for _ in 0..RESCAN_INTERVAL {
+            reader.read();
+        }
+        assert_eq!(
+            reader.read().cpu_c,
+            Some(48.0),
+            "a late-loading driver was never discovered"
+        );
+    }
+
+    #[test]
+    fn a_complete_sensor_set_is_never_rescanned() {
+        // The counterpart: a machine whose sensors were all found must keep
+        // paying nothing, however long it runs.
+        let tmp = TempDir::new().unwrap();
+        let battery = tmp.path().join("BAT0");
+        std::fs::create_dir_all(battery.join("hwmon9")).unwrap();
+        std::fs::write(battery.join("hwmon9").join("temp1_input"), "30000\n").unwrap();
+        let hwmon = tmp.path().join("hwmon");
+        device(
+            &hwmon,
+            "hwmon0",
+            &[("name", "k10temp"), ("temp1_input", "48000")],
+        );
+        device(
+            &hwmon,
+            "hwmon1",
+            &[
+                ("name", "amdgpu"),
+                ("temp1_input", "44000"),
+                ("power1_input", "9120000"),
+            ],
+        );
+        device(
+            &hwmon,
+            "hwmon2",
+            &[("name", "nvme"), ("temp1_input", "41000")],
+        );
+
+        let mut reader = ThermalReader::new(&battery, &hwmon);
+        assert_eq!(reader.read().cpu_c, Some(48.0));
+
+        // Renaming every device would defeat any rescan; the cached paths must
+        // still be the ones being read.
+        for entry in std::fs::read_dir(&hwmon).unwrap() {
+            let dir = entry.unwrap().path();
+            std::fs::write(dir.join("name"), "renamed\n").unwrap();
+        }
+        for _ in 0..(RESCAN_INTERVAL * 2) {
+            reader.read();
+        }
+
+        assert_eq!(
+            reader.read().cpu_c,
+            Some(48.0),
+            "a complete set should never have been rescanned"
         );
     }
 
