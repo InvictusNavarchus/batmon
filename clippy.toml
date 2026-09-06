@@ -1,0 +1,13 @@
+# Domain vocabulary that clippy::doc_markdown would otherwise flag as unbackticked
+# identifiers. ".." keeps clippy's own default list in addition to these.
+doc-valid-idents = [
+    "SQLite",
+    "UPower",
+    "NVMe",
+    "MemTotal",
+    "MemAvailable",
+    "MemFree",
+    "TimeToEmpty",
+    "TimeToFull",
+    "..",
+]

@@ -2,10 +2,23 @@ pre-commit:
   parallel: false
   piped: true
   jobs:
+    - name: cargo-fmt
+      glob: "{*.rs,Cargo.toml}"
+      run: cargo fmt --all
+      stage_fixed: true
+    - name: cargo-clippy
+      glob: "{*.rs,Cargo.toml,Cargo.lock}"
+      run: cargo clippy --all-targets --all-features -- -D warnings
+    - name: cargo-test
+      glob: "{*.rs,Cargo.toml,Cargo.lock}"
+      run: cargo test --quiet
     - name: typecheck
+      glob: "legacy/**/*.ts"
       run: bun run typecheck
     - name: lint
+      glob: "legacy/**/*.ts"
       run: bun run lint
     - name: format
+      glob: "legacy/**/*.ts"
       run: bun run format {staged_files}
       stage_fixed: true

@@ -1,0 +1,39 @@
+[package]
+name = "batmon"
+version = "0.6.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Battery health monitor & flight recorder for Linux laptops (sysfs -> SQLite)"
+repository = "https://github.com/InvictusNavarchus/batmon"
+license = "UNLICENSED"
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Kernel ABIs (sysfs/procfs) expose integers that we deliberately convert to
+# f64 physical units. These three fire on nearly every conversion and flagging
+# them would train us to ignore the lint rather than read it.
+cast_precision_loss = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+# Doc lints add churn without catching defects in a single-binary project.
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+[profile.release]
+# A long-lived 1 Hz daemon: optimise for a small resident binary and let LTO
+# collapse the parser call graph. codegen-units=1 measurably helps the hot
+# procfs scan; the build-time cost is irrelevant for a project this size.
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
