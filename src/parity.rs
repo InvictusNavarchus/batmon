@@ -100,6 +100,93 @@ pub fn js_parse_int(s: &str) -> Option<i64> {
     Some(if negative { -acc } else { acc })
 }
 
+/// `Number.prototype.toFixed(digits)`: a decimal string with a fixed number of
+/// fractional digits.
+///
+/// Note which rounding this uses, because JavaScript has two and they differ.
+/// [`round_js`] breaks ties toward positive infinity, matching `Math.round`;
+/// `toFixed` breaks them *away from zero*, so `(-0.5).toFixed(0)` is `"-1"`
+/// where `Math.round(-0.5)` is `0`. Rust's [`f64::round`] happens to match
+/// `toFixed` precisely — which is exactly why it must never be reached for
+/// while porting a `Math.round`.
+///
+/// Rust's own `{:.1}` formatter cannot stand in for this: it rounds half to
+/// *even*, so `format!("{:.1}", 45.25)` is `"45.2"` where JavaScript gives
+/// `"45.3"`. Battery temperatures read from hwmon are millidegrees divided by a
+/// thousand and land on those ties routinely.
+///
+/// Non-finite inputs are passed through to Rust's formatter and will render as
+/// `NaN` or `inf` rather than JavaScript's `NaN`/`Infinity`. Every value that
+/// reaches this has already been through [`js_number`], which rejects both.
+/// Fractional digits sufficient to render any finite f64 exactly. Every one is
+/// a dyadic rational, and the smallest subnormal needs 1074 places.
+const EXACT_DIGITS: usize = 1080;
+
+#[must_use]
+pub fn to_fixed(value: f64, digits: usize) -> String {
+    if !value.is_finite() {
+        return format!("{value}");
+    }
+
+    // Sign is taken from a strict comparison so negative zero renders unsigned,
+    // matching the spec's "if x < 0" step: (-0).toFixed(1) is "0.0" but
+    // (-0.04).toFixed(1) is "-0.0".
+    let negative = value < 0.0;
+
+    // The exact decimal expansion. Every finite f64 is a dyadic rational with at
+    // most 1074 fractional digits, so this precision renders the double exactly
+    // rather than rounding it — which is the whole point. Rounding at the target
+    // precision first would let the formatter's own half-to-even step run before
+    // ours, and scaling by a power of ten first is worse still: 0.15 * 10.0
+    // rounds *up* to exactly 1.5, manufacturing a tie the real value does not
+    // have, and turning "0.1" into "0.2".
+    let exact = format!("{:.*}", EXACT_DIGITS, value.abs());
+    let (integer, fraction) = exact
+        .split_once('.')
+        .expect("a non-zero precision always renders a decimal point");
+
+    let (kept, remainder) = fraction.split_at(digits.min(fraction.len()));
+
+    // Ties round away from zero, and anything above a half rounds up too, so a
+    // leading digit of five or more is sufficient — whatever follows it.
+    let round_up = remainder
+        .as_bytes()
+        .first()
+        .is_some_and(|digit| *digit >= b'5');
+
+    let mut rendered: Vec<u8> = integer.bytes().chain(kept.bytes()).collect();
+    if round_up {
+        carry_one(&mut rendered);
+    }
+
+    let text = String::from_utf8(rendered).expect("decimal digits are ascii");
+    let (integer_out, fraction_out) = text.split_at(text.len() - digits);
+
+    let mut out = String::with_capacity(text.len() + 2);
+    if negative {
+        out.push('-');
+    }
+    out.push_str(integer_out);
+    if digits > 0 {
+        out.push('.');
+        out.push_str(fraction_out);
+    }
+    out
+}
+
+/// Add one to a big-endian decimal digit string, growing it on overflow.
+fn carry_one(digits: &mut Vec<u8>) {
+    for digit in digits.iter_mut().rev() {
+        if *digit == b'9' {
+            *digit = b'0';
+        } else {
+            *digit += 1;
+            return;
+        }
+    }
+    digits.insert(0, b'1');
+}
+
 /// `Date.prototype.toISOString()`: UTC with exactly three fractional digits.
 ///
 /// The fixed width is a correctness requirement, not cosmetics. Debug rows are
@@ -241,6 +328,91 @@ mod tests {
     #[test]
     fn js_parse_int_returns_none_rather_than_wrapping_on_overflow() {
         assert_eq!(js_parse_int("99999999999999999999999"), None);
+    }
+
+    #[test]
+    fn to_fixed_matches_javascript_at_one_decimal() {
+        for (value, expected) in [
+            (45.25, "45.3"),
+            (84.45, "84.5"),
+            (0.15, "0.1"),
+            (46.05, "46.0"),
+            (50.35, "50.4"),
+            (32.1, "32.1"),
+            (45.2, "45.2"),
+            (-3.15, "-3.1"),
+            (0.0, "0.0"),
+            (100.0, "100.0"),
+            (49.95, "50.0"),
+            (42.75, "42.8"),
+            (91.25, "91.3"),
+            (91.75, "91.8"),
+        ] {
+            assert_eq!(to_fixed(value, 1), expected, "toFixed(1) of {value}");
+        }
+    }
+
+    #[test]
+    fn to_fixed_matches_javascript_at_two_decimals() {
+        for (value, expected) in [
+            (15.125, "15.13"),
+            (12.345, "12.35"),
+            (1.005, "1.00"),
+            (8.575, "8.57"),
+            (15.4, "15.40"),
+            (11.55, "11.55"),
+            (12.524, "12.52"),
+            (0.125, "0.13"),
+            (2.675, "2.67"),
+            (15.375, "15.38"),
+        ] {
+            assert_eq!(to_fixed(value, 2), expected, "toFixed(2) of {value}");
+        }
+    }
+
+    #[test]
+    fn to_fixed_matches_javascript_at_zero_decimals() {
+        for (value, expected) in [
+            (84.5, "85"),
+            (85.5, "86"),
+            (48.0, "48"),
+            (0.5, "1"),
+            (-0.5, "-1"),
+            (88.6, "89"),
+        ] {
+            assert_eq!(to_fixed(value, 0), expected, "toFixed(0) of {value}");
+        }
+    }
+
+    #[test]
+    fn to_fixed_keeps_the_sign_of_a_negative_value_that_rounds_to_zero() {
+        assert_eq!(to_fixed(-0.04, 1), "-0.0");
+        // ...but negative zero is not negative, per the spec's strict comparison.
+        assert_eq!(to_fixed(-0.0, 1), "0.0");
+    }
+
+    #[test]
+    fn to_fixed_propagates_a_carry_across_the_decimal_point() {
+        assert_eq!(to_fixed(9.99, 1), "10.0");
+        assert_eq!(to_fixed(99.99, 1), "100.0");
+        assert_eq!(to_fixed(9.95, 1), "9.9");
+        assert_eq!(to_fixed(0.0001, 2), "0.00");
+    }
+
+    #[test]
+    fn to_fixed_and_round_js_disagree_on_negative_halves() {
+        // The distinction that makes both helpers necessary: toFixed rounds away
+        // from zero, Math.round rounds toward positive infinity.
+        assert_eq!(to_fixed(-0.5, 0), "-1");
+        assert_eq!(round_js(-0.5), 0.0);
+    }
+
+    #[test]
+    fn to_fixed_beats_the_rust_formatter_on_exact_ties() {
+        // Rust rounds half to even; JavaScript does not. hwmon temperatures land
+        // on these ties whenever the millidegree reading ends in 250.
+        assert_eq!(format!("{:.1}", 45.25f64), "45.2");
+        assert_eq!(to_fixed(45.25, 1), "45.3");
     }
 
     #[test]
