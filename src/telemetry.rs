@@ -7,7 +7,9 @@
 //! observe.
 
 pub mod battery;
+pub mod proc;
 pub mod thermal;
 
 pub use battery::{BatteryReader, Energy};
+pub use proc::{CpuTimes, ProcReader};
 pub use thermal::{ThermalReader, Thermals};
