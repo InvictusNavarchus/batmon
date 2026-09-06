@@ -4,8 +4,8 @@
 	"description": "Battery health monitor & flight recorder → SQLite. Logs 1s debug telemetry and 60s historical data via systemd daemon.",
 	"type": "module",
 	"scripts": {
-		"build": "bun build --compile --minify --target=bun src/index.ts --outfile bin/batmon",
-		"start": "bun run src/index.ts",
+		"build": "bun build --compile --minify --target=bun legacy/src/index.ts --outfile bin/batmon",
+		"start": "bun run legacy/src/index.ts",
 		"format": "biome format --write --no-errors-on-unmatched",
 		"lint": "biome lint",
 		"typecheck": "tsc --noEmit",

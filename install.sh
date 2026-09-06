@@ -35,7 +35,7 @@ if command -v chattr &>/dev/null && [ "$(stat -f -c %T "$INSTALL_DIR" 2>/dev/nul
 fi
 
 rm -rf "$INSTALL_DIR/src"
-cp -r "$SCRIPT_DIR/src" "$INSTALL_DIR/"
+cp -r "$SCRIPT_DIR/legacy/src" "$INSTALL_DIR/"
 echo "    source → $INSTALL_DIR/src/"
 
 # ── install systemd units ─────────────────────────────────────────────

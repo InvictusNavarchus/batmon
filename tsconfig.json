@@ -7,5 +7,5 @@
 		"noEmit": true,
 		"types": ["bun"]
 	},
-	"include": ["src", "tests"]
+	"include": ["legacy/src", "legacy/tests"]
 }
