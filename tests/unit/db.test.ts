@@ -46,7 +46,7 @@ function createMockSample(
 		estimated_cycle_count: 5.0,
 		battery_temp_c: 28.5,
 		health_pct: 90.0,
-		is_charging: false,
+		is_charging: isCharging,
 		is_present: true,
 		time_to_empty_s: 12000,
 		time_to_full_s: null,
@@ -177,15 +177,26 @@ describe("database operations (store, getLatest, prune)", () => {
 		expect(survivingRows[0].ts).toBe(nowSample.ts);
 	});
 
-	test("mapRowToSample converts SQLite numeric 0 and 1 into strict booleans", () => {
+	test("mapRowToSample converts SQLite numeric 0 and 1 into strict booleans and normalizes legacy power_state", () => {
 		const rawRow = {
 			ts: new Date().toISOString(),
 			is_charging: 1,
 			is_present: 0,
 			charge_pct: 50,
+			status: "Charging",
+			power_state: null,
 		};
 		const mapped = mapRowToSample(rawRow);
 		expect(mapped.is_charging).toBe(true);
 		expect(mapped.is_present).toBe(false);
+		expect(mapped.power_state).toBe("charging");
+
+		const rawRowDischarging = {
+			is_charging: 0,
+			is_present: 1,
+			status: "Discharging",
+		};
+		const mappedDischarging = mapRowToSample(rawRowDischarging);
+		expect(mappedDischarging.power_state).toBe("discharging");
 	});
 });

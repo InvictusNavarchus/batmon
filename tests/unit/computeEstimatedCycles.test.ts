@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { computeEstimatedCycles } from "../../src/db";
-import type { BatterySample } from "../../src/types";
+import type { BatterySample, PowerState } from "../../src/types";
 
 function createMockSample(
 	overrides: Partial<BatterySample> = {},
@@ -270,5 +270,24 @@ describe("computeEstimatedCycles", () => {
 
 		// 5 Wh / 50 Wh = 0.1 cycles -> 5.1
 		expect(computeEstimatedCycles(curr, prev)).toBe(5.1);
+	});
+
+	test("derives power state from status when power_state is missing on legacy sample", () => {
+		const prev = createMockSample({
+			estimated_cycle_count: 5.0,
+			energy_wh: 40,
+			energy_design_wh: 50,
+		});
+		const curr = createMockSample({
+			estimated_cycle_count: 5.0,
+			energy_wh: 35,
+			energy_design_wh: 50,
+			status: "Discharging",
+			power_state: undefined as unknown as PowerState,
+		});
+
+		const cycles = computeEstimatedCycles(curr, prev);
+		// 5.0 + (40 - 35) / 50 = 5.0 + 0.1 = 5.1
+		expect(cycles).toBeCloseTo(5.1, 5);
 	});
 });

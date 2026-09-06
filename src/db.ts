@@ -7,7 +7,8 @@ import {
 	DEBUG_RETENTION_HOURS,
 } from "./config";
 import { DEBUG_MIGRATIONS, HISTORICAL_MIGRATIONS, migrate } from "./migrations";
-import type { BatterySample } from "./types";
+import { derivePowerState } from "./telemetry";
+import type { BatterySample, PowerState } from "./types";
 
 let histSql: SQL | null = null;
 let debugSql: SQL | null = null;
@@ -21,12 +22,7 @@ export function computeEstimatedCycles(
 
 	const prevCycles = prev.estimated_cycle_count ?? 0;
 	const powerState =
-		curr.power_state ??
-		(curr.is_charging
-			? "charging"
-			: curr.status === "Discharging"
-				? "discharging"
-				: "ac_idle");
+		curr.power_state ?? derivePowerState((curr.status as string) || "");
 
 	const isBootBoundary =
 		(prev.boot_id !== null &&
@@ -72,6 +68,9 @@ async function initHistoricalDb(): Promise<SQL> {
 export function mapRowToSample(row: Record<string, unknown>): BatterySample {
 	return {
 		...(row as unknown as BatterySample),
+		power_state:
+			(row.power_state as PowerState) ??
+			derivePowerState((row.status as string) || ""),
 		is_charging: Boolean(row.is_charging),
 		is_present: Boolean(row.is_present),
 	};
