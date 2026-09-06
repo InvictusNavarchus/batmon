@@ -32,7 +32,7 @@ export function computeEstimatedCycles(
 		const deltaWh = prev.energy_wh - curr.energy_wh;
 		if (deltaWh > 0 && deltaWh <= curr.energy_design_wh) {
 			const deltaCycles = deltaWh / curr.energy_design_wh;
-			return Math.round((prevCycles + deltaCycles) * 10000) / 10000;
+			return prevCycles + deltaCycles;
 		}
 	}
 

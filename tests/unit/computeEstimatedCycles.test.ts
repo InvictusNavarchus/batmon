@@ -150,7 +150,7 @@ describe("computeEstimatedCycles", () => {
 		expect(computeEstimatedCycles(curr, prev)).toBe(2.5);
 	});
 
-	test("rounds cycle count to 4 decimal places", () => {
+	test("preserves full double-precision floating point without write-time truncation", () => {
 		const prev = createMockSample({
 			energy_wh: 50,
 			estimated_cycle_count: 1.0,
@@ -163,8 +163,36 @@ describe("computeEstimatedCycles", () => {
 		});
 
 		const result = computeEstimatedCycles(curr, prev);
-		// delta = 0.666667 / 50 = 0.01333334 -> 1.0133
-		expect(result).toBe(1.0133);
+		// delta = 0.666667 / 50 = 0.01333334 -> 1.01333334
+		expect(result).toBeCloseTo(1.01333334, 6);
+	});
+
+	test("accumulates sub-milliwatt-hour micro-increments over successive ticks without freezing", () => {
+		let currentCycles = 5.0;
+		const designWh = 60;
+		// Discharging at 8W: 1s delta = (8 / 3600) Wh = 0.00222 Wh
+		const deltaWhPerSec = 8 / 3600;
+		let energy = 50;
+
+		for (let i = 0; i < 100; i++) {
+			const prev = createMockSample({
+				energy_wh: energy,
+				estimated_cycle_count: currentCycles,
+				energy_design_wh: designWh,
+				is_charging: false,
+			});
+			energy -= deltaWhPerSec;
+			const curr = createMockSample({
+				energy_wh: energy,
+				energy_design_wh: designWh,
+				is_charging: false,
+			});
+			currentCycles = computeEstimatedCycles(curr, prev);
+		}
+
+		// 100 * (8 / 3600) / 60 = 0.0037037... cycles
+		expect(currentCycles).toBeGreaterThan(5.0035);
+		expect(currentCycles).toBeLessThan(5.004);
 	});
 
 	test("handles undefined or null estimated_cycle_count on previous sample", () => {
