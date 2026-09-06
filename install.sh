@@ -1,52 +1,60 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-INSTALL_DIR="$HOME/.local/share/batmon"
+BIN_DIR="$HOME/.local/bin"
+DATA_DIR="$HOME/.local/share/batmon"
 SYSTEMD_DIR="$HOME/.config/systemd/user"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "==> batmon installer"
 
 # ── prerequisites ─────────────────────────────────────────────────────
-if ! command -v bun &>/dev/null; then
-  echo "ERROR: bun not found. Install: https://bun.sh" >&2
+if ! command -v cargo &>/dev/null; then
+  echo "ERROR: cargo not found. Install Rust: https://rustup.rs" >&2
   exit 1
 fi
 
-if ! command -v busctl &>/dev/null; then
-  echo "WARN: busctl not found. Time estimates will use instantaneous math."
-fi
+# ── build ─────────────────────────────────────────────────────────────
+echo "==> Building (this takes a minute the first time)…"
+cargo build --release --manifest-path "$SCRIPT_DIR/Cargo.toml"
 
-if ! command -v notify-send &>/dev/null; then
-  echo "WARN: notify-send (libnotify) not found. Desktop notifications will be disabled."
-  echo "      Install: sudo dnf install libnotify (or apt install libnotify-bin)"
-fi
+# ── install binary ────────────────────────────────────────────────────
+mkdir -p "$BIN_DIR"
+install -m 755 "$SCRIPT_DIR/target/release/batmon" "$BIN_DIR/batmon"
+echo "    binary → $BIN_DIR/batmon"
 
-# ── install source ────────────────────────────────────────────────────
-mkdir -p "$INSTALL_DIR"
+case ":$PATH:" in
+  *":$BIN_DIR:"*) ;;
+  *) echo "    note: $BIN_DIR is not on your PATH; the service does not need it, but you will for 'batmon --oneshot'" ;;
+esac
 
-# Disable btrfs Copy-on-Write (CoW) to prevent SQLite write amplification and fragmentation
-if command -v chattr &>/dev/null && [ "$(stat -f -c %T "$INSTALL_DIR" 2>/dev/null || true)" = "btrfs" ]; then
-  if chattr +C "$INSTALL_DIR" 2>/dev/null; then
-    echo "    btrfs detected: disabled CoW (chattr +C) on $INSTALL_DIR"
+# ── data directory ────────────────────────────────────────────────────
+mkdir -p "$DATA_DIR"
+
+# Disable btrfs Copy-on-Write to prevent SQLite write amplification and
+# fragmentation. Only affects files created afterwards, which is why it is
+# applied to the directory rather than the databases.
+if command -v chattr &>/dev/null && [ "$(stat -f -c %T "$DATA_DIR" 2>/dev/null || true)" = "btrfs" ]; then
+  if chattr +C "$DATA_DIR" 2>/dev/null; then
+    echo "    btrfs detected: disabled CoW (chattr +C) on $DATA_DIR"
   else
-    echo "    warning: could not disable CoW on $INSTALL_DIR" >&2
+    echo "    warning: could not disable CoW on $DATA_DIR" >&2
   fi
 fi
 
-rm -rf "$INSTALL_DIR/src"
-cp -r "$SCRIPT_DIR/legacy/src" "$INSTALL_DIR/"
-echo "    source → $INSTALL_DIR/src/"
+# Remove the TypeScript sources left by earlier releases. The databases beside
+# them are deliberately untouched — the Rust build reads and continues them.
+if [ -d "$DATA_DIR/src" ]; then
+  rm -rf "$DATA_DIR/src"
+  echo "    removed superseded TypeScript sources from $DATA_DIR/src"
+fi
 
-# ── install systemd units ─────────────────────────────────────────────
+# ── install systemd unit ──────────────────────────────────────────────
 mkdir -p "$SYSTEMD_DIR"
 
-# Clean up legacy timer if present
+# Clean up a legacy timer if one is still present.
 systemctl --user disable --now batmon.timer 2>/dev/null || true
 rm -f "$SYSTEMD_DIR/batmon.timer"
-
-# resolve bun path for the service file
-BUN_PATH="$(command -v bun)"
 
 cat > "$SYSTEMD_DIR/batmon.service" <<EOF
 [Unit]
@@ -55,7 +63,7 @@ Documentation=https://github.com/InvictusNavarchus/batmon
 
 [Service]
 Type=simple
-ExecStart=${BUN_PATH} run ${INSTALL_DIR}/src/index.ts
+ExecStart=${BIN_DIR}/batmon
 Restart=on-failure
 RestartSec=5s
 Nice=10
@@ -69,7 +77,7 @@ echo "    service → $SYSTEMD_DIR/batmon.service"
 # ── verify ────────────────────────────────────────────────────────────
 echo ""
 echo "==> Running sample verification…"
-if "$BUN_PATH" run "$INSTALL_DIR/src/index.ts" --oneshot; then
+if "$BIN_DIR/batmon" --oneshot; then
   echo "    ✓ sample stored"
 else
   echo "    ✗ test run failed – check your system configuration"
@@ -83,10 +91,10 @@ systemctl --user restart batmon.service
 echo "    service → enabled & started (1s flight recorder + 60s history)"
 echo ""
 echo "    Check historical data (if sqlite3 CLI is installed):"
-echo "      sqlite3 $INSTALL_DIR/battery.db 'SELECT * FROM samples ORDER BY id DESC LIMIT 1;'"
+echo "      sqlite3 $DATA_DIR/battery.db 'SELECT * FROM samples ORDER BY id DESC LIMIT 1;'"
 echo ""
 echo "    Check flight recorder data:"
-echo "      sqlite3 $INSTALL_DIR/debug.db 'SELECT * FROM samples ORDER BY id DESC LIMIT 5;'"
+echo "      sqlite3 $DATA_DIR/debug.db 'SELECT * FROM samples ORDER BY id DESC LIMIT 5;'"
 echo ""
 echo "    Check service status:"
 echo "      systemctl --user status batmon.service"

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-INSTALL_DIR="$HOME/.local/share/batmon"
+BIN_DIR="$HOME/.local/bin"
+DATA_DIR="$HOME/.local/share/batmon"
 SYSTEMD_DIR="$HOME/.config/systemd/user"
 
 echo "==> batmon uninstaller"
@@ -12,8 +13,12 @@ rm -f "$SYSTEMD_DIR/batmon.service" "$SYSTEMD_DIR/batmon.timer"
 systemctl --user daemon-reload
 
 echo "    service and timer stopped and removed."
+
+rm -f "$BIN_DIR/batmon"
+echo "    binary removed from $BIN_DIR/batmon"
+
 echo ""
-echo "    Databases preserved at: $INSTALL_DIR/battery.db and $INSTALL_DIR/debug.db"
-echo "    To remove all data:     rm -rf $INSTALL_DIR"
+echo "    Databases preserved at: $DATA_DIR/battery.db and $DATA_DIR/debug.db"
+echo "    To remove all data:     rm -rf $DATA_DIR"
 echo ""
 echo "==> Done."
