@@ -295,6 +295,9 @@ export class AlertManager {
 		// When charging, thermal management is handled by checkCpuHeat (heat-soak warning)
 		if (curr.cpu_temp_c === null || curr.is_charging) {
 			this.anomalySamples = 0;
+			if (curr.is_charging) {
+				this.anomalyFired = false;
+			}
 			return;
 		}
 
@@ -312,10 +315,9 @@ export class AlertManager {
 				this.anomalySamples >= CPU_ANOMALY_DEBOUNCE_SAMPLES
 			) {
 				this.anomalyFired = true;
-				const loadDetail =
-					curr.cpu_pct !== null
-						? `${curr.cpu_pct.toFixed(0)}% CPU`
-						: `${curr.power_w.toFixed(1)} W`;
+				const loadDetail = isLowCpu
+					? `${(curr.cpu_pct as number).toFixed(0)}% CPU`
+					: `${curr.power_w.toFixed(1)} W`;
 				notifyFn({
 					title: "CRITICAL: Thermal Anomaly",
 					body: `CPU at ${curr.cpu_temp_c.toFixed(0)} °C during low workload (${loadDetail}) – check cooling fans & ventilation`,

@@ -33,7 +33,7 @@ function createMockSample(
 		estimated_cycle_count: 50,
 		battery_temp_c: 30,
 		health_pct: 95,
-		is_charging: false,
+		is_charging: isCharging,
 		is_present: true,
 		time_to_empty_s: 7200,
 		time_to_full_s: null,
@@ -630,6 +630,45 @@ describe("AlertManager stateful engine with hysteresis & suppression", () => {
 
 		// Zero alerts generated because workload is active, not anomalous
 		expect(notifications.length).toBe(0);
+	});
+
+	test("resets thermal anomaly latch when connected to charger and formats qualifying workload metric", () => {
+		const notifications: NotificationOptions[] = [];
+		const notifyFn = (opts: NotificationOptions) => notifications.push(opts);
+		const manager = new AlertManager();
+
+		// Trigger anomaly with low power (10W) but elevated CPU% (60%): body should show power, not 60% CPU
+		const lowPowerSample = createMockSample({
+			is_charging: false,
+			cpu_temp_c: 84,
+			cpu_pct: 60,
+			power_w: 10.0,
+		});
+
+		for (let i = 0; i < 3; i++) {
+			manager.check(lowPowerSample, notifyFn);
+		}
+		expect(notifications.length).toBe(1);
+		expect(notifications[0].title).toBe("CRITICAL: Thermal Anomaly");
+		expect(notifications[0].body).toContain("10.0 W");
+		expect(notifications[0].body).not.toContain("60% CPU");
+
+		// Connecting to charger resets the anomaly fired latch
+		notifications.length = 0;
+		manager.check(
+			createMockSample({
+				is_charging: true,
+				cpu_temp_c: 72,
+			}),
+			notifyFn,
+		);
+		expect(notifications.length).toBe(0);
+
+		// Unplugging and experiencing 3 sustained anomaly samples re-fires the alert
+		for (let i = 0; i < 3; i++) {
+			manager.check(lowPowerSample, notifyFn);
+		}
+		expect(notifications.length).toBe(1);
 	});
 
 	test("reset() clears all alert latches and debounce counters", () => {
