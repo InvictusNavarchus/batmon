@@ -29,7 +29,7 @@ It operates as a high-frequency flight recorder, capturing hardware metrics ever
 ```
 
 1. **High-Frequency Flight Recorder (`debug.db`):**  
-   Records every 1 second directly to SQLite using WAL mode (`PRAGMA synchronous = NORMAL`). Coalesced by the Linux kernel page cache, it consumes negligible power (<15 mW) while ensuring that during hard lockups, thermal throttling, or kernel panics, the crucial minutes leading up to the failure are safely preserved on disk for post-mortem forensics (with at most ~2–5s uncommitted in kernel page cache during sudden hard power cuts). Auto-prunes older records on a rolling window (default: 6 hours).
+   Records every 1 second directly to SQLite using WAL mode (`PRAGMA synchronous = NORMAL`). Commits are written directly to the Linux kernel page cache via `write()` without invoking an `fsync()` on each tick, consuming negligible disk I/O and power (<15 mW). Data is immediately queryable across processes, and disk durability occurs seamlessly upon WAL auto-checkpoints (`wal_autocheckpoint = 100`, ~100s) and Linux kernel dirty page writeback. Auto-prunes older records on a rolling window (default: 6 hours).
 
 2. **Long-Term Historical Telemetry (`battery.db`):**  
    Records downsampled samples every 60 seconds. Tracks long-term battery degradation, design wear capacity, and software-integrated cycle count over months and years.
@@ -40,7 +40,8 @@ It operates as a high-frequency flight recorder, capturing hardware metrics ever
 
 | Category | Metric | Source | Description |
 | :--- | :--- | :--- | :--- |
-| **Electrical & Power** | `voltage_v` | sysfs (battery) | Instantaneous battery rail voltage (V) |
+| **Electrical & Power** | `power_state` | sysfs / state machine | Three-state rail status (`charging`, `discharging`, `ac_idle`) |
+| | `voltage_v` | sysfs (battery) | Instantaneous battery rail voltage (V) |
 | | `power_w` | sysfs (battery) | Discharge / charge rate (Watts) |
 | | `charge_pct` | sysfs (battery) | Current state of charge (%) |
 | | `energy_wh` | sysfs (battery) | Remaining energy (Wh) |
@@ -55,9 +56,11 @@ It operates as a high-frequency flight recorder, capturing hardware metrics ever
 | **Clock & SoC Power** | `cpu_freq_mhz` | sysfs (`cpufreq`) / `/proc` | Instantaneous CPU clock frequency (MHz) |
 | | `gpu_power_w` | sysfs (`hwmon`) | AMD APU / GPU package power (PPT via amdgpu) (Watts) |
 | | `gpu_pct` | sysfs (DRM) | GPU compute / shader utilization (%) |
-| **System Load** | `cpu_pct` | `/proc/stat` | Global CPU utilization (%) |
+| **System Load & Host** | `cpu_pct` | `/proc/stat` | Global CPU utilization (%) |
 | | `mem_pct` | `/proc/meminfo` | Global Memory utilization (%) |
 | | `load1` | `/proc/loadavg` | 1-minute system load average |
+| | `boot_id` | `/proc/sys/kernel/random/boot_id` | Linux kernel boot session UUID |
+| | `uptime_s` | `/proc/uptime` | Monotonic system uptime (seconds) |
 | | `top_processes` | `/proc/[pid]/stat` | Top 5 aggregated process groups by 1s CPU delta (JSON) |
 | **Health & Wear** | `health_pct` | sysfs | Full charge capacity vs design capacity (%) |
 | | `cycle_count` | sysfs | Hardware cycle count (if reported by BMS) |
