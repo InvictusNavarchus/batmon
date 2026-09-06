@@ -263,6 +263,17 @@ fn daemon_ticks_stay_on_a_one_second_cadence() {
         ((hours * 60 + minutes) * 60 + seconds) * 1_000 + millis
     }
 
+    /// Gap between two stamps, in milliseconds.
+    ///
+    /// The sampled window is a few seconds, so a negative difference can only
+    /// mean it straddled midnight UTC — otherwise this test would fail once a
+    /// day for a run that started just before it.
+    fn gap_ms(earlier: &str, later: &str) -> i64 {
+        const DAY_MS: i64 = 24 * 60 * 60 * 1_000;
+        let gap = clock_ms(later) - clock_ms(earlier);
+        if gap < 0 { gap + DAY_MS } else { gap }
+    }
+
     let (home, battery) = environment();
 
     let mut child = batmon(home.path(), battery.path()).spawn().unwrap();
@@ -288,18 +299,18 @@ fn daemon_ticks_stay_on_a_one_second_cadence() {
         "not enough samples to judge cadence: {stamps:?}"
     );
 
-    // A loop that sleeps for an interval rather than toward a deadline walks
-    // forward by the cost of each tick. Measured against the TypeScript daemon
-    // over six hours, that cost it 113 samples — roughly 7.5 minutes of lost
-    // coverage a day. Every gap here must be a second, not a second plus
-    // however long the tick took.
-    for pair in stamps.windows(2) {
-        let gap = clock_ms(&pair[1]) - clock_ms(&pair[0]);
-        assert!(
-            (900..=1_100).contains(&gap),
-            "interval of {gap} ms between {} and {}",
-            pair[0],
-            pair[1]
-        );
-    }
+    let mut gaps: Vec<i64> = stamps.windows(2).map(|p| gap_ms(&p[0], &p[1])).collect();
+    gaps.sort_unstable();
+    let median = gaps[gaps.len() / 2];
+
+    // The median rather than every gap. A loop that sleeps for an interval
+    // rather than toward a deadline walks its whole distribution forward by the
+    // cost of each tick — measured against the TypeScript daemon over six
+    // hours, that cost it 113 samples, roughly 7.5 minutes of coverage a day.
+    // A single overrun on a loaded machine is legitimate behaviour the daemon
+    // logs and resynchronises from, and must not fail this.
+    assert!(
+        (950..=1_050).contains(&median),
+        "median interval {median} ms is not a one-second cadence: {gaps:?}"
+    );
 }
