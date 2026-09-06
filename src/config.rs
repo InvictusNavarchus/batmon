@@ -110,11 +110,57 @@ impl Thresholds {
     /// mistake per edit round-trip is miserable.
     pub fn validate(&self) -> Result<(), InvalidThresholds> {
         let mut problems = Vec::new();
-        let mut require = |ok: bool, message: &str| {
-            if !ok {
-                problems.push(format!("  - {message}"));
+
+        // Finiteness first. Every check below is a comparison, and every
+        // comparison against NaN is false, so a non-finite threshold would sail
+        // through them all while silently disabling the alert it governs — no
+        // temperature ever reaches an infinite limit.
+        self.check_finite(&mut problems);
+        self.check_charge(&mut problems);
+        self.check_temperature(&mut problems);
+        self.check_health_and_workload(&mut problems);
+        self.check_bands(&mut problems);
+
+        if problems.is_empty() {
+            Ok(())
+        } else {
+            Err(InvalidThresholds(problems.join("\n")))
+        }
+    }
+
+    /// Every threshold that must be a real number, paired with its name.
+    fn numeric_fields(&self) -> [(&'static str, f64); 17] {
+        [
+            ("charge_high_warn", self.charge_high_warn),
+            ("charge_low_warn", self.charge_low_warn),
+            ("charge_crit_warn", self.charge_crit_warn),
+            ("charge_hysteresis_pct", self.charge_hysteresis_pct),
+            ("temp_warn", self.temp_warn),
+            ("temp_crit", self.temp_crit),
+            ("temp_hysteresis_c", self.temp_hysteresis_c),
+            ("cap_warn", self.cap_warn),
+            ("cap_hysteresis_pct", self.cap_hysteresis_pct),
+            ("cpu_hot_charging", self.cpu_hot_charging),
+            ("cpu_temp_hysteresis_c", self.cpu_temp_hysteresis_c),
+            ("cpu_anomaly_temp", self.cpu_anomaly_temp),
+            ("cpu_anomaly_max_load_pct", self.cpu_anomaly_max_load_pct),
+            ("cpu_anomaly_max_power_w", self.cpu_anomaly_max_power_w),
+            ("cpu_anomaly_hysteresis_c", self.cpu_anomaly_hysteresis_c),
+            ("voltage_over_ratio", self.voltage_over_ratio),
+            ("voltage_clear_ratio", self.voltage_clear_ratio),
+        ]
+    }
+
+    fn check_finite(&self, problems: &mut Vec<String>) {
+        for (name, value) in self.numeric_fields() {
+            if !value.is_finite() {
+                problems.push(format!("  - {name} must be a finite number"));
             }
-        };
+        }
+    }
+
+    fn check_charge(&self, problems: &mut Vec<String>) {
+        let mut require = |ok: bool, message: &str| require_into(problems, ok, message);
 
         require(
             self.charge_crit_warn > 0.0,
@@ -138,6 +184,10 @@ impl Thresholds {
             self.charge_high_warn - self.charge_hysteresis_pct > self.charge_low_warn,
             "charge_high_warn minus charge_hysteresis_pct must stay above charge_low_warn",
         );
+    }
+
+    fn check_temperature(&self, problems: &mut Vec<String>) {
+        let mut require = |ok: bool, message: &str| require_into(problems, ok, message);
 
         require(self.temp_warn > 0.0, "temp_warn must be above 0 C");
         require(
@@ -154,12 +204,32 @@ impl Thresholds {
             self.temp_crit - self.temp_hysteresis_c > self.temp_warn,
             "temp_crit minus temp_hysteresis_c must stay above temp_warn",
         );
+        // Both CPU families clear at threshold minus band. A band wider than its
+        // threshold puts that point below absolute zero, where no reading can
+        // reach it, so a latch that fires could never re-arm.
+        require(
+            self.cpu_temp_hysteresis_c < self.cpu_hot_charging,
+            "cpu_temp_hysteresis_c must be narrower than cpu_hot_charging",
+        );
+        require(
+            self.cpu_anomaly_hysteresis_c < self.cpu_anomaly_temp,
+            "cpu_anomaly_hysteresis_c must be narrower than cpu_anomaly_temp",
+        );
+    }
+
+    fn check_health_and_workload(&self, problems: &mut Vec<String>) {
+        let mut require = |ok: bool, message: &str| require_into(problems, ok, message);
 
         require(
             self.cap_warn > 0.0 && self.cap_warn <= 100.0,
             "cap_warn must be a percentage above 0",
         );
-
+        // Health is a percentage of design capacity, so a re-arm point above 100
+        // is unreachable and the notice would latch permanently after firing.
+        require(
+            self.cap_warn + self.cap_hysteresis_pct <= 100.0,
+            "cap_warn plus cap_hysteresis_pct must not exceed 100%",
+        );
         require(
             self.cpu_anomaly_temp > 0.0,
             "cpu_anomaly_temp must be above 0 C",
@@ -172,7 +242,9 @@ impl Thresholds {
             self.cpu_anomaly_max_power_w > 0.0,
             "cpu_anomaly_max_power_w must be above 0 W",
         );
+    }
 
+    fn check_bands(&self, problems: &mut Vec<String>) {
         for (name, band) in [
             ("charge_hysteresis_pct", self.charge_hysteresis_pct),
             ("temp_hysteresis_c", self.temp_hysteresis_c),
@@ -180,7 +252,7 @@ impl Thresholds {
             ("cpu_temp_hysteresis_c", self.cpu_temp_hysteresis_c),
             ("cpu_anomaly_hysteresis_c", self.cpu_anomaly_hysteresis_c),
         ] {
-            require(band > 0.0, &format!("{name} must be above 0"));
+            require_into(problems, band > 0.0, &format!("{name} must be above 0"));
         }
 
         for (name, samples) in [
@@ -190,23 +262,30 @@ impl Thresholds {
                 self.cpu_anomaly_debounce_samples,
             ),
         ] {
-            require(samples >= 1, &format!("{name} must be at least 1"));
+            require_into(
+                problems,
+                samples >= 1,
+                &format!("{name} must be at least 1"),
+            );
         }
 
-        require(
+        require_into(
+            problems,
             self.voltage_over_ratio > self.voltage_clear_ratio,
             "voltage_over_ratio must be above voltage_clear_ratio",
         );
-        require(
+        require_into(
+            problems,
             self.voltage_clear_ratio >= 1.0,
             "voltage_clear_ratio must be at least 1.0 (design voltage)",
         );
+    }
+}
 
-        if problems.is_empty() {
-            Ok(())
-        } else {
-            Err(InvalidThresholds(problems.join("\n")))
-        }
+/// Record a violation if the invariant does not hold.
+fn require_into(problems: &mut Vec<String>, holds: bool, message: &str) {
+    if !holds {
+        problems.push(format!("  - {message}"));
     }
 }
 
@@ -404,6 +483,68 @@ mod tests {
         let err = t.validate().unwrap_err().to_string();
         assert!(
             err.contains("voltage_clear_ratio must be at least 1.0"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn rejects_non_finite_thresholds() {
+        // Every ordering check is a comparison, and comparisons against NaN are
+        // false — so without this an infinite limit passes validation and
+        // silently disables its alert.
+        for (label, thresholds) in [
+            (
+                "infinite",
+                Thresholds {
+                    cpu_hot_charging: f64::INFINITY,
+                    ..Default::default()
+                },
+            ),
+            (
+                "nan",
+                Thresholds {
+                    voltage_over_ratio: f64::NAN,
+                    ..Default::default()
+                },
+            ),
+        ] {
+            let err = thresholds.validate().unwrap_err().to_string();
+            assert!(err.contains("must be a finite number"), "{label}: {err}");
+        }
+    }
+
+    #[test]
+    fn rejects_a_health_rearm_point_above_one_hundred_percent() {
+        let t = Thresholds {
+            cap_warn: 99.0,
+            cap_hysteresis_pct: 5.0,
+            ..Default::default()
+        };
+        let err = t.validate().unwrap_err().to_string();
+        assert!(err.contains("must not exceed 100%"), "{err}");
+    }
+
+    #[test]
+    fn rejects_deadbands_wider_than_the_threshold_they_clear() {
+        // 85 - 90 is below absolute zero: the latch could fire and never re-arm
+        // for any physically possible CPU temperature.
+        let t = Thresholds {
+            cpu_temp_hysteresis_c: 90.0,
+            ..Default::default()
+        };
+        let err = t.validate().unwrap_err().to_string();
+        assert!(
+            err.contains("cpu_temp_hysteresis_c must be narrower"),
+            "{err}"
+        );
+
+        let t = Thresholds {
+            cpu_anomaly_hysteresis_c: 95.0,
+            ..Default::default()
+        };
+        let err = t.validate().unwrap_err().to_string();
+        assert!(
+            err.contains("cpu_anomaly_hysteresis_c must be narrower"),
             "{err}"
         );
     }
