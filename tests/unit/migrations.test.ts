@@ -175,7 +175,7 @@ describe("migrations", () => {
 		`;
 		await sql.unsafe("PRAGMA user_version = 2;");
 
-		// Run debug migrations from v2 -> v4
+		// Run debug migrations from v2 -> v5
 		await migrate(sql, DEBUG_MIGRATIONS, "debug.db");
 
 		const rows = (await sql`SELECT * FROM samples WHERE id = 1;`) as Array<{
