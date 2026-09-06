@@ -7,5 +7,7 @@
 //! observe.
 
 pub mod battery;
+pub mod thermal;
 
 pub use battery::{BatteryReader, Energy};
+pub use thermal::{ThermalReader, Thermals};
