@@ -11,6 +11,7 @@
 //! piles up next to its predecessor undoes that work at the last step.
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::Value;
@@ -32,6 +33,15 @@ const EXPIRE_DEFAULT: i32 = -1;
 
 /// Identifier meaning "this is a new bubble, do not replace anything".
 const NO_REPLACEMENT: u32 = 0;
+
+/// Shortest gap between attempts to bind to a notification server.
+///
+/// A daemon enabled with the user session can start before the desktop's
+/// notification service does, and without a retry its alerts would be
+/// journal-only until someone restarted it. Alerts are rare enough that
+/// retrying on each one costs nothing, and this bound exists only so a machine
+/// that genuinely has no bus does not attempt a connection per notification.
+const RECONNECT_INTERVAL: Duration = Duration::from_secs(30);
 
 /// The most recent bubble identifier per alert family.
 #[derive(Debug, Default)]
@@ -61,6 +71,8 @@ impl ReplacementIds {
 pub struct DesktopNotifier {
     server: Option<Proxy<'static>>,
     replacements: ReplacementIds,
+    /// When binding was last attempted, successfully or not.
+    last_attempt: Instant,
 }
 
 impl std::fmt::Debug for DesktopNotifier {
@@ -79,23 +91,17 @@ impl DesktopNotifier {
     /// recorder's job is recording, not talking. Alerts still reach the journal.
     #[must_use]
     pub fn connect() -> Self {
-        let server = match Connection::session() {
-            Ok(connection) => match Proxy::new(&connection, SERVICE, PATH, INTERFACE) {
-                Ok(proxy) => Some(proxy),
-                Err(error) => {
-                    tracing::warn!(%error, "no notification server; alerts will only be logged");
-                    None
-                }
-            },
-            Err(error) => {
-                tracing::warn!(%error, "no session bus; alerts will only be logged");
-                None
-            }
-        };
+        let server = bind();
+        if server.is_none() {
+            tracing::warn!(
+                "no notification server; alerts will be journalled and delivery retried"
+            );
+        }
 
         Self {
             server,
             replacements: ReplacementIds::default(),
+            last_attempt: Instant::now(),
         }
     }
 
@@ -135,9 +141,39 @@ impl Notifier for DesktopNotifier {
         // is the durable record; the bubble is a courtesy.
         log(notification);
 
+        // Pick up a notification server that appeared after startup, which is
+        // the normal case for a user service enabled at login.
+        if self.server.is_none() && self.last_attempt.elapsed() >= RECONNECT_INTERVAL {
+            self.last_attempt = Instant::now();
+            self.server = bind();
+            if self.server.is_some() {
+                tracing::info!("notification server appeared; delivery resumed");
+            }
+        }
+
         let replaces = self.replacements.previous(notification.family);
         if let Some(id) = self.send(notification, replaces) {
             self.replacements.record(notification.family, id);
+        }
+    }
+}
+
+/// Bind to the session bus's notification service, if there is one.
+///
+/// Logs at debug rather than warn: this runs on every retry, and a headless
+/// machine failing repeatedly is expected rather than notable.
+fn bind() -> Option<Proxy<'static>> {
+    match Connection::session() {
+        Ok(connection) => match Proxy::new(&connection, SERVICE, PATH, INTERFACE) {
+            Ok(proxy) => Some(proxy),
+            Err(error) => {
+                tracing::debug!(%error, "no notification server on the session bus");
+                None
+            }
+        },
+        Err(error) => {
+            tracing::debug!(%error, "no session bus");
+            None
         }
     }
 }
@@ -230,6 +266,9 @@ mod tests {
         DesktopNotifier {
             server: None,
             replacements: ReplacementIds::default(),
+            // Freshly attempted, so delivery inside a test will not reach for
+            // the real session bus during the reconnect window.
+            last_attempt: Instant::now(),
         }
     }
 
@@ -240,6 +279,39 @@ mod tests {
         let mut notifier = disconnected();
         notifier.deliver(&notification(AlertFamily::Charge));
         notifier.deliver(&notification(AlertFamily::BatteryTemp));
+    }
+
+    #[test]
+    fn a_disconnected_notifier_does_not_retry_within_the_reconnect_window() {
+        // Both that the retry is bounded, and — since the real session bus on a
+        // developer machine would answer — that `cargo test` cannot deliver
+        // notifications to somebody's desktop.
+        let mut notifier = disconnected();
+        for _ in 0..20 {
+            notifier.deliver(&notification(AlertFamily::Charge));
+        }
+
+        assert!(
+            notifier.server.is_none(),
+            "delivery reached for the real session bus inside the retry window"
+        );
+    }
+
+    #[test]
+    fn a_stale_attempt_makes_the_next_delivery_retry() {
+        // The property that matters: a notifier that failed at startup does try
+        // again, so a desktop appearing later restores alerts without a restart.
+        let mut notifier = disconnected();
+        notifier.last_attempt = Instant::now()
+            .checked_sub(RECONNECT_INTERVAL + Duration::from_secs(1))
+            .expect("the process has not been running since the epoch");
+
+        notifier.deliver(&notification(AlertFamily::Charge));
+
+        assert!(
+            notifier.last_attempt.elapsed() < RECONNECT_INTERVAL,
+            "the attempt timestamp was not refreshed, so retries would be unbounded"
+        );
     }
 
     #[test]
