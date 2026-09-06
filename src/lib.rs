@@ -9,6 +9,7 @@
 //! procfs all block, so an async runtime would buy nothing and cost a scheduler.
 
 pub mod config;
+pub mod migrations;
 pub mod parity;
 pub mod paths;
 pub mod types;

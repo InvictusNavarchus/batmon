@@ -10,6 +10,7 @@ publish = false
 
 [dependencies]
 jiff = { version = "0.2.35", default-features = false, features = ["std"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 thiserror = "2.0.20"
 
 [dev-dependencies]
