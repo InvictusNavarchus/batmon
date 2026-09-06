@@ -91,15 +91,21 @@ impl ThermalReader {
             .and_then(read_watts)
             .map(|watts| crate::parity::round_to(watts, 2));
 
+        // The battery's hwmon sensor is cached exactly like the others, so it
+        // has to be read before the staleness decision and counted in it.
+        let battery_hwmon = sensors.battery.as_deref().and_then(read_millidegrees);
+        let battery_c = attribute_temp(&self.battery_dir)
+            .or(battery_hwmon)
+            .map(Celsius::get);
+
         let expected = [
             (sensors.cpu.is_some(), cpu_c.is_some()),
             (sensors.gpu_temp.is_some(), gpu_c.is_some()),
             (sensors.nvme.is_some(), nvme_c.is_some()),
             (sensors.gpu_power.is_some(), gpu_power_w.is_some()),
+            (sensors.battery.is_some(), battery_hwmon.is_some()),
         ];
         let stale = expected.iter().any(|(located, read)| *located && !*read);
-
-        let battery_c = battery_temp(&self.battery_dir, sensors);
 
         if stale {
             self.sensors = None;
@@ -115,26 +121,15 @@ impl ThermalReader {
     }
 }
 
-/// Battery pack temperature, preferring the pack's own attribute.
+/// The pack's own `temp` attribute, in tenths of a degree.
 ///
-/// Deliberately unrounded, unlike every other temperature here. The TypeScript
-/// daemon rounds system temperatures and stores this one raw; reproducing the
-/// asymmetry keeps stored values identical. Normalising it is a behaviour change
-/// for its own commit.
-fn battery_temp(battery_dir: &Path, sensors: &Sensors) -> Option<f64> {
-    // The ACPI attribute reports tenths of a degree...
-    if let Some(tenths) = read_number(&battery_dir.join("temp")) {
-        if let Some(celsius) = Celsius::from_tenths(tenths) {
-            return Some(celsius.get());
-        }
-    }
-
-    // ...while an hwmon device under the same directory reports millidegrees.
-    sensors
-        .battery
-        .as_deref()
-        .and_then(read_millidegrees)
-        .map(Celsius::get)
+/// Preferred over an hwmon child device when present. Deliberately unrounded,
+/// unlike every other temperature here: the TypeScript daemon rounds system
+/// temperatures and stores this one raw, and reproducing the asymmetry keeps
+/// stored values identical. Normalising it is a behaviour change for its own
+/// commit.
+fn attribute_temp(battery_dir: &Path) -> Option<Celsius> {
+    read_number(&battery_dir.join("temp")).and_then(Celsius::from_tenths)
 }
 
 /// Locate every sensor of interest under `hwmon_base`.
@@ -603,6 +598,33 @@ mod tests {
         let mut reader = ThermalReader::new(&battery, tmp.path().join("hwmon"));
 
         assert_eq!(reader.read().battery_c, Some(29.0));
+    }
+
+    #[test]
+    fn a_battery_sensor_that_stops_reading_triggers_a_rescan() {
+        // The staleness check originally covered only the system sensors, so a
+        // battery hwmon path that went stale was never re-resolved and
+        // battery_c stayed None for the life of the process — silencing the
+        // whole battery-thermal alert family on hardware that has a sensor.
+        let tmp = TempDir::new().unwrap();
+        let battery = tmp.path().join("BAT0");
+        std::fs::create_dir_all(battery.join("hwmon3")).unwrap();
+        std::fs::write(battery.join("hwmon3").join("temp1_input"), "31000\n").unwrap();
+
+        let mut reader = ThermalReader::new(&battery, tmp.path().join("hwmon"));
+        assert_eq!(reader.read().battery_c, Some(31.0));
+
+        // The driver re-registers its hwmon child at a different index.
+        std::fs::remove_dir_all(battery.join("hwmon3")).unwrap();
+        assert_eq!(reader.read().battery_c, None);
+
+        std::fs::create_dir_all(battery.join("hwmon5")).unwrap();
+        std::fs::write(battery.join("hwmon5").join("temp1_input"), "33500\n").unwrap();
+        assert_eq!(
+            reader.read().battery_c,
+            Some(33.5),
+            "the reader did not rescan for the battery sensor"
+        );
     }
 
     #[test]
