@@ -209,4 +209,66 @@ describe("computeEstimatedCycles", () => {
 
 		expect(computeEstimatedCycles(curr, prev)).toBe(0.1);
 	});
+
+	test("carries forward previous cycles without integrating offline delta when boot_id changes", () => {
+		const prev = createMockSample({
+			energy_wh: 50,
+			estimated_cycle_count: 5.0,
+			energy_design_wh: 50,
+			boot_id: "old-boot-uuid",
+			uptime_s: 36000,
+			is_charging: false,
+		});
+		const curr = createMockSample({
+			energy_wh: 40, // 10 Wh lower after sitting powered off
+			energy_design_wh: 50,
+			boot_id: "new-boot-uuid",
+			uptime_s: 15,
+			is_charging: false,
+		});
+
+		// Must not add 10Wh (0.2 cycles) across the reboot gap
+		expect(computeEstimatedCycles(curr, prev)).toBe(5.0);
+	});
+
+	test("carries forward previous cycles without integrating offline delta when uptime_s decreases", () => {
+		const prev = createMockSample({
+			energy_wh: 50,
+			estimated_cycle_count: 5.0,
+			energy_design_wh: 50,
+			boot_id: "same-boot-uuid",
+			uptime_s: 50000,
+			is_charging: false,
+		});
+		const curr = createMockSample({
+			energy_wh: 40,
+			energy_design_wh: 50,
+			boot_id: "same-boot-uuid",
+			uptime_s: 30, // Decreased uptime indicates host rebooted
+			is_charging: false,
+		});
+
+		expect(computeEstimatedCycles(curr, prev)).toBe(5.0);
+	});
+
+	test("applies delta normally when boot_id matches and uptime is continuous", () => {
+		const prev = createMockSample({
+			energy_wh: 50,
+			estimated_cycle_count: 5.0,
+			energy_design_wh: 50,
+			boot_id: "boot-uuid-1",
+			uptime_s: 1000,
+			is_charging: false,
+		});
+		const curr = createMockSample({
+			energy_wh: 45,
+			energy_design_wh: 50,
+			boot_id: "boot-uuid-1",
+			uptime_s: 1001,
+			is_charging: false,
+		});
+
+		// 5 Wh / 50 Wh = 0.1 cycles -> 5.1
+		expect(computeEstimatedCycles(curr, prev)).toBe(5.1);
+	});
 });

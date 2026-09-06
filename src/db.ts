@@ -28,6 +28,18 @@ export function computeEstimatedCycles(
 				? "discharging"
 				: "ac_idle");
 
+	const isBootBoundary =
+		(prev.boot_id !== null &&
+			curr.boot_id !== null &&
+			prev.boot_id !== curr.boot_id) ||
+		(prev.uptime_s !== null &&
+			curr.uptime_s !== null &&
+			curr.uptime_s < prev.uptime_s);
+
+	if (isBootBoundary) {
+		return prevCycles;
+	}
+
 	if (powerState === "discharging" && prev.energy_wh > curr.energy_wh) {
 		const deltaWh = prev.energy_wh - curr.energy_wh;
 		if (deltaWh > 0 && deltaWh <= curr.energy_design_wh) {
