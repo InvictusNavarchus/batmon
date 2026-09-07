@@ -272,8 +272,11 @@ fn migration_versions_are_contiguous_and_ordered() {
 
 #[test]
 fn a_database_already_at_the_latest_version_is_left_alone() {
-    // Guards the field upgrade path: a v7 battery.db written before the port
-    // must open untouched under the current ladder.
+    // Idempotence: re-running the ladder against a database already at the
+    // head version must change nothing and must leave stored rows alone.
+    // Note the head schema here is built by the ladder itself, so this does
+    // not prove that a v7 database written before the port opens untouched --
+    // that needs a captured legacy fixture, which does not exist yet.
     let conn = memory();
     migrate(&conn, HISTORICAL_MIGRATIONS).unwrap();
     conn.execute(

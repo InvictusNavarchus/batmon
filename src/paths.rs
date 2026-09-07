@@ -2,8 +2,9 @@
 //!
 //! Every path the daemon touches is a field on [`Paths`] rather than a literal
 //! buried in a reader. That is what makes the `/proc` parsers testable against
-//! fixture directories. A parser that hardcodes `/proc` cannot be pointed
-//! anywhere else, and so cannot be tested at all.
+//! fixture directories. A parser with the mount point baked in can only ever
+//! read the host's own `/proc`, so its behaviour on a given input cannot be
+//! asserted.
 
 use std::path::{Path, PathBuf};
 

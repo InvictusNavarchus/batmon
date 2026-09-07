@@ -7,11 +7,13 @@ use crate::types::{PowerState, Sample};
 /// Which charge alert, if any, is currently latched.
 ///
 /// A single state rather than three independent booleans. With booleans the
-/// critical alert has to set two latches at once so that the low alert stays
-/// suppressed — a relationship no type enforces, upheld only by a comment —
-/// while a combination that must never occur, low latched without critical,
-/// remains representable. Naming the reachable states makes the suppression
-/// structural: there is no value here meaning "both fired".
+/// critical alert has to set the low latch as well, so the low alert stays
+/// suppressed beneath it — a relationship no type enforces, upheld only by a
+/// comment. That leaves a fourth combination, critical latched *without* low,
+/// representable but never constructed. Naming the reachable states makes the
+/// suppression structural: there is no value here meaning "both fired", and
+/// [`ChargeState::LowFired`] is the low alert on its own, which is the
+/// ordinary state below the low threshold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ChargeState {
     #[default]
