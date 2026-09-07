@@ -250,12 +250,80 @@ fn a_missing_battery_produces_a_sample_marked_absent() {
     let sample = machine
         .sampler()
         .sample()
-        .expect("a readable battery yields a sample");
+        .expect("an absent battery still yields a sample, marked absent");
 
     assert!(!sample.is_present);
     assert_eq!(sample.status, "Unknown");
     assert_eq!(sample.power_state, PowerState::Unknown);
     assert_eq!(sample.charge_pct, 0.0);
+}
+
+#[test]
+fn an_unreadable_presence_attribute_yields_no_sample_rather_than_an_absent_one() {
+    // The difference matters downstream: an absent sample clears every alert
+    // latch, so a `present` file that merely failed to read must not be
+    // reported as a battery that went away.
+    let machine = Machine::new();
+    std::fs::write(machine.paths.battery.join("present"), "").unwrap();
+    for attribute in ["capacity", "energy_now", "energy_full"] {
+        let _ = std::fs::remove_file(machine.paths.battery.join(attribute));
+    }
+
+    assert!(machine.sampler().sample().is_none());
+}
+
+#[test]
+fn an_absent_battery_drops_the_cached_runtime_estimate() {
+    // The estimate describes a pack that is no longer there. Without dropping
+    // it, a battery reinserted inside the one-minute poll window inherits the
+    // previous one's time-to-empty, because refresh_estimates sees an
+    // unexpired cache and the same power state and skips the poll.
+    struct Counting(std::rc::Rc<std::cell::Cell<u32>>);
+    impl TimeEstimates for Counting {
+        fn time_to_empty_s(&self) -> Option<i64> {
+            self.0.set(self.0.get() + 1);
+            Some(1_000)
+        }
+        fn time_to_full_s(&self) -> Option<i64> {
+            None
+        }
+    }
+
+    let machine = Machine::new();
+    let calls = std::rc::Rc::new(std::cell::Cell::new(0));
+    let mut sampler = Sampler::new(
+        machine.paths.clone(),
+        Box::new(Counting(std::rc::Rc::clone(&calls))),
+    );
+
+    sampler
+        .sample()
+        .expect("a readable battery yields a sample");
+    assert_eq!(calls.get(), 1);
+
+    std::fs::remove_dir_all(&machine.paths.battery).unwrap();
+    sampler
+        .sample()
+        .expect("an absent battery still yields a sample, marked absent");
+
+    std::fs::create_dir_all(&machine.paths.battery).unwrap();
+    machine.battery(&[
+        ("status", "Discharging"),
+        ("capacity", "72"),
+        ("energy_now", "42000000"),
+        ("energy_full", "58000000"),
+        ("energy_full_design", "58328000"),
+        ("power_now", "16000000"),
+    ]);
+    sampler
+        .sample()
+        .expect("a readable battery yields a sample");
+
+    assert_eq!(
+        calls.get(),
+        2,
+        "the returning battery must be polled afresh, not served the old          pack's cached estimate"
+    );
 }
 
 #[test]
