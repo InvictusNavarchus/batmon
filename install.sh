@@ -29,6 +29,16 @@ if [ ! -x "$BINARY" ]; then
   exit 1
 fi
 
+# ── stop running service ──────────────────────────────────────────────
+# Stop the daemon before replacing files or testing. This lets the existing
+# daemon (whether Bun or a previous Rust build) checkpoint its WAL, flush
+# databases cleanly, and releases locks so verification doesn't race against
+# 1s background ticks.
+if systemctl --user is-active --quiet batmon.service 2>/dev/null; then
+  echo "==> Stopping active batmon service…"
+  systemctl --user stop batmon.service 2>/dev/null || true
+fi
+
 # ── install binary ────────────────────────────────────────────────────
 mkdir -p "$BIN_DIR"
 install -m 755 "$BINARY" "$BIN_DIR/batmon"
@@ -86,6 +96,7 @@ WantedBy=default.target
 EOF
 
 echo "    service → $SYSTEMD_DIR/batmon.service"
+systemctl --user daemon-reload
 
 # ── verify ────────────────────────────────────────────────────────────
 echo ""
@@ -97,10 +108,8 @@ else
   exit 1
 fi
 
-# ── enable & restart service ──────────────────────────────────────────
-systemctl --user daemon-reload
+# ── enable & start service ────────────────────────────────────────────
 systemctl --user enable --now batmon.service
-systemctl --user restart batmon.service
 echo "    service → enabled & started (1s flight recorder + 60s history)"
 echo ""
 echo "    Check historical data (if sqlite3 CLI is installed):"
