@@ -8,6 +8,16 @@ It operates as a high-frequency flight recorder, capturing hardware metrics ever
 
 ---
 
+## ⚡ Quick Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/InvictusNavarchus/batmon/master/install.sh | bash
+```
+
+The installer automatically detects your architecture (`x86_64` or `aarch64`), downloads the pre-compiled static binary to `~/.local/bin/batmon`, configures and starts the `systemd` user service, and verifies the installation.
+
+---
+
 ## 🎯 Architecture: Dual-Tier Monitoring
 
 `batmon` captures telemetry using two distinct tiers:
@@ -131,20 +141,11 @@ Re-fired alerts **replace** their previous notification rather than stacking bes
 
 ---
 
-## 🚀 Installation
-
-### One-line Install (Recommended)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/InvictusNavarchus/batmon/master/install.sh | bash
-```
-
-The installer will:
-1. Detect architecture (`x86_64` or `aarch64`) and download the latest pre-compiled static binary to `~/.local/bin/batmon`.
-2. Configure and start a `systemd` user service (`batmon.service`).
-3. Run an initial diagnostic sample verification.
+## 🚀 Installation Options
 
 ### Build from Source
+
+If you prefer compiling locally rather than downloading pre-compiled binaries:
 
 ```bash
 git clone https://github.com/InvictusNavarchus/batmon.git
