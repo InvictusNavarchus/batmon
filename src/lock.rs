@@ -53,11 +53,11 @@ impl LockOutcome {
 
         match flock(&file, FlockOperation::NonBlockingLockExclusive) {
             Ok(()) => {
-                let _ = file.set_len(0);
-                let _ = file.seek(SeekFrom::Start(0));
+                file.set_len(0).context("truncating lock file")?;
+                file.seek(SeekFrom::Start(0)).context("seeking lock file")?;
                 let pid = std::process::id();
-                let _ = writeln!(file, "{pid}");
-                let _ = file.flush();
+                writeln!(file, "{pid}").context("writing lock PID")?;
+                file.flush().context("flushing lock PID")?;
 
                 Ok(Self::Acquired(LockHandle { _file: file }))
             }
