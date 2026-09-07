@@ -8,7 +8,7 @@
 use std::cell::OnceCell;
 use std::path::{Path, PathBuf};
 
-use crate::formats::{js_parse_int, round_to};
+use crate::formats::{parse_leading_int, round_to};
 use crate::units::clamp_percent;
 
 /// Aggregate CPU time counters from the `cpu` line of `/proc/stat`.
@@ -204,7 +204,7 @@ fn meminfo_field(meminfo: &str, name: &str) -> Option<u64> {
         if key.trim() == name {
             // The value carries a trailing unit, so a plain parse would reject
             // it; parseInt semantics stop at the first non-digit.
-            return js_parse_int(value).and_then(|kb| u64::try_from(kb).ok());
+            return parse_leading_int(value).and_then(|kb| u64::try_from(kb).ok());
         }
     }
     None

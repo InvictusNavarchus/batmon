@@ -6,40 +6,40 @@ use super::*;
 
 /// Expectations are transcribed from Bun's own output, not derived by hand.
 #[test]
-fn round_js_matches_javascript_on_ties_and_the_sub_half_edge_case() {
-    assert_eq!(round_js(0.5), 1.0);
-    assert_eq!(round_js(-0.5), 0.0);
-    assert_eq!(round_js(1.5), 2.0);
-    assert_eq!(round_js(-1.5), -1.0);
-    assert_eq!(round_js(2.5), 3.0);
-    assert_eq!(round_js(-2.5), -2.0);
-    assert_eq!(round_js(0.499_999_999_999_999_94), 0.0);
-    assert_eq!(round_js(-0.499_999_999_999_999_94), 0.0);
-    assert_eq!(round_js(84.45), 84.0);
-    assert_eq!(round_js(-0.049), 0.0);
-    assert_eq!(round_js(0.0), 0.0);
+fn round_half_up_takes_ties_toward_positive_infinity() {
+    assert_eq!(round_half_up(0.5), 1.0);
+    assert_eq!(round_half_up(-0.5), 0.0);
+    assert_eq!(round_half_up(1.5), 2.0);
+    assert_eq!(round_half_up(-1.5), -1.0);
+    assert_eq!(round_half_up(2.5), 3.0);
+    assert_eq!(round_half_up(-2.5), -2.0);
+    assert_eq!(round_half_up(0.499_999_999_999_999_94), 0.0);
+    assert_eq!(round_half_up(-0.499_999_999_999_999_94), 0.0);
+    assert_eq!(round_half_up(84.45), 84.0);
+    assert_eq!(round_half_up(-0.049), 0.0);
+    assert_eq!(round_half_up(0.0), 0.0);
 }
 
 #[test]
-fn round_js_diverges_from_rust_round_exactly_on_negative_ties() {
+fn round_half_up_diverges_from_rust_round_exactly_on_negative_ties() {
     // The whole reason this module exists. If these ever agree, the helper
     // has stopped doing its job.
-    assert_ne!(round_js(-0.5), (-0.5f64).round());
-    assert_ne!(round_js(-1.5), (-1.5f64).round());
+    assert_ne!(round_half_up(-0.5), (-0.5f64).round());
+    assert_ne!(round_half_up(-1.5), (-1.5f64).round());
     // ...and agrees everywhere else.
-    assert_eq!(round_js(0.5), 0.5f64.round());
-    assert_eq!(round_js(2.5), 2.5f64.round());
+    assert_eq!(round_half_up(0.5), 0.5f64.round());
+    assert_eq!(round_half_up(2.5), 2.5f64.round());
 }
 
 #[test]
-fn round_js_passes_non_finite_values_through() {
-    assert!(round_js(f64::NAN).is_nan());
-    assert_eq!(round_js(f64::INFINITY), f64::INFINITY);
-    assert_eq!(round_js(f64::NEG_INFINITY), f64::NEG_INFINITY);
+fn round_half_up_passes_non_finite_values_through() {
+    assert!(round_half_up(f64::NAN).is_nan());
+    assert_eq!(round_half_up(f64::INFINITY), f64::INFINITY);
+    assert_eq!(round_half_up(f64::NEG_INFINITY), f64::NEG_INFINITY);
 }
 
 #[test]
-fn round_to_one_decimal_matches_javascript() {
+fn round_to_one_decimal_keeps_the_scaling_error() {
     assert_eq!(round_to(45.25, 1), 45.3);
     assert_eq!(round_to(-0.05, 1), 0.0);
     assert_eq!(round_to(84.449_999, 1), 84.4);
@@ -66,7 +66,7 @@ fn round_to_reproduces_the_hwmon_millidegree_conversion() {
 }
 
 #[test]
-fn round_js_reproduces_the_health_percentage_expression() {
+fn round_half_up_reproduces_the_health_percentage_expression() {
     // health_pct is Math.round(ratio * 10000) / 100 — note the asymmetric
     // scale factors, which is why it cannot be expressed as round_to.
     for (full, design, expected) in [
@@ -75,53 +75,53 @@ fn round_js_reproduces_the_health_percentage_expression() {
         (41.333, 53.0, 77.99),
         (0.1, 3.0, 3.33),
     ] {
-        assert_eq!(round_js((full / design) * 10_000.0) / 100.0, expected);
+        assert_eq!(round_half_up((full / design) * 10_000.0) / 100.0, expected);
     }
 }
 
 #[test]
-fn js_number_matches_javascript_for_kernel_emitted_values() {
-    assert_eq!(js_number("42"), Some(42.0));
-    assert_eq!(js_number("  42  "), Some(42.0));
-    assert_eq!(js_number("-22"), Some(-22.0));
-    assert_eq!(js_number("-273150"), Some(-273_150.0));
-    assert_eq!(js_number("12.75"), Some(12.75));
-    assert_eq!(js_number("+5"), Some(5.0));
-    assert_eq!(js_number("1e3"), Some(1000.0));
-    assert_eq!(js_number(""), Some(0.0));
+fn parse_number_accepts_the_values_the_kernel_emits() {
+    assert_eq!(parse_number("42"), Some(42.0));
+    assert_eq!(parse_number("  42  "), Some(42.0));
+    assert_eq!(parse_number("-22"), Some(-22.0));
+    assert_eq!(parse_number("-273150"), Some(-273_150.0));
+    assert_eq!(parse_number("12.75"), Some(12.75));
+    assert_eq!(parse_number("+5"), Some(5.0));
+    assert_eq!(parse_number("1e3"), Some(1000.0));
+    assert_eq!(parse_number(""), Some(0.0));
 }
 
 #[test]
-fn js_number_rejects_everything_javascript_would_leave_non_finite() {
-    assert_eq!(js_number("abc"), None);
-    assert_eq!(js_number("1_000"), None);
-    assert_eq!(js_number("NaN"), None);
+fn parse_number_rejects_non_finite_input() {
+    assert_eq!(parse_number("abc"), None);
+    assert_eq!(parse_number("1_000"), None);
+    assert_eq!(parse_number("NaN"), None);
     // Accepted by Rust's parser, rejected by Number(); the finite filter
     // makes both reach the caller's fallback identically.
-    assert_eq!(js_number("inf"), None);
-    assert_eq!(js_number("Infinity"), None);
+    assert_eq!(parse_number("inf"), None);
+    assert_eq!(parse_number("Infinity"), None);
 }
 
 #[test]
-fn js_parse_int_matches_javascript() {
-    assert_eq!(js_parse_int("  16384000 kB"), Some(16_384_000));
-    assert_eq!(js_parse_int("16384000"), Some(16_384_000));
-    assert_eq!(js_parse_int("-5 x"), Some(-5));
-    assert_eq!(js_parse_int("12.9"), Some(12));
-    assert_eq!(js_parse_int("+7"), Some(7));
-    assert_eq!(js_parse_int("kB 12"), None);
-    assert_eq!(js_parse_int(""), None);
-    assert_eq!(js_parse_int("abc"), None);
-    assert_eq!(js_parse_int("-"), None);
+fn parse_leading_int_stops_at_the_first_non_digit() {
+    assert_eq!(parse_leading_int("  16384000 kB"), Some(16_384_000));
+    assert_eq!(parse_leading_int("16384000"), Some(16_384_000));
+    assert_eq!(parse_leading_int("-5 x"), Some(-5));
+    assert_eq!(parse_leading_int("12.9"), Some(12));
+    assert_eq!(parse_leading_int("+7"), Some(7));
+    assert_eq!(parse_leading_int("kB 12"), None);
+    assert_eq!(parse_leading_int(""), None);
+    assert_eq!(parse_leading_int("abc"), None);
+    assert_eq!(parse_leading_int("-"), None);
 }
 
 #[test]
-fn js_parse_int_returns_none_rather_than_wrapping_on_overflow() {
-    assert_eq!(js_parse_int("99999999999999999999999"), None);
+fn parse_leading_int_returns_none_rather_than_wrapping_on_overflow() {
+    assert_eq!(parse_leading_int("99999999999999999999999"), None);
 }
 
 #[test]
-fn to_fixed_matches_javascript_at_one_decimal() {
+fn format_decimals_rounds_half_away_from_zero_at_one_decimal() {
     for (value, expected) in [
         (45.25, "45.3"),
         (84.45, "84.5"),
@@ -138,12 +138,12 @@ fn to_fixed_matches_javascript_at_one_decimal() {
         (91.25, "91.3"),
         (91.75, "91.8"),
     ] {
-        assert_eq!(to_fixed(value, 1), expected, "toFixed(1) of {value}");
+        assert_eq!(format_decimals(value, 1), expected, "toFixed(1) of {value}");
     }
 }
 
 #[test]
-fn to_fixed_matches_javascript_at_two_decimals() {
+fn format_decimals_rounds_half_away_from_zero_at_two_decimals() {
     for (value, expected) in [
         (15.125, "15.13"),
         (12.345, "12.35"),
@@ -156,12 +156,12 @@ fn to_fixed_matches_javascript_at_two_decimals() {
         (2.675, "2.67"),
         (15.375, "15.38"),
     ] {
-        assert_eq!(to_fixed(value, 2), expected, "toFixed(2) of {value}");
+        assert_eq!(format_decimals(value, 2), expected, "toFixed(2) of {value}");
     }
 }
 
 #[test]
-fn to_fixed_matches_javascript_at_zero_decimals() {
+fn format_decimals_rounds_half_away_from_zero_at_zero_decimals() {
     for (value, expected) in [
         (84.5, "85"),
         (85.5, "86"),
@@ -170,39 +170,39 @@ fn to_fixed_matches_javascript_at_zero_decimals() {
         (-0.5, "-1"),
         (88.6, "89"),
     ] {
-        assert_eq!(to_fixed(value, 0), expected, "toFixed(0) of {value}");
+        assert_eq!(format_decimals(value, 0), expected, "toFixed(0) of {value}");
     }
 }
 
 #[test]
-fn to_fixed_keeps_the_sign_of_a_negative_value_that_rounds_to_zero() {
-    assert_eq!(to_fixed(-0.04, 1), "-0.0");
+fn format_decimals_keeps_the_sign_of_a_negative_value_that_rounds_to_zero() {
+    assert_eq!(format_decimals(-0.04, 1), "-0.0");
     // ...but negative zero is not negative, per the spec's strict comparison.
-    assert_eq!(to_fixed(-0.0, 1), "0.0");
+    assert_eq!(format_decimals(-0.0, 1), "0.0");
 }
 
 #[test]
-fn to_fixed_propagates_a_carry_across_the_decimal_point() {
-    assert_eq!(to_fixed(9.99, 1), "10.0");
-    assert_eq!(to_fixed(99.99, 1), "100.0");
-    assert_eq!(to_fixed(9.95, 1), "9.9");
-    assert_eq!(to_fixed(0.0001, 2), "0.00");
+fn format_decimals_propagates_a_carry_across_the_decimal_point() {
+    assert_eq!(format_decimals(9.99, 1), "10.0");
+    assert_eq!(format_decimals(99.99, 1), "100.0");
+    assert_eq!(format_decimals(9.95, 1), "9.9");
+    assert_eq!(format_decimals(0.0001, 2), "0.00");
 }
 
 #[test]
-fn to_fixed_and_round_js_disagree_on_negative_halves() {
+fn format_decimals_and_round_half_up_disagree_on_negative_halves() {
     // The distinction that makes both helpers necessary: toFixed rounds away
     // from zero, Math.round rounds toward positive infinity.
-    assert_eq!(to_fixed(-0.5, 0), "-1");
-    assert_eq!(round_js(-0.5), 0.0);
+    assert_eq!(format_decimals(-0.5, 0), "-1");
+    assert_eq!(round_half_up(-0.5), 0.0);
 }
 
 #[test]
-fn to_fixed_beats_the_rust_formatter_on_exact_ties() {
+fn format_decimals_beats_the_rust_formatter_on_exact_ties() {
     // Rust rounds half to even; JavaScript does not. hwmon temperatures land
     // on these ties whenever the millidegree reading ends in 250.
     assert_eq!(format!("{:.1}", 45.25f64), "45.2");
-    assert_eq!(to_fixed(45.25, 1), "45.3");
+    assert_eq!(format_decimals(45.25, 1), "45.3");
 }
 
 #[test]

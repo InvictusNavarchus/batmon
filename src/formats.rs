@@ -20,7 +20,7 @@ use jiff::Timestamp;
 /// double below one half: `0.499_999_999_999_999_94 + 0.5` rounds up to exactly
 /// `1.0` in binary floating point, yielding `1` where JavaScript yields `0`.
 #[must_use]
-pub fn round_js(x: f64) -> f64 {
+pub fn round_half_up(x: f64) -> f64 {
     if !x.is_finite() {
         return x;
     }
@@ -37,7 +37,7 @@ pub fn round_js(x: f64) -> f64 {
 #[must_use]
 pub fn round_to(x: f64, digits: i32) -> f64 {
     let scale = 10f64.powi(digits);
-    round_js(x * scale) / scale
+    round_half_up(x * scale) / scale
 }
 
 /// `Number(s)` for the subset of inputs the kernel actually emits, returning
@@ -50,7 +50,7 @@ pub fn round_to(x: f64, digits: i32) -> f64 {
 /// `16` where this returns [`None`]. No file under `/sys/class/power_supply` or
 /// `/sys/class/hwmon` is hex-encoded, so implementing it would be dead code.
 #[must_use]
-pub fn js_number(s: &str) -> Option<f64> {
+pub fn parse_number(s: &str) -> Option<f64> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
         return Some(0.0);
@@ -67,7 +67,7 @@ pub fn js_number(s: &str) -> Option<f64> {
 /// JavaScript would silently widen to a float; `/proc/meminfo` values are
 /// kilobytes and cannot approach [`i64::MAX`].
 #[must_use]
-pub fn js_parse_int(s: &str) -> Option<i64> {
+pub fn parse_leading_int(s: &str) -> Option<i64> {
     let bytes = s.as_bytes();
     let mut i = 0;
     while i < bytes.len() && bytes[i].is_ascii_whitespace() {
@@ -104,7 +104,7 @@ pub fn js_parse_int(s: &str) -> Option<i64> {
 /// fractional digits.
 ///
 /// Note which rounding this uses, because JavaScript has two and they differ.
-/// [`round_js`] breaks ties toward positive infinity, matching `Math.round`;
+/// [`round_half_up`] breaks ties toward positive infinity, matching `Math.round`;
 /// `toFixed` breaks them *away from zero*, so `(-0.5).toFixed(0)` is `"-1"`
 /// where `Math.round(-0.5)` is `0`. Rust's [`f64::round`] happens to match
 /// `toFixed` precisely — which is exactly why it must never be reached for
@@ -117,13 +117,13 @@ pub fn js_parse_int(s: &str) -> Option<i64> {
 ///
 /// Non-finite inputs are passed through to Rust's formatter and will render as
 /// `NaN` or `inf` rather than JavaScript's `NaN`/`Infinity`. Every value that
-/// reaches this has already been through [`js_number`], which rejects both.
+/// reaches this has already been through [`parse_number`], which rejects both.
 /// Fractional digits sufficient to render any finite f64 exactly. Every one is
 /// a dyadic rational, and the smallest subnormal needs 1074 places.
 const EXACT_DIGITS: usize = 1080;
 
 #[must_use]
-pub fn to_fixed(value: f64, digits: usize) -> String {
+pub fn format_decimals(value: f64, digits: usize) -> String {
     if !value.is_finite() {
         return format!("{value}");
     }

@@ -8,7 +8,7 @@
 
 use std::time::{Duration, Instant};
 
-use crate::formats::{now_iso8601_millis, round_js, round_to};
+use crate::formats::{now_iso8601_millis, round_half_up, round_to};
 use crate::paths::Paths;
 use crate::telemetry::battery::BatteryReader;
 use crate::telemetry::proc::ProcReader;
@@ -169,11 +169,11 @@ impl TelemetrySource for Sampler {
             && power_state == PowerState::Discharging
             && power_w > MIN_RATE_FOR_ESTIMATE_W
         {
-            time_to_empty_s = Some(round_js(energy.now_wh / power_w * 3_600.0) as i64);
+            time_to_empty_s = Some(round_half_up(energy.now_wh / power_w * 3_600.0) as i64);
         }
         if time_to_full_s.is_none() && is_charging && power_w > MIN_RATE_FOR_ESTIMATE_W {
             time_to_full_s =
-                Some(round_js((energy.full_wh - energy.now_wh) / power_w * 3_600.0) as i64);
+                Some(round_half_up((energy.full_wh - energy.now_wh) / power_w * 3_600.0) as i64);
         }
 
         // /proc/stat is read once and its totals shared. The TypeScript parsed

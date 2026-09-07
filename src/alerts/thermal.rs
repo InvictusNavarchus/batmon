@@ -3,7 +3,7 @@
 
 use crate::alerts::notify::{AlertFamily, Notification, Urgency};
 use crate::config::Thresholds;
-use crate::formats::to_fixed;
+use crate::formats::format_decimals;
 use crate::types::Sample;
 
 /// Which battery temperature alert is currently latched.
@@ -49,7 +49,7 @@ impl ThermalState {
                 Some(Notification {
                     family: AlertFamily::BatteryTemp,
                     title: "CRITICAL: Battery Overheating".to_owned(),
-                    body: format!("Battery at {} °C – {advice}", to_fixed(temp, 1)),
+                    body: format!("Battery at {} °C – {advice}", format_decimals(temp, 1)),
                     urgency: Urgency::Critical,
                     icon: "dialog-warning",
                 }),
@@ -75,7 +75,7 @@ impl ThermalState {
                 Some(Notification {
                     family: AlertFamily::BatteryTemp,
                     title: "Warning: High Battery Temperature".to_owned(),
-                    body: format!("Battery at {} °C", to_fixed(temp, 1)),
+                    body: format!("Battery at {} °C", format_decimals(temp, 1)),
                     urgency: Urgency::Normal,
                     icon: "dialog-warning",
                 }),

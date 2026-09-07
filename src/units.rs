@@ -104,7 +104,7 @@ mod tests {
 
     #[test]
     fn non_finite_readings_are_not_temperatures() {
-        // Reachable only through the public constructors, since js_number
+        // Reachable only through the public constructors, since parse_number
         // filters these out of sysfs — but an infinite reading would otherwise
         // pass the floor and reach a sample and an alert threshold.
         for raw in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {

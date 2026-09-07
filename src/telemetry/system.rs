@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use crate::formats::{js_number, round_js, round_to};
+use crate::formats::{parse_number, round_half_up, round_to};
 
 /// Mean current clock across every online CPU, in megahertz.
 ///
@@ -47,7 +47,7 @@ fn read_cpufreq(cpu_base: &Path) -> Option<f64> {
         }
     }
 
-    (cores > 0).then(|| round_js(total_khz / f64::from(cores) / 1_000.0))
+    (cores > 0).then(|| round_half_up(total_khz / f64::from(cores) / 1_000.0))
 }
 
 fn read_cpuinfo_freq(proc_base: &Path) -> Option<f64> {
@@ -63,13 +63,13 @@ fn read_cpuinfo_freq(proc_base: &Path) -> Option<f64> {
         let Some((_, value)) = line.split_once(':') else {
             continue;
         };
-        if let Some(mhz) = js_number(value.trim()).filter(|mhz| *mhz > 0.0) {
+        if let Some(mhz) = parse_number(value.trim()).filter(|mhz| *mhz > 0.0) {
             total_mhz += mhz;
             cores += 1;
         }
     }
 
-    (cores > 0).then(|| round_js(total_mhz / f64::from(cores)))
+    (cores > 0).then(|| round_half_up(total_mhz / f64::from(cores)))
 }
 
 /// Directory names of the form `cpu0`, `cpu1`, and so on.
@@ -104,7 +104,7 @@ pub fn read_gpu_pct(drm_base: &Path) -> Option<f64> {
         let path = drm_base.join(card).join("device/gpu_busy_percent");
         if let Some(percent) = std::fs::read_to_string(&path)
             .ok()
-            .and_then(|contents| js_number(contents.trim()))
+            .and_then(|contents| parse_number(contents.trim()))
             .filter(|percent| *percent >= 0.0)
         {
             return Some(round_to(percent, 1));
@@ -126,7 +126,7 @@ fn is_card_directory(name: &str) -> bool {
 fn read_positive(path: &Path) -> Option<f64> {
     std::fs::read_to_string(path)
         .ok()
-        .and_then(|contents| js_number(contents.trim()))
+        .and_then(|contents| parse_number(contents.trim()))
         .filter(|value| *value > 0.0)
 }
 

@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::formats::js_number;
+use crate::formats::parse_number;
 use crate::units::{Celsius, MICRO};
 
 /// Drivers that report a CPU package or core temperature.
@@ -311,13 +311,13 @@ fn read_attribute_number(path: &Path) -> Option<f64> {
         .ok()
         .map(|contents| contents.trim().to_owned())
         .filter(|contents| !contents.is_empty())
-        .and_then(|contents| js_number(&contents))
+        .and_then(|contents| parse_number(&contents))
 }
 
 fn read_number(path: &Path) -> Option<f64> {
     std::fs::read_to_string(path)
         .ok()
-        .and_then(|contents| js_number(contents.trim()))
+        .and_then(|contents| parse_number(contents.trim()))
 }
 
 fn read_millidegrees(path: &Path) -> Option<Celsius> {
