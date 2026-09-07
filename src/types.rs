@@ -82,7 +82,7 @@ impl PowerState {
 /// tests carried, without a fixture module that production code can reach.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Sample {
-    /// UTC timestamp, `toISOString` shape. See [`crate::parity::iso8601_millis`].
+    /// UTC timestamp, `toISOString` shape. See [`crate::formats::iso8601_millis`].
     pub ts: String,
     /// State of charge, percent.
     pub charge_pct: f64,

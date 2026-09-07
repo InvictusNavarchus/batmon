@@ -7,7 +7,7 @@
 //! watt-hours, volts) arrives in exactly one encoding and is used in exactly one
 //! expression, so wrapping it would add ceremony without removing a failure mode.
 
-use crate::parity::round_to;
+use crate::formats::round_to;
 
 /// SI micro- divisor.
 ///

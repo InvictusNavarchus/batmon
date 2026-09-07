@@ -8,7 +8,7 @@
 
 use std::time::{Duration, Instant};
 
-use crate::parity::{now_iso8601_millis, round_js, round_to};
+use crate::formats::{now_iso8601_millis, round_js, round_to};
 use crate::paths::Paths;
 use crate::telemetry::battery::BatteryReader;
 use crate::telemetry::proc::ProcReader;

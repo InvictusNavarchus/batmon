@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::parity::js_number;
+use crate::formats::js_number;
 use crate::units::{Celsius, MICRO};
 
 /// Drivers that report a CPU package or core temperature.
@@ -129,7 +129,7 @@ impl ThermalReader {
             .gpu_power
             .as_deref()
             .and_then(read_watts)
-            .map(|watts| crate::parity::round_to(watts, 2));
+            .map(|watts| crate::formats::round_to(watts, 2));
 
         // The battery's hwmon sensor is cached exactly like the others, so it
         // has to be read before the staleness decision and counted in it.

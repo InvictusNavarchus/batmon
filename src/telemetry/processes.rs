@@ -22,7 +22,7 @@ use std::fmt::Write as _;
 use std::io::Read;
 use std::path::PathBuf;
 
-use crate::parity::round_to;
+use crate::formats::round_to;
 
 /// How many process groups appear in the recorded snapshot.
 const TOP_GROUPS: usize = 5;

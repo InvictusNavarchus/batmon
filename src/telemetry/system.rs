@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use crate::parity::{js_number, round_js, round_to};
+use crate::formats::{js_number, round_js, round_to};
 
 /// Mean current clock across every online CPU, in megahertz.
 ///

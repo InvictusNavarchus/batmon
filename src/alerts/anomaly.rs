@@ -12,7 +12,7 @@
 use crate::alerts::debounce::{Debounced, Observation};
 use crate::alerts::notify::{AlertFamily, Notification, Urgency};
 use crate::config::Thresholds;
-use crate::parity::to_fixed;
+use crate::formats::to_fixed;
 use crate::types::Sample;
 
 /// Debounce latch for the thermal anomaly detector.

@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::parity::js_number;
+use crate::formats::js_number;
 use crate::units::MICRO;
 
 /// Energy figures in watt-hours, normalised across the two driver conventions.
@@ -30,7 +30,7 @@ impl Energy {
     #[must_use]
     pub fn health_pct(self) -> f64 {
         if self.design_wh > 0.0 {
-            crate::parity::round_js((self.full_wh / self.design_wh) * 10_000.0) / 100.0
+            crate::formats::round_js((self.full_wh / self.design_wh) * 10_000.0) / 100.0
         } else {
             100.0
         }

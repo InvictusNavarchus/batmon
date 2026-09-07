@@ -10,8 +10,8 @@ use jiff::{SignedDuration, Timestamp};
 use rusqlite::{Connection, Row, named_params};
 
 use crate::cycles::compute_estimated_cycles;
+use crate::formats::iso8601_millis;
 use crate::migrations::{DEBUG_MIGRATIONS, HISTORICAL_MIGRATIONS, Migration, migrate};
-use crate::parity::iso8601_millis;
 use crate::types::{PowerState, Sample};
 
 /// Anything that can go wrong opening or using a store.
@@ -192,7 +192,7 @@ impl Store {
 
         let cutoff = Timestamp::now().checked_sub(SignedDuration::from_hours(hours))?;
         // Compared as text, which is only sound because every timestamp is
-        // written fixed-width. See parity::iso8601_millis.
+        // written fixed-width. See formats::iso8601_millis.
         let removed = self.conn.execute(
             "DELETE FROM samples WHERE ts < ?1",
             [iso8601_millis(cutoff)],

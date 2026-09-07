@@ -8,7 +8,7 @@
 use std::cell::OnceCell;
 use std::path::{Path, PathBuf};
 
-use crate::parity::{js_parse_int, round_to};
+use crate::formats::{js_parse_int, round_to};
 use crate::units::clamp_percent;
 
 /// Aggregate CPU time counters from the `cpu` line of `/proc/stat`.

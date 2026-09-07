@@ -2,7 +2,7 @@
 
 use crate::alerts::notify::{AlertFamily, Notification, Urgency};
 use crate::config::Thresholds;
-use crate::parity::to_fixed;
+use crate::formats::to_fixed;
 use crate::types::Sample;
 
 /// Whether the wear notice has been shown.
