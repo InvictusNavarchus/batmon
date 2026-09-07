@@ -25,11 +25,32 @@ impl Scripted {
     }
 }
 
-impl TelemetrySource for Scripted {
-    fn sample(&mut self) -> Sample {
-        let sample = self.samples[self.position.min(self.samples.len() - 1)].clone();
+/// A source whose battery is installed throughout but intermittently
+/// unreadable, so some ticks yield nothing at all.
+struct WithGaps {
+    ticks: Vec<Option<Sample>>,
+    position: usize,
+}
+
+impl WithGaps {
+    fn new(ticks: Vec<Option<Sample>>) -> Self {
+        Self { ticks, position: 0 }
+    }
+}
+
+impl TelemetrySource for WithGaps {
+    fn sample(&mut self) -> Option<Sample> {
+        let sample = self.ticks[self.position.min(self.ticks.len() - 1)].clone();
         self.position += 1;
         sample
+    }
+}
+
+impl TelemetrySource for Scripted {
+    fn sample(&mut self) -> Option<Sample> {
+        let sample = self.samples[self.position.min(self.samples.len() - 1)].clone();
+        self.position += 1;
+        Some(sample)
     }
 }
 
@@ -52,7 +73,7 @@ fn present(charge_pct: f64, energy_wh: f64) -> Sample {
     }
 }
 
-fn daemon(source: Scripted) -> Daemon<Scripted, RecordingNotifier> {
+fn daemon<S: TelemetrySource>(source: S) -> Daemon<S, RecordingNotifier> {
     Daemon::new(
         source,
         RecordingNotifier::new(),
@@ -194,6 +215,44 @@ fn a_returning_battery_carries_the_accumulated_count_forward() {
 }
 
 #[test]
+fn an_unreadable_tick_records_nothing_and_keeps_the_latch() {
+    // The counterpart to the absent-battery test above. There the hardware is
+    // gone and clearing the latches is right; here it is still installed and
+    // merely unreadable, so clearing them would re-announce a low battery the
+    // moment the read recovered.
+    let low = present(8.0, 4.0);
+    let mut daemon = daemon(WithGaps::new(vec![
+        None,
+        Some(low.clone()),
+        None,
+        Some(low),
+    ]));
+
+    daemon.run_tick();
+    assert!(
+        daemon.debug.latest().unwrap().is_none(),
+        "an unreadable tick must not store a fabricated flight-recorder row"
+    );
+    // The daemon writes both stores, and history is seeded on the first tick,
+    // so checking only the flight recorder would miss a leak into the
+    // permanent record.
+    assert!(
+        daemon.historical.latest().unwrap().is_none(),
+        "an unreadable tick must not store a fabricated history row"
+    );
+
+    daemon.run_tick(); // the alert fires here
+    daemon.run_tick(); // unreadable again
+    daemon.run_tick(); // and the battery comes back
+
+    assert_eq!(
+        daemon.notifier.delivered().len(),
+        1,
+        "the gap must not clear the latch, or recovery re-announces the alert"
+    );
+}
+
+#[test]
 fn alerts_reach_the_notifier() {
     let mut daemon = daemon(Scripted::repeating(present(8.0, 4.0)));
 
@@ -309,6 +368,31 @@ fn the_first_tick_does_not_prune() {
     daemon.run_tick();
 
     assert!(daemon.debug.latest().unwrap().is_some());
+}
+
+#[test]
+fn pruning_still_runs_on_ticks_that_produce_no_sample() {
+    // Retention describes the window, not this tick. A battery that stays
+    // unreadable used to hold the recorder at whatever it contained when the
+    // reads stopped, indefinitely past the advertised window.
+    let mut daemon = daemon(WithGaps::new(vec![None]));
+    daemon.schedule.prune_interval_ticks = 1;
+
+    daemon
+        .debug
+        .insert(&Sample {
+            ts: "2020-01-01T00:00:00.000Z".to_owned(),
+            ..present(50.0, 30.0)
+        })
+        .unwrap();
+
+    daemon.run_tick(); // tick 0 never prunes
+    daemon.run_tick(); // tick 1 does, despite yielding no sample
+
+    assert!(
+        daemon.debug.latest().unwrap().is_none(),
+        "the stale row must be pruned even though no tick produced a sample"
+    );
 }
 
 #[test]

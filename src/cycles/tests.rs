@@ -22,7 +22,7 @@ fn a_first_sample_starts_at_zero() {
 }
 
 #[test]
-fn an_unusable_design_capacity_yields_zero() {
+fn an_unusable_design_capacity_keeps_the_carried_count() {
     let prev = discharging(45.0, 2.0);
 
     for design in [0.0, -10.0] {
@@ -31,7 +31,8 @@ fn an_unusable_design_capacity_yields_zero() {
             energy_design_wh: design,
             ..discharging(40.0, 0.0)
         };
-        assert_eq!(compute_estimated_cycles(&curr, Some(&prev)), 0.0);
+        // 2.0, not 0.0: the increment is unknown, the history is not.
+        assert_eq!(compute_estimated_cycles(&curr, Some(&prev)), 2.0);
     }
 }
 

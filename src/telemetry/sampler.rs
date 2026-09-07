@@ -60,8 +60,13 @@ impl TimeEstimates for NoTimeEstimates {
 ///
 /// One of the crate's three test seams; it is what lets the daemon loop be
 /// driven by a scripted sequence of samples instead of real hardware.
+///
+/// [`None`] means "nothing to report this tick" — the battery is installed but
+/// its essential attributes could not be read. That is deliberately distinct
+/// from a sample with `is_present` false, which means the hardware is gone and
+/// every latched alert describes something no longer there.
 pub trait TelemetrySource {
-    fn sample(&mut self) -> Sample;
+    fn sample(&mut self) -> Option<Sample>;
 }
 
 /// Reads every source and assembles a [`Sample`].
@@ -77,6 +82,9 @@ pub struct Sampler {
     last_power_state: Option<PowerState>,
     cached_time_to_empty: Option<i64>,
     cached_time_to_full: Option<i64>,
+    /// Whether the current unreadable spell has already been logged, so a
+    /// sustained one does not repeat the warning at the sampling rate.
+    warned_unreadable: bool,
 }
 
 impl std::fmt::Debug for Sampler {
@@ -108,6 +116,7 @@ impl Sampler {
             last_power_state: None,
             cached_time_to_empty: None,
             cached_time_to_full: None,
+            warned_unreadable: false,
         }
     }
 
@@ -115,6 +124,14 @@ impl Sampler {
     #[must_use]
     pub fn without_estimates(paths: Paths) -> Self {
         Self::new(paths, Box::new(NoTimeEstimates))
+    }
+
+    /// Drop the cached runtime estimates so the next readable tick re-polls.
+    fn invalidate_estimates(&mut self) {
+        self.last_estimate_poll = None;
+        self.last_power_state = None;
+        self.cached_time_to_empty = None;
+        self.cached_time_to_full = None;
     }
 
     /// Refresh the cached runtime estimates if they are stale or the rail changed.
@@ -146,12 +163,51 @@ impl TelemetrySource for Sampler {
     ///
     /// `estimated_cycle_count` is left at zero: it is a function of the previous
     /// stored sample, which only the store knows, and is filled in on insert.
-    fn sample(&mut self) -> Sample {
+    fn sample(&mut self) -> Option<Sample> {
         let status = self.battery.status();
         let power_state = PowerState::from_status(&status);
         let is_charging = power_state.is_charging();
 
-        let energy = self.battery.energy();
+        // A battery that is installed but unreadable produces no sample at all.
+        // Substituting zero here is what made an unreadable `capacity` announce
+        // a critical low battery, and an unreadable `energy_now` accrue most of
+        // a cycle in a single tick.
+        let presence = self.battery.is_present();
+        let (Some(energy), Some(charge_pct)) = (self.battery.energy(), self.battery.charge_pct())
+        else {
+            // Either way the cached runtime estimates describe a battery we can
+            // no longer see. Dropping them forces a fresh poll on recovery
+            // rather than attributing the old pack's time-to-empty to the new
+            // reading.
+            self.invalidate_estimates();
+
+            // Only a confirmed `present = 0` is absence. An unreadable presence
+            // attribute is unknown, and reporting it as absence would clear
+            // every latch for hardware that never went anywhere.
+            if presence != Some(false) {
+                if !self.warned_unreadable {
+                    self.warned_unreadable = true;
+                    tracing::warn!("battery present but its energy or capacity could not be read");
+                }
+                return None;
+            }
+            self.warned_unreadable = false;
+
+            // Genuinely absent: still a sample, because `is_present` false is
+            // what tells the caller to clear the latches.
+            return Some(Sample {
+                ts: now_iso8601_millis(),
+                status,
+                power_state,
+                is_charging,
+                is_present: false,
+                ..Sample::default()
+            });
+        };
+
+        if std::mem::take(&mut self.warned_unreadable) {
+            tracing::info!("battery readable again");
+        }
         let power_w = self.battery.power_w();
         let thermals = self.thermal.read();
 
@@ -185,9 +241,9 @@ impl TelemetrySource for Sampler {
             .zip(self.proc.mem_total_kb())
             .and_then(|(times, mem_total_kb)| self.processes.read(times.total, mem_total_kb));
 
-        Sample {
+        Some(Sample {
             ts: now_iso8601_millis(),
-            charge_pct: self.battery.charge_pct(),
+            charge_pct,
             status,
             power_state,
             energy_wh: round_to(energy.now_wh, 3),
@@ -203,7 +259,12 @@ impl TelemetrySource for Sampler {
             battery_temp_c: thermals.battery_c,
             health_pct: energy.health_pct(),
             is_charging,
-            is_present: self.battery.is_present(),
+            // Unknown resolves to present: a full reading just came back, so
+            // the pack is demonstrably there. A confirmed `present = 0` is
+            // still obeyed even though the attributes read, because that is
+            // the driver's own answer -- a pack being removed reports absent
+            // before its stale values stop parsing.
+            is_present: presence.unwrap_or(true),
             time_to_empty_s,
             time_to_full_s,
             cpu_temp_c: thermals.cpu_c,
@@ -218,7 +279,7 @@ impl TelemetrySource for Sampler {
             load1: self.proc.load1(),
             boot_id: self.proc.boot_id(),
             uptime_s: self.proc.uptime_s(),
-        }
+        })
     }
 }
 
