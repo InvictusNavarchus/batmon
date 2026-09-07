@@ -185,21 +185,27 @@ impl BatteryReader {
         }
     }
 
-    /// Whether a battery is physically installed.
+    /// Whether a battery is physically installed, or [`None`] when the
+    /// `present` attribute exists but cannot be read.
     ///
     /// A missing directory means no battery. A present directory with no
     /// `present` attribute means yes — most laptop drivers simply do not expose
     /// the attribute for a permanently installed pack, and treating its absence
     /// as "no battery" would silence the entire daemon on that hardware.
+    ///
+    /// The [`None`] case is the same distinction this module draws everywhere
+    /// else: an attribute that exists but will not read is unknown, not a
+    /// confirmed zero. Reporting it as "absent" would clear every alert latch
+    /// for hardware that never went anywhere.
     #[must_use]
-    pub fn is_present(&self) -> bool {
+    pub fn is_present(&self) -> Option<bool> {
         if !self.dir.exists() {
-            return false;
+            return Some(false);
         }
         if self.has("present") {
-            return self.read_str("present").is_some_and(|value| value == "1");
+            return self.read_str("present").map(|value| value == "1");
         }
-        true
+        Some(true)
     }
 }
 

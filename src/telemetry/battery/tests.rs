@@ -160,7 +160,7 @@ fn a_malformed_numeric_attribute_reads_as_absent_rather_than_zero() {
 fn a_missing_battery_directory_reports_not_present() {
     let reader = BatteryReader::new("/nonexistent/batmon/BAT0");
 
-    assert!(!reader.is_present());
+    assert_eq!(reader.is_present(), Some(false));
     assert_eq!(reader.charge_pct(), None);
     assert_eq!(reader.status(), "Unknown");
 }
@@ -170,16 +170,25 @@ fn a_directory_without_a_present_attribute_counts_as_present() {
     // Most laptop drivers omit it for a permanently installed pack, and
     // reading its absence as "no battery" would silence the whole daemon.
     let (_tmp, reader) = battery(&[("capacity", "80")]);
-    assert!(reader.is_present());
+    assert_eq!(reader.is_present(), Some(true));
 }
 
 #[test]
 fn a_present_attribute_is_obeyed_in_both_directions() {
     let (_tmp, installed) = battery(&[("present", "1")]);
-    assert!(installed.is_present());
+    assert_eq!(installed.is_present(), Some(true));
 
     let (_tmp, removed) = battery(&[("present", "0")]);
-    assert!(!removed.is_present());
+    assert_eq!(removed.is_present(), Some(false));
+}
+
+#[test]
+fn an_unreadable_present_attribute_is_unknown_rather_than_absent() {
+    // Absence clears every alert latch, so it must be a reading rather than a
+    // failure to read: an empty `present` file says nothing about the pack.
+    let (_tmp, reader) = battery(&[("present", ""), ("capacity", "80")]);
+
+    assert_eq!(reader.is_present(), None);
 }
 
 #[test]
