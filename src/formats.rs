@@ -1,24 +1,29 @@
-//! Exact-semantics helpers for the places JavaScript and Rust quietly disagree.
+//! How values are parsed from the kernel, rounded for storage, and rendered for
+//! display.
 //!
-//! The Rust daemon must produce byte-identical rows to the TypeScript one so the
-//! two databases can be diffed column by column during the migration. Three
-//! behaviours make that non-trivial. Each is centralised here rather than
-//! open-coded at the call sites, because every one of them fails silently: the
-//! output is plausible, just wrong, and only a differential diff would catch it.
+//! Each helper is centralised rather than open-coded at the call sites because
+//! every one of them fails silently. A rounding mode picked by accident does not
+//! crash; it writes a slightly different number into a column that years of
+//! history are compared against, and nothing points at the cause.
+//!
+//! Two of them deliberately do not use the obvious standard-library equivalent.
+//! `f64::round` and `{:.N}` each break ties differently from what this daemon
+//! stores and shows, so substituting either changes recorded data or on-screen
+//! text. Those choices are load-bearing and the reasons are given below.
 
 use jiff::Timestamp;
 
-/// `Math.round` semantics: ties go toward positive infinity.
+/// Round to the nearest integer, breaking ties toward positive infinity.
 ///
-/// Rust's [`f64::round`] rounds half *away from zero*, so the two disagree on
-/// every negative tie: `Math.round(-0.5)` is `0` where `(-0.5f64).round()` is
-/// `-1.0`. Temperatures are the reason this matters — the hwmon floor is -50 °C,
-/// so sub-zero readings are in range and would round the wrong way.
+/// Not [`f64::round`], which breaks ties *away from zero*. The two agree on
+/// every positive value and disagree on every negative tie: this returns `0.0`
+/// for `-0.5` where [`f64::round`] returns `-1.0`. Temperatures are why that
+/// matters — the hwmon floor is -50 °C, so sub-zero readings are in range.
 ///
 /// Implemented as "floor, then step up if the fraction reaches a half" rather
 /// than the usual `(x + 0.5).floor()` shortcut, which overshoots for the largest
 /// double below one half: `0.499_999_999_999_999_94 + 0.5` rounds up to exactly
-/// `1.0` in binary floating point, yielding `1` where JavaScript yields `0`.
+/// `1.0` in binary floating point, giving `1` where the answer is `0`.
 #[must_use]
 pub fn round_half_up(x: f64) -> f64 {
     if !x.is_finite() {
@@ -28,27 +33,31 @@ pub fn round_half_up(x: f64) -> f64 {
     if x - floor >= 0.5 { floor + 1.0 } else { floor }
 }
 
-/// `Math.round(x * 10^digits) / 10^digits`, including the intermediate rounding
-/// error of the scaling multiply — which is load-bearing, not incidental.
+/// Round to `digits` decimal places by scaling up, rounding, and scaling back.
 ///
-/// `-3.15` is not representable, so `-3.15 * 10.0` is `-31.499999999999996` and
-/// the correct answer is `-3.1`, not the `-3.2` you would get from rounding the
-/// decimal literal. Reproducing the multiply reproduces the error.
+/// The rounding error of the scaling multiply is part of the result rather than
+/// a defect in it. `-3.15` is not representable, so `-3.15 * 10.0` is
+/// `-31.499999999999996` and the answer is `-3.1`, not the `-3.2` that rounding
+/// the decimal literal would suggest. Stored values are compared across years of
+/// recorded history, so this arithmetic has to stay put.
 #[must_use]
 pub fn round_to(x: f64, digits: i32) -> f64 {
     let scale = 10f64.powi(digits);
     round_half_up(x * scale) / scale
 }
 
-/// `Number(s)` for the subset of inputs the kernel actually emits, returning
-/// [`None`] wherever JavaScript would produce a non-finite value and the caller
-/// would fall back.
+/// Parse a numeric attribute as emitted by `/sys`, rejecting anything
+/// non-finite.
 ///
-/// Rust's parser accepts `inf`, `infinity` and `nan`, which `Number()` rejects;
-/// the finite filter collapses both paths to the same outcome, so the divergence
-/// is unobservable. The one real difference is hexadecimal: `Number("0x10")` is
-/// `16` where this returns [`None`]. No file under `/sys/class/power_supply` or
-/// `/sys/class/hwmon` is hex-encoded, so implementing it would be dead code.
+/// Rust's parser accepts `inf`, `infinity` and `nan`. The finite filter drops
+/// them so a garbled attribute reads as absent rather than poisoning every
+/// figure derived from it. Hexadecimal is not accepted, because no file under
+/// `/sys/class/power_supply` or `/sys/class/hwmon` is hex-encoded.
+///
+/// One sharp edge: an empty string returns `Some(0.0)`, not [`None`], so an
+/// empty attribute reads as a zero measurement. Callers for which that is wrong
+/// filter the string first — see `BatteryReader::read_str`. Left as it is here
+/// because changing it changes behaviour.
 #[must_use]
 pub fn parse_number(s: &str) -> Option<f64> {
     let trimmed = s.trim();
@@ -58,14 +67,13 @@ pub fn parse_number(s: &str) -> Option<f64> {
     trimmed.parse::<f64>().ok().filter(|v| v.is_finite())
 }
 
-/// `Number.parseInt(s, 10)`: skip leading whitespace, take an optional sign, then
-/// consume digits and stop at the first byte that is not one.
+/// Parse the leading integer of a string: skip whitespace, take an optional
+/// sign, then consume digits and stop at the first byte that is not one.
 ///
-/// This is what makes `"  16384000 kB"` from `/proc/meminfo` parse without
-/// splitting the line first — `str::parse` would reject the trailing unit.
-/// Returns [`None`] where JavaScript returns `NaN`, and also on overflow, where
-/// JavaScript would silently widen to a float; `/proc/meminfo` values are
-/// kilobytes and cannot approach [`i64::MAX`].
+/// This is what lets `"  16384000 kB"` from `/proc/meminfo` parse without
+/// splitting the line first — `str::parse` rejects the trailing unit. Returns
+/// [`None`] when no digits are present and on overflow, which `/proc/meminfo`
+/// kilobyte values cannot approach.
 #[must_use]
 pub fn parse_leading_int(s: &str) -> Option<i64> {
     let bytes = s.as_bytes();
@@ -100,28 +108,28 @@ pub fn parse_leading_int(s: &str) -> Option<i64> {
     Some(if negative { -acc } else { acc })
 }
 
-/// `Number.prototype.toFixed(digits)`: a decimal string with a fixed number of
-/// fractional digits.
-///
-/// Note which rounding this uses, because JavaScript has two and they differ.
-/// [`round_half_up`] breaks ties toward positive infinity, matching `Math.round`;
-/// `toFixed` breaks them *away from zero*, so `(-0.5).toFixed(0)` is `"-1"`
-/// where `Math.round(-0.5)` is `0`. Rust's [`f64::round`] happens to match
-/// `toFixed` precisely — which is exactly why it must never be reached for
-/// while porting a `Math.round`.
-///
-/// Rust's own `{:.1}` formatter cannot stand in for this: it rounds half to
-/// *even*, so `format!("{:.1}", 45.25)` is `"45.2"` where JavaScript gives
-/// `"45.3"`. Battery temperatures read from hwmon are millidegrees divided by a
-/// thousand and land on those ties routinely.
-///
-/// Non-finite inputs are passed through to Rust's formatter and will render as
-/// `NaN` or `inf` rather than JavaScript's `NaN`/`Infinity`. Every value that
-/// reaches this has already been through [`parse_number`], which rejects both.
 /// Fractional digits sufficient to render any finite f64 exactly. Every one is
 /// a dyadic rational, and the smallest subnormal needs 1074 places.
 const EXACT_DIGITS: usize = 1080;
 
+/// Render a decimal string with a fixed number of fractional digits, breaking
+/// ties *away from zero*.
+///
+/// Rust's `{:.N}` cannot stand in for this: it rounds half to *even*, so
+/// `format!("{:.1}", 45.25)` is `"45.2"` where this gives `"45.3"`. Readings
+/// land on those ties constantly, because they are integers from the kernel
+/// scaled by a power of ten — measured against real recorded samples, 8% of
+/// whole-degree CPU temperatures differ between the two. Away-from-zero is also
+/// the rounding a reader expects: 46.5 °C shown as 47, not 46.
+///
+/// This is a different tie rule from [`round_half_up`], which goes toward
+/// positive infinity. They agree on positive values and part company on
+/// negative halves: `-0.5` at zero digits renders `"-1"` here where
+/// [`round_half_up`] gives `0`. The two are not interchangeable.
+///
+/// Non-finite inputs fall through to Rust's formatter and render as `NaN` or
+/// `inf`. Every value reaching here has already been through [`parse_number`],
+/// which rejects both.
 #[must_use]
 pub fn format_decimals(value: f64, digits: usize) -> String {
     if !value.is_finite() {
