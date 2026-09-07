@@ -143,16 +143,14 @@ proptest! {
         prop_assert_eq!(compute_estimated_cycles(&current, None), 0.0);
     }
 
-    /// Documents inherited behaviour, not an invariant.
+    /// An unreadable design capacity suspends integration; it does not void
+    /// the history.
     ///
-    /// When the design capacity reads as zero — a transient sysfs failure
-    /// makes it zero rather than absent — the result is 0.0 rather than the
-    /// carried count, so months of accumulated history are discarded on a
-    /// single failed read. This is almost certainly wrong. It is pinned here
-    /// so that changing it is a deliberate act with a visible diff, not a
-    /// silent one.
+    /// The inherited behaviour returned 0.0 here, discarding months of
+    /// accumulated wear on a single transient sysfs failure. It was pinned as
+    /// a question to settle separately; this is that decision.
     #[test]
-    fn an_unusable_design_capacity_discards_the_carried_count(
+    fn an_unusable_design_capacity_keeps_the_carried_count(
         (previous, current) in arb_pair(),
     ) {
         let current = Sample {
@@ -160,6 +158,9 @@ proptest! {
             ..current
         };
 
-        prop_assert_eq!(compute_estimated_cycles(&current, Some(&previous)), 0.0);
+        prop_assert_eq!(
+            compute_estimated_cycles(&current, Some(&previous)),
+            previous.estimated_cycle_count
+        );
     }
 }

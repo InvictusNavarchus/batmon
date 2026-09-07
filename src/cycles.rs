@@ -25,18 +25,26 @@ use crate::types::{PowerState, Sample};
 /// - **Never more than one cycle in a tick.** A delta larger than the entire
 ///   design capacity is a driver glitch or a battery swap, not a discharge.
 ///
-/// Returns `0.0` when there is no previous sample or no usable design capacity,
-/// which is what a fresh database looks like.
+/// When a guard trips, the carried count is returned unchanged. A guard means
+/// "this interval cannot be integrated", never "the history is void".
+///
+/// Returns `0.0` only when there is no previous sample, which is what a fresh
+/// database looks like. Every other path returns at least the carried count:
+/// the series is cumulative wear, so it must never fall.
 #[must_use]
 pub fn compute_estimated_cycles(curr: &Sample, prev: Option<&Sample>) -> f64 {
     let Some(prev) = prev else {
         return 0.0;
     };
-    if curr.energy_design_wh <= 0.0 {
-        return 0.0;
-    }
 
     let carried = prev.estimated_cycle_count;
+
+    // An unreadable design capacity means the increment cannot be computed, not
+    // that the wear never happened. Returning zero here would silently reset a
+    // number that represents months of accumulated history.
+    if curr.energy_design_wh <= 0.0 {
+        return carried;
+    }
 
     if crossed_boot_boundary(curr, prev) {
         return carried;
