@@ -371,6 +371,31 @@ fn the_first_tick_does_not_prune() {
 }
 
 #[test]
+fn pruning_still_runs_on_ticks_that_produce_no_sample() {
+    // Retention describes the window, not this tick. A battery that stays
+    // unreadable used to hold the recorder at whatever it contained when the
+    // reads stopped, indefinitely past the advertised window.
+    let mut daemon = daemon(WithGaps::new(vec![None]));
+    daemon.schedule.prune_interval_ticks = 1;
+
+    daemon
+        .debug
+        .insert(&Sample {
+            ts: "2020-01-01T00:00:00.000Z".to_owned(),
+            ..present(50.0, 30.0)
+        })
+        .unwrap();
+
+    daemon.run_tick(); // tick 0 never prunes
+    daemon.run_tick(); // tick 1 does, despite yielding no sample
+
+    assert!(
+        daemon.debug.latest().unwrap().is_none(),
+        "the stale row must be pruned even though no tick produced a sample"
+    );
+}
+
+#[test]
 fn pruning_drops_rows_outside_the_retention_window() {
     let mut daemon = daemon(Scripted::repeating(present(80.0, 46.0)));
     daemon.schedule.prune_interval_ticks = 2;

@@ -91,6 +91,13 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
     }
 
     fn tick(&mut self) -> Result<(), StoreError> {
+        // Retention is a property of the window, not of this tick. Both early
+        // returns below skip the rest of the work, and leaving pruning behind
+        // them meant a battery that stayed unreadable -- or absent -- held the
+        // flight recorder at whatever it contained when reads stopped, well
+        // past the window it advertises.
+        self.prune_if_due()?;
+
         // Unreadable, as opposed to absent: the hardware is still there, so the
         // latched alerts still describe it. The tick is a no-op -- no row, no
         // alert evaluation, and deliberately no `engine.reset()`, which would
@@ -153,7 +160,13 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
                 .insert_integrating_cycles(&mut downsampled)?;
         }
 
-        // 4. Prune, skipping the first tick so a restart is not a prune.
+        self.previous = Some(sample);
+        Ok(())
+    }
+
+    /// Prune the flight recorder on its interval, skipping the first tick so a
+    /// restart is not a prune.
+    fn prune_if_due(&mut self) -> Result<(), StoreError> {
         if self.tick_count > 0
             && self
                 .tick_count
@@ -164,8 +177,6 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
                 .prune_older_than(self.schedule.debug_retention_hours)?;
             tracing::debug!(removed, "pruned flight recorder");
         }
-
-        self.previous = Some(sample);
         Ok(())
     }
 
