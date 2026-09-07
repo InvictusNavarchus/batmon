@@ -2,10 +2,9 @@
 //!
 //! Synchronous and single-threaded by design. SQLite, sysfs and procfs all
 //! block, so an async runtime would add a scheduler without removing a single
-//! wait. It also removes a whole class of bug: the TypeScript daemon needed an
-//! `isTicking` re-entrancy guard because `setInterval` will happily start a
-//! second tick while the first is still awaiting. A loop that sleeps cannot
-//! overlap with itself.
+//! wait. It also removes a whole class of bug: a timer-driven tick needs a
+//! re-entrancy guard, because a timer will happily start a second tick while
+//! the first is still running. A loop that sleeps cannot overlap with itself.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
@@ -167,10 +166,10 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
     /// Tick until `running` clears.
     ///
     /// The deadline advances by a fixed interval rather than sleeping for one,
-    /// so the cadence does not drift by the cost of each tick. Measured against
-    /// the TypeScript daemon, which slept for an interval: over six hours it
-    /// recorded 113 fewer samples from the same window, about 7.5 minutes of
-    /// lost coverage per day. When the deadline is
+    /// so the cadence does not drift by the cost of each tick. The difference is
+    /// not theoretical: a loop that sleeps for the interval instead was measured
+    /// over six hours recording 113 fewer samples from the same window, about
+    /// 7.5 minutes of lost coverage per day. When the deadline is
     /// already past, the loop resynchronises instead of trying to catch up,
     /// which is what makes suspend and resume visible: waking to find the
     /// deadline hours behind is precisely a suspend, and a burst of back-to-back

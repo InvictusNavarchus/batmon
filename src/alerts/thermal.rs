@@ -8,10 +8,11 @@ use crate::types::Sample;
 
 /// Which battery temperature alert is currently latched.
 ///
-/// Three states, not two booleans. The TypeScript set `tempWarnFired` alongside
-/// `tempCritFired` with a comment reading "critical suppresses warning alert";
-/// the combination it never constructed — critical latched *without* the warning
-/// suppressed — simply has no name here, so it cannot occur.
+/// Three states, not two booleans. A `warn_fired`/`crit_fired` pair forces the
+/// critical case to set both so the warning stays suppressed, and leaves the
+/// combination that must never occur — critical latched *without* the warning
+/// suppressed — perfectly representable. Here it has no name, so it cannot
+/// occur.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ThermalState {
     #[default]

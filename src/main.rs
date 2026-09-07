@@ -187,9 +187,9 @@ fn oneshot(paths: &Paths) -> Result<()> {
     let (debug, historical) = stores(paths)?;
 
     // Each database integrates against its own last row, exactly as the daemon
-    // does. Sharing one integration between them — which is what the TypeScript
-    // did, by mutating a single object — makes the flight recorder adopt the
-    // history's coarser baseline. Where the daemon has been running since the
+    // does. Sharing one integration between them — mutating a single sample and
+    // inserting it twice — makes the flight recorder adopt the history's
+    // coarser baseline. Where the daemon has been running since the
     // last downsampled write, that baseline is behind, and the debug count goes
     // *backwards*: a cycle total that decreases, which the integrator's own
     // property tests forbid.

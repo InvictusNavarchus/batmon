@@ -1,9 +1,9 @@
 //! System-wide counters from procfs.
 //!
-//! These parsers had no test coverage at all in the TypeScript daemon, for a
-//! structural reason: they hardcoded `/proc`, so there was nothing to point them
-//! at. Taking the mount point as a parameter is what makes them testable, and
-//! they are among the most parsing-heavy code in the crate.
+//! These are among the most parsing-heavy code in the crate, so they take the
+//! mount point as a parameter rather than hardcoding `/proc`. That is the whole
+//! reason they can be tested: a parser with the path baked in has nothing to be
+//! pointed at.
 
 use std::cell::OnceCell;
 use std::path::{Path, PathBuf};
@@ -54,8 +54,8 @@ impl ProcReader {
     /// Parse the aggregate `cpu` line of `/proc/stat`.
     ///
     /// Exposed separately from [`ProcReader::cpu_pct`] because the per-process
-    /// scan needs the same totals. The TypeScript read and parsed this file
-    /// twice per tick; reading it once and sharing the result is free.
+    /// scan needs the same totals, and reading and parsing the file once per
+    /// tick instead of twice is free.
     #[must_use]
     pub fn cpu_times(&self) -> Option<CpuTimes> {
         let stat = std::fs::read_to_string(self.base.join("stat")).ok()?;

@@ -6,11 +6,11 @@ use crate::types::{PowerState, Sample};
 
 /// Which charge alert, if any, is currently latched.
 ///
-/// A single state rather than three independent booleans. In the TypeScript
-/// implementation `critChargeFired` and `lowChargeFired` were both set when the
-/// critical alert fired — a comment explained that this suppressed the low
-/// alert — while the fourth combination, low latched without critical, was
-/// simply never constructed. Naming the reachable states makes the suppression
+/// A single state rather than three independent booleans. With booleans the
+/// critical alert has to set two latches at once so that the low alert stays
+/// suppressed — a relationship no type enforces, upheld only by a comment —
+/// while a combination that must never occur, low latched without critical,
+/// remains representable. Naming the reachable states makes the suppression
 /// structural: there is no value here meaning "both fired".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ChargeState {

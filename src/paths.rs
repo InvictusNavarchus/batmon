@@ -2,8 +2,8 @@
 //!
 //! Every path the daemon touches is a field on [`Paths`] rather than a literal
 //! buried in a reader. That is what makes the `/proc` parsers testable against
-//! fixture directories — in the TypeScript daemon they hardcoded `/proc` and
-//! consequently had no test coverage at all.
+//! fixture directories. A parser that hardcodes `/proc` cannot be pointed
+//! anywhere else, and so cannot be tested at all.
 
 use std::path::{Path, PathBuf};
 
@@ -170,9 +170,8 @@ pub fn discover_battery_path(base_dir: &Path, override_path: Option<&Path>) -> P
         let is_system = std::fs::read_to_string(entry.join("scope"))
             .map_or(true, |scope| !scope.trim().eq_ignore_ascii_case("device"));
 
-        // The TypeScript checked /^bat\d*$/i *or* a case-insensitive "bat"
-        // prefix; the first is a strict subset of the second, so only the
-        // prefix survives the port.
+        // A case-insensitive "bat" prefix. Matching /^bat\d*$/i as well would
+        // add nothing: it is a strict subset of the prefix test.
         let is_bat_name = name.to_string_lossy().to_lowercase().starts_with("bat");
 
         candidates.push(Candidate {

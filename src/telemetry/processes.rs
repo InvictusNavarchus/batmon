@@ -29,10 +29,9 @@ const TOP_GROUPS: usize = 5;
 
 /// Memory page size assumed when converting RSS pages to kilobytes.
 ///
-/// Hard-coded, matching the TypeScript daemon, and correct for x86-64 and the
-/// common arm64 configuration. A kernel built with 16K or 64K pages would report
+/// Hard-coded, and correct for x86-64 and the common arm64 configuration. A kernel built with 16K or 64K pages would report
 /// proportionally low memory here. Reading the real value is a behaviour change
-/// and belongs in its own commit rather than being smuggled into a port.
+/// and belongs in its own commit.
 const PAGE_SIZE_KB: u64 = 4;
 
 /// Field offsets within `/proc/PID/stat`, counted from the field after the

@@ -222,9 +222,9 @@ impl Store {
 /// `status` string that was always recorded alongside it. `is_charging` and
 /// `is_present` are stored as integers and become real booleans here.
 ///
-/// Nullable numerics that the type says are not optional collapse to zero, which
-/// is what the TypeScript reader's `?? 0` produced and what the cycle integrator
-/// already treats as "no usable history".
+/// Nullable numerics that the type says are not optional collapse to zero,
+/// which the cycle integrator already treats as "no usable history". Note this
+/// makes a NULL column indistinguishable from a real zero on read.
 fn sample_from_row(row: &Row<'_>) -> rusqlite::Result<Sample> {
     let status: String = row.get::<_, Option<String>>("status")?.unwrap_or_default();
 

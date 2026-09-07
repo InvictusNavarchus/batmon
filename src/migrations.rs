@@ -1,10 +1,10 @@
 //! Schema evolution for both databases, tracked with SQLite's `user_version`.
 //!
-//! This ladder is ported step for step from the TypeScript implementation,
-//! including the awkward parts. Real databases exist in the field at historical
-//! version 7 and debug version 5, and a migration that runs differently here
-//! than it did there does not produce an error — it produces a subtly different
-//! schema on someone's laptop. Cleverness is a liability in this module; the
+//! This ladder is append-only, awkward steps included. Real databases exist in
+//! the field at historical version 7 and debug version 5, and a step that is
+//! rewritten rather than added to does not produce an error — it produces a
+//! subtly different schema on someone's laptop. Cleverness is a liability in
+//! this module; the
 //! only correct behaviour is the behaviour that already shipped.
 
 use rusqlite::{Connection, Result};
@@ -273,9 +273,9 @@ pub const DEBUG_MIGRATIONS: &[Migration] = &[
             // Migration 1 created this index on `samples`. When the rename above
             // takes the empty-placeholder branch it drops that table, and the
             // index goes with it — leaving a 1 Hz recorder to prune by full
-            // table scan for the rest of the database's life. The TypeScript
-            // had the same hole; recreating the index here is a deliberate
-            // divergence, and a schema-only one that changes no stored value.
+            // table scan for the rest of the database's life. Recreating the
+            // index here closes that hole, and is schema-only: it changes no
+            // stored value.
             if has_table(conn, "samples")? {
                 conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_debug_ts ON samples(ts);")?;
             }
@@ -300,9 +300,9 @@ pub const DEBUG_MIGRATIONS: &[Migration] = &[
 /// Apply every migration newer than the database's recorded `user_version`.
 ///
 /// Each step commits its own version bump rather than the whole ladder running
-/// in one transaction. That matches the TypeScript behaviour exactly: a failure
-/// half way leaves the completed steps applied and recorded, so the next start
-/// resumes rather than repeating work that already succeeded.
+/// in one transaction, so a failure half way leaves the completed steps applied
+/// and recorded and the next start resumes rather than repeating work that
+/// already succeeded.
 pub fn migrate(conn: &Connection, migrations: &[Migration]) -> Result<()> {
     let current: u32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
 

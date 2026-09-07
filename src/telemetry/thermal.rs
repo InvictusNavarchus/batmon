@@ -1,8 +1,7 @@
 //! Temperatures, read straight from the hwmon ABI.
 //!
-//! The significant change from the TypeScript daemon is here: sensor *paths* are
-//! resolved once and reused, rather than rescanning `/sys/class/hwmon` on every
-//! tick. That scan was measured at roughly 5.6 ms per sample — the second
+//! The significant design decision is here: sensor *paths* are resolved once
+//! and reused, rather than rescanning `/sys/class/hwmon` on every tick. That scan was measured at roughly 5.6 ms per sample — the second
 //! largest cost in the loop — and it was pure waste, because hwmon numbering is
 //! assigned when a driver initialises and does not change for the life of a boot.
 
@@ -164,10 +163,10 @@ impl ThermalReader {
 /// The pack's own `temp` attribute, in tenths of a degree.
 ///
 /// Preferred over an hwmon child device when present. Deliberately unrounded,
-/// unlike every other temperature here: the TypeScript daemon rounds system
-/// temperatures and stores this one raw, and reproducing the asymmetry keeps
-/// stored values identical. Normalising it is a behaviour change for its own
-/// commit.
+/// unlike every other temperature here: system temperatures are stored rounded
+/// and this one raw. The asymmetry is inherited, and preserving it keeps stored
+/// values continuous with the history already on disk. Normalising it is a
+/// behaviour change for its own commit.
 fn attribute_temp(battery_dir: &Path) -> Option<Celsius> {
     read_attribute_number(&battery_dir.join("temp")).and_then(Celsius::from_tenths)
 }
@@ -300,12 +299,12 @@ fn usable_temp(path: &Path) -> Option<PathBuf> {
 
 /// A `power_supply` attribute, treating an empty file as absent.
 ///
-/// Deliberately different from [`read_number`], which the hwmon paths use. There
-/// an empty file reads as 0 °C, because the TypeScript passed trimmed contents
-/// straight to `Number()` and `Number("")` is zero — verified against it, and
-/// pinned by a test. The battery reader discards empty attributes before
-/// parsing, and this has to match it: otherwise an empty `temp` file reports a
-/// plausible 0 °C and masks the hwmon fallback that would have answered.
+/// Deliberately different from [`read_number`], which the hwmon paths use.
+/// There an empty file reads as 0 °C, because [`parse_number`] maps an empty
+/// string to zero rather than to absent — inherited behaviour, pinned by a
+/// test, and almost certainly wrong. This path discards empty attributes before
+/// parsing, matching the battery reader: otherwise an empty `temp` file reports
+/// a plausible 0 °C and masks the hwmon fallback that would have answered.
 fn read_attribute_number(path: &Path) -> Option<f64> {
     std::fs::read_to_string(path)
         .ok()
