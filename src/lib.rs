@@ -14,6 +14,7 @@ pub mod cycles;
 pub mod daemon;
 pub mod db;
 pub mod dbus;
+pub mod lock;
 pub mod migrations;
 pub mod parity;
 pub mod paths;

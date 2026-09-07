@@ -86,6 +86,12 @@ impl Paths {
         self.db_dir.join("debug.db")
     }
 
+    /// Single-instance daemon lockfile.
+    #[must_use]
+    pub fn lock_path(&self) -> PathBuf {
+        self.db_dir.join("batmon.lock")
+    }
+
     /// A named attribute inside the battery directory.
     #[must_use]
     pub fn battery_attr(&self, name: &str) -> PathBuf {
