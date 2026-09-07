@@ -231,7 +231,14 @@ fn an_unreadable_tick_records_nothing_and_keeps_the_latch() {
     daemon.run_tick();
     assert!(
         daemon.debug.latest().unwrap().is_none(),
-        "an unreadable tick must not store a fabricated row"
+        "an unreadable tick must not store a fabricated flight-recorder row"
+    );
+    // The daemon writes both stores, and history is seeded on the first tick,
+    // so checking only the flight recorder would miss a leak into the
+    // permanent record.
+    assert!(
+        daemon.historical.latest().unwrap().is_none(),
+        "an unreadable tick must not store a fabricated history row"
     );
 
     daemon.run_tick(); // the alert fires here
