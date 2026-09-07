@@ -168,7 +168,7 @@ impl ThermalReader {
 /// values continuous with the history already on disk. Normalising it is a
 /// behaviour change for its own commit.
 fn attribute_temp(battery_dir: &Path) -> Option<Celsius> {
-    read_attribute_number(&battery_dir.join("temp")).and_then(Celsius::from_tenths)
+    read_number(&battery_dir.join("temp")).and_then(Celsius::from_tenths)
 }
 
 /// Locate every sensor of interest under `hwmon_base`.
@@ -297,26 +297,19 @@ fn usable_temp(path: &Path) -> Option<PathBuf> {
     read_millidegrees(path).map(|_| path.to_path_buf())
 }
 
-/// A `power_supply` attribute, treating an empty file as absent.
+/// A numeric sysfs file, treating an empty one as absent.
 ///
-/// Deliberately different from [`read_number`], which the hwmon paths use.
-/// There an empty file reads as 0 °C, because [`parse_number`] maps an empty
-/// string to zero rather than to absent — inherited behaviour, pinned by a
-/// test, and almost certainly wrong. This path discards empty attributes before
-/// parsing, matching the battery reader: otherwise an empty `temp` file reports
-/// a plausible 0 °C and masks the hwmon fallback that would have answered.
-fn read_attribute_number(path: &Path) -> Option<f64> {
+/// The empty check is the whole point. [`parse_number`] maps an empty string to
+/// zero, and zero is a perfectly plausible temperature: it is finite, it is
+/// above the -50 °C floor, and every consumer acts on it. A sensor file that is
+/// briefly empty would report a cold CPU, which reads as a thermal anomaly
+/// clearing rather than as a reading that never happened.
+fn read_number(path: &Path) -> Option<f64> {
     std::fs::read_to_string(path)
         .ok()
         .map(|contents| contents.trim().to_owned())
         .filter(|contents| !contents.is_empty())
         .and_then(|contents| parse_number(&contents))
-}
-
-fn read_number(path: &Path) -> Option<f64> {
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|contents| parse_number(contents.trim()))
 }
 
 fn read_millidegrees(path: &Path) -> Option<Celsius> {

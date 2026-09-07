@@ -153,13 +153,11 @@ fn unparseable_sensor_values_are_skipped_rather_than_read_as_zero() {
 }
 
 #[test]
-fn an_empty_sensor_file_reads_as_zero_degrees_unlike_a_battery_attribute() {
-    // Faithful to the original, and the two readers genuinely differ here.
-    // The hwmon path passes trimmed contents straight to parse_number, and
-    // an empty string parses as 0 — finite, and above the plausibility floor.
-    // The battery reader discards empty attributes before parsing, so the same
-    // file there reads as absent. This pins the inherited asymmetry rather
-    // than endorsing it.
+fn an_empty_sensor_file_reads_as_absent_rather_than_zero_degrees() {
+    // Zero is a plausible temperature: finite, and above the -50 °C floor. An
+    // empty file parsed as 0 would therefore be stored and acted on, and a
+    // reading of "cold" is what clears a thermal anomaly -- so a briefly empty
+    // sensor file could silently retract a real overheating alert.
     let tmp = TempDir::new().unwrap();
     device(
         tmp.path(),
@@ -167,7 +165,7 @@ fn an_empty_sensor_file_reads_as_zero_degrees_unlike_a_battery_attribute() {
         &[("name", "nvme"), ("temp1_input", "")],
     );
 
-    assert_eq!(reader(tmp.path()).read().nvme_c, Some(0.0));
+    assert_eq!(reader(tmp.path()).read().nvme_c, None);
 }
 
 #[test]
