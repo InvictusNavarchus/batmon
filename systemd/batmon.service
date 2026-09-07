@@ -4,7 +4,7 @@ Documentation=https://github.com/InvictusNavarchus/batmon
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/bun run %h/.local/share/batmon/src/index.ts
+ExecStart=%h/.local/bin/batmon
 Restart=on-failure
 RestartSec=5s
 Nice=10
