@@ -28,9 +28,10 @@ use crate::types::{PowerState, Sample};
 /// When a guard trips, the carried count is returned unchanged. A guard means
 /// "this interval cannot be integrated", never "the history is void".
 ///
-/// Returns `0.0` only when there is no previous sample, which is what a fresh
-/// database looks like. Every other path returns at least the carried count:
-/// the series is cumulative wear, so it must never fall.
+/// With no previous sample the result is `0.0`, which is what a fresh database
+/// looks like. Every other path returns the carried count or more -- including
+/// zero, when that is what was carried. The series is cumulative wear, so it
+/// must never fall.
 #[must_use]
 pub fn compute_estimated_cycles(curr: &Sample, prev: Option<&Sample>) -> f64 {
     let Some(prev) = prev else {
