@@ -68,11 +68,6 @@ impl BatteryReader {
             .filter(|trimmed| !trimmed.is_empty())
     }
 
-    /// A numeric attribute, falling back to zero.
-    fn read_num(&self, name: &str) -> f64 {
-        self.read_opt(name).unwrap_or(0.0)
-    }
-
     /// A numeric attribute, or [`None`] when absent or unparseable.
     fn read_opt(&self, name: &str) -> Option<f64> {
         self.read_str(name).and_then(|value| parse_number(&value))
@@ -89,10 +84,23 @@ impl BatteryReader {
             .unwrap_or_else(|| "Unknown".to_owned())
     }
 
-    /// State of charge, percent.
+    /// State of charge, percent, or [`None`] when it cannot be determined.
+    ///
+    /// `capacity` is what the kernel computes and the one to prefer. When it is
+    /// unreadable the same figure is derived from the energy pair, which costs
+    /// nothing and keeps the daemon useful on a driver that omits it.
+    ///
+    /// Returning [`None`] rather than zero is the point: zero is a *valid*
+    /// state of charge, and the charge ladder acts on it. An unreadable
+    /// attribute reported as zero announces a critical low battery on a pack
+    /// that may be full.
     #[must_use]
-    pub fn charge_pct(&self) -> f64 {
-        self.read_num("capacity")
+    pub fn charge_pct(&self) -> Option<f64> {
+        if let Some(capacity) = self.read_opt("capacity") {
+            return Some(capacity);
+        }
+        let energy = self.energy()?;
+        (energy.full_wh > 0.0).then(|| (energy.now_wh / energy.full_wh) * 100.0)
     }
 
     /// Hardware cycle count, if the management system reports one.
@@ -101,10 +109,15 @@ impl BatteryReader {
         self.read_opt("cycle_count").map(|count| count as i64)
     }
 
-    /// Instantaneous rail voltage.
+    /// Instantaneous rail voltage, or zero when unreadable.
+    ///
+    /// Zero is safe to fabricate *here specifically* because the only consumer,
+    /// the over-voltage check, treats a non-positive reading as "no information"
+    /// and neither fires nor clears on it. Do not copy this pattern to a field
+    /// whose consumers act on zero.
     #[must_use]
     pub fn voltage_v(&self) -> f64 {
-        self.read_num("voltage_now") / MICRO
+        self.read_opt("voltage_now").unwrap_or(0.0) / MICRO
     }
 
     /// Design voltage, falling back to the present reading.
@@ -130,22 +143,29 @@ impl BatteryReader {
     /// is an approximation — the real terminal voltage sags under load — but it
     /// is the only conversion available, and it is what the kernel's own
     /// consumers do.
+    /// [`None`] when the present or full reading is missing, since neither the
+    /// state of charge nor the cycle integral means anything without them.
+    ///
+    /// `design` is separate: plenty of drivers omit it permanently, so it falls
+    /// back to zero, which every consumer already reads as "unknown" — health
+    /// reports 100% and the cycle integrator declines to integrate rather than
+    /// dividing by it.
     #[must_use]
-    pub fn energy(&self) -> Energy {
+    pub fn energy(&self) -> Option<Energy> {
         if self.has("energy_now") {
-            return Energy {
-                now_wh: self.read_num("energy_now") / MICRO,
-                full_wh: self.read_num("energy_full") / MICRO,
-                design_wh: self.read_num("energy_full_design") / MICRO,
-            };
+            return Some(Energy {
+                now_wh: self.read_opt("energy_now")? / MICRO,
+                full_wh: self.read_opt("energy_full")? / MICRO,
+                design_wh: self.read_opt("energy_full_design").unwrap_or(0.0) / MICRO,
+            });
         }
 
         let design_volts = self.voltage_design_v();
-        Energy {
-            now_wh: (self.read_num("charge_now") / MICRO) * design_volts,
-            full_wh: (self.read_num("charge_full") / MICRO) * design_volts,
-            design_wh: (self.read_num("charge_full_design") / MICRO) * design_volts,
-        }
+        Some(Energy {
+            now_wh: (self.read_opt("charge_now")? / MICRO) * design_volts,
+            full_wh: (self.read_opt("charge_full")? / MICRO) * design_volts,
+            design_wh: (self.read_opt("charge_full_design").unwrap_or(0.0) / MICRO) * design_volts,
+        })
     }
 
     /// Charge or discharge rate in watts.

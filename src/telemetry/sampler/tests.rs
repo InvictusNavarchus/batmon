@@ -146,7 +146,10 @@ fn assembles_a_complete_sample_from_every_source() {
     .unwrap();
     machine.process(1, "systemd", 0);
 
-    let sample = machine.sampler().sample();
+    let sample = machine
+        .sampler()
+        .sample()
+        .expect("a readable battery yields a sample");
 
     assert_eq!(sample.status, "Discharging");
     assert_eq!(sample.power_state, PowerState::Discharging);
@@ -178,7 +181,10 @@ fn energy_and_power_are_rounded_to_three_places_but_voltage_is_not() {
     // Reproduces the original's asymmetry exactly; these are the real values
     // this machine's battery reports.
     let machine = Machine::new();
-    let sample = machine.sampler().sample();
+    let sample = machine
+        .sampler()
+        .sample()
+        .expect("a readable battery yields a sample");
 
     assert_eq!(sample.energy_wh, 46.5);
     assert_eq!(sample.energy_full_wh, 58.073);
@@ -192,7 +198,10 @@ fn energy_and_power_are_rounded_to_three_places_but_voltage_is_not() {
 #[test]
 fn the_timestamp_has_the_shape_to_iso_string_produces() {
     let machine = Machine::new();
-    let sample = machine.sampler().sample();
+    let sample = machine
+        .sampler()
+        .sample()
+        .expect("a readable battery yields a sample");
 
     assert_eq!(sample.ts.len(), 24, "{}", sample.ts);
     assert!(sample.ts.ends_with('Z'));
@@ -201,7 +210,10 @@ fn the_timestamp_has_the_shape_to_iso_string_produces() {
 #[test]
 fn the_cycle_count_is_left_for_the_store_to_integrate() {
     let machine = Machine::new();
-    let sample = machine.sampler().sample();
+    let sample = machine
+        .sampler()
+        .sample()
+        .expect("a readable battery yields a sample");
 
     assert_eq!(sample.estimated_cycle_count, 0.0);
 }
@@ -212,13 +224,22 @@ fn utilisation_is_absent_on_the_first_sample_and_present_on_the_second() {
     let mut sampler = machine.sampler();
 
     assert_eq!(
-        sampler.sample().cpu_pct,
+        sampler
+            .sample()
+            .expect("a readable battery yields a sample")
+            .cpu_pct,
         None,
         "one reading of a counter is not a rate"
     );
 
     machine.proc(&[("stat", "cpu  1250 100 500 8100 400 0 0 0 0 0\n")]);
-    assert_eq!(sampler.sample().cpu_pct, Some(71.4));
+    assert_eq!(
+        sampler
+            .sample()
+            .expect("a readable battery yields a sample")
+            .cpu_pct,
+        Some(71.4)
+    );
 }
 
 #[test]
@@ -226,7 +247,10 @@ fn a_missing_battery_produces_a_sample_marked_absent() {
     let machine = Machine::new();
     std::fs::remove_dir_all(&machine.paths.battery).unwrap();
 
-    let sample = machine.sampler().sample();
+    let sample = machine
+        .sampler()
+        .sample()
+        .expect("a readable battery yields a sample");
 
     assert!(!sample.is_present);
     assert_eq!(sample.status, "Unknown");
@@ -235,9 +259,34 @@ fn a_missing_battery_produces_a_sample_marked_absent() {
 }
 
 #[test]
+fn a_present_but_unreadable_battery_yields_no_sample_at_all() {
+    // Distinct from the case above. The hardware is still installed, so its
+    // latched alerts still describe something real; the tick simply has
+    // nothing to say. Reporting zeros instead announced a critical low
+    // battery and accrued most of a cycle in one tick.
+    let machine = Machine::new();
+    for attribute in [
+        "capacity",
+        "energy_now",
+        "energy_full",
+        "charge_now",
+        "charge_full",
+    ] {
+        let _ = std::fs::remove_file(machine.paths.battery.join(attribute));
+    }
+
+    // The directory survives, so the pack still reads as installed.
+    assert!(machine.paths.battery.exists());
+    assert!(machine.sampler().sample().is_none());
+}
+
+#[test]
 fn runtime_falls_back_to_arithmetic_when_no_estimate_source_answers() {
     let machine = Machine::new();
-    let sample = machine.sampler().sample();
+    let sample = machine
+        .sampler()
+        .sample()
+        .expect("a readable battery yields a sample");
 
     // 46.5003 Wh at 20.41636 W is 8199 seconds.
     assert_eq!(sample.time_to_empty_s, Some(8_199));
@@ -255,7 +304,13 @@ fn an_external_estimate_is_preferred_over_the_arithmetic_fallback() {
         }),
     );
 
-    assert_eq!(sampler.sample().time_to_empty_s, Some(9_422));
+    assert_eq!(
+        sampler
+            .sample()
+            .expect("a readable battery yields a sample")
+            .time_to_empty_s,
+        Some(9_422)
+    );
 }
 
 #[test]
@@ -263,7 +318,10 @@ fn a_charging_battery_estimates_time_to_full_instead() {
     let machine = Machine::new();
     machine.battery(&[("status", "Charging")]);
 
-    let sample = machine.sampler().sample();
+    let sample = machine
+        .sampler()
+        .sample()
+        .expect("a readable battery yields a sample");
 
     assert_eq!(sample.power_state, PowerState::Charging);
     assert!(sample.is_charging);
@@ -277,7 +335,14 @@ fn a_negligible_rate_produces_no_estimate_rather_than_a_fantasy() {
     let machine = Machine::new();
     machine.battery(&[("power_now", "100000")]); // 0.1 W
 
-    assert_eq!(machine.sampler().sample().time_to_empty_s, None);
+    assert_eq!(
+        machine
+            .sampler()
+            .sample()
+            .expect("a readable battery yields a sample")
+            .time_to_empty_s,
+        None
+    );
 }
 
 #[test]
@@ -293,10 +358,18 @@ fn changing_the_rail_invalidates_a_cached_estimate_immediately() {
         }),
     );
 
-    assert_eq!(sampler.sample().time_to_empty_s, Some(9_422));
+    assert_eq!(
+        sampler
+            .sample()
+            .expect("a readable battery yields a sample")
+            .time_to_empty_s,
+        Some(9_422)
+    );
 
     machine.battery(&[("status", "Charging")]);
-    let charging = sampler.sample();
+    let charging = sampler
+        .sample()
+        .expect("a readable battery yields a sample");
 
     assert_eq!(charging.time_to_empty_s, None);
     assert_eq!(charging.time_to_full_s, Some(1_800));
@@ -323,7 +396,9 @@ fn an_estimate_is_reused_between_polls_rather_than_refetched() {
     );
 
     for _ in 0..10 {
-        sampler.sample();
+        sampler
+            .sample()
+            .expect("a readable battery yields a sample");
     }
 
     assert_eq!(
@@ -338,13 +413,28 @@ fn two_samplers_share_no_state() {
     // What the four resetForTesting exports existed to fake.
     let machine = Machine::new();
     let mut first = machine.sampler();
-    assert_eq!(first.sample().cpu_pct, None);
+    assert_eq!(
+        first
+            .sample()
+            .expect("a readable battery yields a sample")
+            .cpu_pct,
+        None
+    );
     machine.proc(&[("stat", "cpu  1250 100 500 8100 400 0 0 0 0 0\n")]);
-    assert!(first.sample().cpu_pct.is_some());
+    assert!(
+        first
+            .sample()
+            .expect("a readable battery yields a sample")
+            .cpu_pct
+            .is_some()
+    );
 
     let mut second = machine.sampler();
     assert_eq!(
-        second.sample().cpu_pct,
+        second
+            .sample()
+            .expect("a readable battery yields a sample")
+            .cpu_pct,
         None,
         "a new sampler must start without history"
     );

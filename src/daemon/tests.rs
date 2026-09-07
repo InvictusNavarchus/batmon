@@ -25,11 +25,32 @@ impl Scripted {
     }
 }
 
-impl TelemetrySource for Scripted {
-    fn sample(&mut self) -> Sample {
-        let sample = self.samples[self.position.min(self.samples.len() - 1)].clone();
+/// A source whose battery is installed throughout but intermittently
+/// unreadable, so some ticks yield nothing at all.
+struct WithGaps {
+    ticks: Vec<Option<Sample>>,
+    position: usize,
+}
+
+impl WithGaps {
+    fn new(ticks: Vec<Option<Sample>>) -> Self {
+        Self { ticks, position: 0 }
+    }
+}
+
+impl TelemetrySource for WithGaps {
+    fn sample(&mut self) -> Option<Sample> {
+        let sample = self.ticks[self.position.min(self.ticks.len() - 1)].clone();
         self.position += 1;
         sample
+    }
+}
+
+impl TelemetrySource for Scripted {
+    fn sample(&mut self) -> Option<Sample> {
+        let sample = self.samples[self.position.min(self.samples.len() - 1)].clone();
+        self.position += 1;
+        Some(sample)
     }
 }
 
@@ -52,7 +73,7 @@ fn present(charge_pct: f64, energy_wh: f64) -> Sample {
     }
 }
 
-fn daemon(source: Scripted) -> Daemon<Scripted, RecordingNotifier> {
+fn daemon<S: TelemetrySource>(source: S) -> Daemon<S, RecordingNotifier> {
     Daemon::new(
         source,
         RecordingNotifier::new(),
@@ -190,6 +211,37 @@ fn a_returning_battery_carries_the_accumulated_count_forward() {
         resumed.estimated_cycle_count > 12.5,
         "integration did not resume: {}",
         resumed.estimated_cycle_count
+    );
+}
+
+#[test]
+fn an_unreadable_tick_records_nothing_and_keeps_the_latch() {
+    // The counterpart to the absent-battery test above. There the hardware is
+    // gone and clearing the latches is right; here it is still installed and
+    // merely unreadable, so clearing them would re-announce a low battery the
+    // moment the read recovered.
+    let low = present(8.0, 4.0);
+    let mut daemon = daemon(WithGaps::new(vec![
+        None,
+        Some(low.clone()),
+        None,
+        Some(low),
+    ]));
+
+    daemon.run_tick();
+    assert!(
+        daemon.debug.latest().unwrap().is_none(),
+        "an unreadable tick must not store a fabricated row"
+    );
+
+    daemon.run_tick(); // the alert fires here
+    daemon.run_tick(); // unreadable again
+    daemon.run_tick(); // and the battery comes back
+
+    assert_eq!(
+        daemon.notifier.delivered().len(),
+        1,
+        "the gap must not clear the latch, or recovery re-announces the alert"
     );
 }
 

@@ -91,7 +91,13 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
     }
 
     fn tick(&mut self) -> Result<(), StoreError> {
-        let mut sample = self.source.sample();
+        // Unreadable, as opposed to absent: the hardware is still there, so the
+        // latched alerts still describe it. The tick is a no-op -- no row, no
+        // alert evaluation, and deliberately no `engine.reset()`, which would
+        // re-announce a low battery the moment the read recovered.
+        let Some(mut sample) = self.source.sample() else {
+            return Ok(());
+        };
 
         // No battery: nothing to record, and every latched alert describes
         // hardware that is no longer there.

@@ -60,8 +60,13 @@ impl TimeEstimates for NoTimeEstimates {
 ///
 /// One of the crate's three test seams; it is what lets the daemon loop be
 /// driven by a scripted sequence of samples instead of real hardware.
+///
+/// [`None`] means "nothing to report this tick" — the battery is installed but
+/// its essential attributes could not be read. That is deliberately distinct
+/// from a sample with `is_present` false, which means the hardware is gone and
+/// every latched alert describes something no longer there.
 pub trait TelemetrySource {
-    fn sample(&mut self) -> Sample;
+    fn sample(&mut self) -> Option<Sample>;
 }
 
 /// Reads every source and assembles a [`Sample`].
@@ -146,12 +151,36 @@ impl TelemetrySource for Sampler {
     ///
     /// `estimated_cycle_count` is left at zero: it is a function of the previous
     /// stored sample, which only the store knows, and is filled in on insert.
-    fn sample(&mut self) -> Sample {
+    fn sample(&mut self) -> Option<Sample> {
         let status = self.battery.status();
         let power_state = PowerState::from_status(&status);
         let is_charging = power_state.is_charging();
 
-        let energy = self.battery.energy();
+        // A battery that is installed but unreadable produces no sample at all.
+        // Substituting zero here is what made an unreadable `capacity` announce
+        // a critical low battery, and an unreadable `energy_now` accrue most of
+        // a cycle in a single tick.
+        let is_present = self.battery.is_present();
+        let (Some(energy), Some(charge_pct)) = (self.battery.energy(), self.battery.charge_pct())
+        else {
+            // Present but unreadable: report nothing, so the caller neither
+            // stores a fabricated row nor resets alert latches that still
+            // describe hardware that is very much there.
+            if is_present {
+                tracing::warn!("battery present but its energy or capacity could not be read");
+                return None;
+            }
+            // Genuinely absent: still a sample, because `is_present` false is
+            // what tells the caller to clear the latches.
+            return Some(Sample {
+                ts: now_iso8601_millis(),
+                status,
+                power_state,
+                is_charging,
+                is_present: false,
+                ..Sample::default()
+            });
+        };
         let power_w = self.battery.power_w();
         let thermals = self.thermal.read();
 
@@ -185,9 +214,9 @@ impl TelemetrySource for Sampler {
             .zip(self.proc.mem_total_kb())
             .and_then(|(times, mem_total_kb)| self.processes.read(times.total, mem_total_kb));
 
-        Sample {
+        Some(Sample {
             ts: now_iso8601_millis(),
-            charge_pct: self.battery.charge_pct(),
+            charge_pct,
             status,
             power_state,
             energy_wh: round_to(energy.now_wh, 3),
@@ -203,7 +232,7 @@ impl TelemetrySource for Sampler {
             battery_temp_c: thermals.battery_c,
             health_pct: energy.health_pct(),
             is_charging,
-            is_present: self.battery.is_present(),
+            is_present,
             time_to_empty_s,
             time_to_full_s,
             cpu_temp_c: thermals.cpu_c,
@@ -218,7 +247,7 @@ impl TelemetrySource for Sampler {
             load1: self.proc.load1(),
             boot_id: self.proc.boot_id(),
             uptime_s: self.proc.uptime_s(),
-        }
+        })
     }
 }
 

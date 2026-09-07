@@ -172,17 +172,16 @@ fn oneshot(paths: &Paths) -> Result<()> {
 
     // The first sample only establishes the baselines that rates are measured
     // against; its own utilisation figures are meaningless.
-    if !sampler.sample().is_present {
-        tracing::warn!("no battery present; nothing recorded");
+    if !sampler.sample().is_some_and(|sample| sample.is_present) {
+        tracing::warn!("no battery present or readable; nothing recorded");
         return Ok(());
     }
     std::thread::sleep(ONESHOT_WARMUP);
 
-    let mut sample = sampler.sample();
-    if !sample.is_present {
-        tracing::warn!("no battery present; nothing recorded");
+    let Some(mut sample) = sampler.sample().filter(|sample| sample.is_present) else {
+        tracing::warn!("no battery present or readable; nothing recorded");
         return Ok(());
-    }
+    };
 
     let (debug, historical) = stores(paths)?;
 
