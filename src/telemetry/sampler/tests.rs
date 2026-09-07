@@ -263,13 +263,29 @@ fn an_unreadable_presence_attribute_yields_no_sample_rather_than_an_absent_one()
     // The difference matters downstream: an absent sample clears every alert
     // latch, so a `present` file that merely failed to read must not be
     // reported as a battery that went away.
-    let machine = Machine::new();
-    std::fs::write(machine.paths.battery.join("present"), "").unwrap();
-    for attribute in ["capacity", "energy_now", "energy_full"] {
-        let _ = std::fs::remove_file(machine.paths.battery.join(attribute));
-    }
+    let strip = |machine: &Machine| {
+        for attribute in ["capacity", "energy_now", "energy_full"] {
+            let _ = std::fs::remove_file(machine.paths.battery.join(attribute));
+        }
+    };
 
-    assert!(machine.sampler().sample().is_none());
+    // Unknown presence: no sample at all, so no latch is cleared.
+    let unknown = Machine::new();
+    std::fs::write(unknown.paths.battery.join("present"), "").unwrap();
+    strip(&unknown);
+    assert!(unknown.sampler().sample().is_none());
+
+    // The paired case, differing only in `present`. Without it this test
+    // would still pass if unknown presence were quietly treated as absence,
+    // because the stripped attributes force the same branch either way.
+    let absent = Machine::new();
+    std::fs::write(absent.paths.battery.join("present"), "0").unwrap();
+    strip(&absent);
+    let sample = absent
+        .sampler()
+        .sample()
+        .expect("a confirmed absence still yields a sample, marked absent");
+    assert!(!sample.is_present);
 }
 
 #[test]

@@ -259,8 +259,11 @@ impl TelemetrySource for Sampler {
             battery_temp_c: thermals.battery_c,
             health_pct: energy.health_pct(),
             is_charging,
-            // A full reading just came back, so the pack is there whatever the
-            // `present` attribute did or did not say.
+            // Unknown resolves to present: a full reading just came back, so
+            // the pack is demonstrably there. A confirmed `present = 0` is
+            // still obeyed even though the attributes read, because that is
+            // the driver's own answer -- a pack being removed reports absent
+            // before its stale values stop parsing.
             is_present: presence.unwrap_or(true),
             time_to_empty_s,
             time_to_full_s,
