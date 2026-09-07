@@ -37,7 +37,7 @@ impl LockOutcome {
     ///
     /// If successful, the current process ID is written to the file.
     pub fn acquire(path: &Path) -> Result<Self> {
-        if let Some(parent) = path.parent() {
+        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("creating lock directory {}", parent.display()))?;
         }
@@ -105,5 +105,11 @@ mod tests {
 
         let third = LockOutcome::acquire(&lock_path).expect("re-acquire after drop should succeed");
         assert!(matches!(third, LockOutcome::Acquired(_)));
+    }
+
+    #[test]
+    fn bare_filename_parent_filter() {
+        let path = Path::new("batmon.lock");
+        assert_eq!(path.parent().filter(|p| !p.as_os_str().is_empty()), None);
     }
 }

@@ -110,7 +110,7 @@ fn daemon(paths: &Paths, thresholds: Thresholds, schedule: Schedule) -> Result<(
             eprintln!("To check service status:  systemctl --user status batmon");
             eprintln!("To view live logs:        journalctl --user -u batmon -f");
             eprintln!("To run a diagnostic test: batmon --oneshot");
-            return Ok(());
+            anyhow::bail!("another daemon instance is already active{pid_info}");
         }
     };
 
