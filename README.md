@@ -124,7 +124,7 @@ Re-fired alerts **replace** their previous notification rather than stacking bes
 ## 🛠️ Requirements
 
 - **Linux** with systemd (Fedora, Ubuntu, Debian, Arch, etc.)
-- **[Rust](https://rustup.rs)** toolchain ($\ge 1.87$) — to build only. The installed daemon is a single binary with SQLite compiled in; it links nothing beyond the system C library, and needs no language runtime installed.
+- **[Rust](https://rustup.rs)** toolchain ($\ge 1.87$) (optional) — only required if building from source. The pre-compiled release binary is fully static with SQLite compiled in, linking nothing beyond standard system interfaces.
 - **UPower** (optional) — supplies smoothed runtime estimates. Without it, `batmon` falls back to dividing remaining energy by present draw.
 - **A notification server** (optional) — any desktop provides one. Without it, alerts are still written to the journal.
 - **`sqlite3` CLI** (optional, for querying databases): `sudo dnf install sqlite`
@@ -133,16 +133,24 @@ Re-fired alerts **replace** their previous notification rather than stacking bes
 
 ## 🚀 Installation
 
+### One-line Install (Recommended)
+
 ```bash
-git clone https://github.com/InvictusNavarchus/batmon.git
-cd batmon
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/InvictusNavarchus/batmon/master/install.sh | bash
 ```
 
 The installer will:
-1. Build the release binary and install it to `~/.local/bin/batmon`.
+1. Detect architecture (`x86_64` or `aarch64`) and download the latest pre-compiled static binary to `~/.local/bin/batmon`.
 2. Configure and start a `systemd` user service (`batmon.service`).
-3. Run an initial test verification.
+3. Run an initial diagnostic sample verification.
+
+### Build from Source
+
+```bash
+git clone https://github.com/InvictusNavarchus/batmon.git
+cd batmon
+./install.sh --build
+```
 
 Upgrading from a Bun-based installation is handled automatically: the superseded
 TypeScript sources are removed and **your existing databases are kept and continued**.
