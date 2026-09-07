@@ -155,11 +155,11 @@ fn unparseable_sensor_values_are_skipped_rather_than_read_as_zero() {
 #[test]
 fn an_empty_sensor_file_reads_as_zero_degrees_unlike_a_battery_attribute() {
     // Faithful to the original, and the two readers genuinely differ here.
-    // The hwmon path passes trimmed contents straight to Number(), and
-    // Number("") is 0 — finite, and above the plausibility floor. The
-    // battery reader discards empty attributes before parsing, so the same
-    // file there reads as absent. Verified against the TypeScript, which
-    // reports nvme_c: 0 for exactly this input.
+    // The hwmon path passes trimmed contents straight to parse_number, and
+    // an empty string parses as 0 — finite, and above the plausibility floor.
+    // The battery reader discards empty attributes before parsing, so the same
+    // file there reads as absent. This pins the inherited asymmetry rather
+    // than endorsing it.
     let tmp = TempDir::new().unwrap();
     device(
         tmp.path(),
@@ -363,7 +363,7 @@ fn battery_temperature_falls_back_to_an_hwmon_device_in_millidegrees() {
 fn an_empty_battery_attribute_falls_through_to_hwmon() {
     // An empty `temp` file previously parsed as 0 °C, which is plausible
     // enough to look like a reading and masked the hwmon sensor that had
-    // the real answer. The TypeScript discarded empty attributes first.
+    // the real answer. This path discards empty attributes first.
     let tmp = TempDir::new().unwrap();
     let battery = tmp.path().join("BAT0");
     std::fs::create_dir_all(battery.join("hwmon3")).unwrap();

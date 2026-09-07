@@ -112,7 +112,7 @@ fn cooling_out_of_critical_into_the_warm_band_does_not_re_announce() {
 }
 
 #[test]
-fn the_temperature_body_renders_one_decimal_with_javascript_rounding() {
+fn the_temperature_body_renders_one_decimal_rounded_away_from_zero() {
     let mut engine = AlertEngine::new();
     let alerts = engine.evaluate(&at_temp(Some(45.25)), &Thresholds::default());
 

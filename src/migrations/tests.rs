@@ -230,9 +230,8 @@ fn the_flight_recorder_index_survives_the_table_rename() {
 
 #[test]
 fn merges_into_a_populated_destination_rather_than_discarding_it() {
-    // The other half of rename_table_if_exists, which the TypeScript suite
-    // never exercised: both tables hold rows, so the destination's rows must
-    // survive and the source's must be folded in.
+    // The other half of rename_table_if_exists: both tables hold rows, so the
+    // destination's rows must survive and the source's must be folded in.
     let conn = memory();
     conn.execute_batch(
         "CREATE TABLE samples_debug (
@@ -273,8 +272,8 @@ fn migration_versions_are_contiguous_and_ordered() {
 
 #[test]
 fn a_database_already_at_the_latest_version_is_left_alone() {
-    // Guards the field upgrade path: a v7 battery.db written by the
-    // TypeScript daemon must open untouched under the Rust ladder.
+    // Guards the field upgrade path: a v7 battery.db written before the port
+    // must open untouched under the current ladder.
     let conn = memory();
     migrate(&conn, HISTORICAL_MIGRATIONS).unwrap();
     conn.execute(

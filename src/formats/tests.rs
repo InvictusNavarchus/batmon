@@ -1,5 +1,5 @@
 // Bit-exact float comparison is the entire point of this module: these
-// assertions exist to catch a one-ulp drift from the TypeScript daemon.
+// assertions exist to catch a one-ulp drift in stored values.
 #![allow(clippy::float_cmp)]
 
 use super::*;
@@ -199,8 +199,9 @@ fn format_decimals_and_round_half_up_disagree_on_negative_halves() {
 
 #[test]
 fn format_decimals_beats_the_rust_formatter_on_exact_ties() {
-    // Rust rounds half to even; JavaScript does not. hwmon temperatures land
-    // on these ties whenever the millidegree reading ends in 250.
+    // Rust's formatter rounds half to even; this one does not. hwmon
+    // temperatures land on these ties whenever the millidegree reading
+    // ends in 250.
     assert_eq!(format!("{:.1}", 45.25f64), "45.2");
     assert_eq!(format_decimals(45.25, 1), "45.3");
 }

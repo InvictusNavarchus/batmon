@@ -235,8 +235,8 @@ fn render(groups: &mut [Group], elapsed_ticks: u64, mem_total_kb: u64) -> String
         // and control bytes in a process name...
         json.push_str(&serde_json::to_string(name).unwrap_or_else(|_| "\"\"".to_owned()));
         // ...but Rust's own float formatting for the numbers, because it emits
-        // the shortest round-tripping form exactly as JSON.stringify does. A
-        // serde_json number would render 6 as "6.0" and break byte parity.
+        // the shortest round-tripping form. A serde_json number would render 6
+        // as "6.0", which every row already on disk spells "6".
         let _ = write!(json, ",\"cpu\":{cpu},\"mem\":{mem},\"count\":{count}}}");
     }
     json.push(']');

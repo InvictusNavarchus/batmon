@@ -1,6 +1,6 @@
 //! Shared sample fixtures for the alert state machine tests.
 //!
-//! Mirrors the defaults of the TypeScript suite's `createMockSample`, so the
+//! One place to build a plausible sample, so the
 //! ported assertions describe the same scenarios.
 
 use crate::types::{PowerState, Sample};
