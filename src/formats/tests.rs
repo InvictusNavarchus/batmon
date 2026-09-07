@@ -52,7 +52,7 @@ fn round_to_one_decimal_keeps_the_scaling_error() {
 
 #[test]
 fn round_to_reproduces_the_hwmon_millidegree_conversion() {
-    // Math.round((raw / 1000) * 10) / 10 for real sensor readings.
+    // round_half_up((raw / 1000) * 10) / 10 for real sensor readings.
     for (raw, expected) in [
         (84_450i64, 84.5),
         (-50_000, -50.0),
@@ -67,7 +67,7 @@ fn round_to_reproduces_the_hwmon_millidegree_conversion() {
 
 #[test]
 fn round_half_up_reproduces_the_health_percentage_expression() {
-    // health_pct is Math.round(ratio * 10000) / 100 — note the asymmetric
+    // health_pct is round_half_up(ratio * 10000) / 100 — note the asymmetric
     // scale factors, which is why it cannot be expressed as round_to.
     for (full, design, expected) in [
         (48.6, 53.0, 91.7),
@@ -96,8 +96,8 @@ fn parse_number_rejects_non_finite_input() {
     assert_eq!(parse_number("abc"), None);
     assert_eq!(parse_number("1_000"), None);
     assert_eq!(parse_number("NaN"), None);
-    // Accepted by Rust's parser, rejected by Number(); the finite filter
-    // makes both reach the caller's fallback identically.
+    // Accepted by Rust's parser but not finite; the filter sends it to the
+    // caller's fallback like any other unusable reading.
     assert_eq!(parse_number("inf"), None);
     assert_eq!(parse_number("Infinity"), None);
 }
@@ -138,7 +138,11 @@ fn format_decimals_rounds_half_away_from_zero_at_one_decimal() {
         (91.25, "91.3"),
         (91.75, "91.8"),
     ] {
-        assert_eq!(format_decimals(value, 1), expected, "toFixed(1) of {value}");
+        assert_eq!(
+            format_decimals(value, 1),
+            expected,
+            "format_decimals({value}, 1)"
+        );
     }
 }
 
@@ -156,7 +160,11 @@ fn format_decimals_rounds_half_away_from_zero_at_two_decimals() {
         (2.675, "2.67"),
         (15.375, "15.38"),
     ] {
-        assert_eq!(format_decimals(value, 2), expected, "toFixed(2) of {value}");
+        assert_eq!(
+            format_decimals(value, 2),
+            expected,
+            "format_decimals({value}, 2)"
+        );
     }
 }
 
@@ -170,7 +178,11 @@ fn format_decimals_rounds_half_away_from_zero_at_zero_decimals() {
         (-0.5, "-1"),
         (88.6, "89"),
     ] {
-        assert_eq!(format_decimals(value, 0), expected, "toFixed(0) of {value}");
+        assert_eq!(
+            format_decimals(value, 0),
+            expected,
+            "format_decimals({value}, 0)"
+        );
     }
 }
 
@@ -191,8 +203,8 @@ fn format_decimals_propagates_a_carry_across_the_decimal_point() {
 
 #[test]
 fn format_decimals_and_round_half_up_disagree_on_negative_halves() {
-    // The distinction that makes both helpers necessary: toFixed rounds away
-    // from zero, Math.round rounds toward positive infinity.
+    // The distinction that makes both helpers necessary: format_decimals
+    // rounds away from zero, round_half_up toward positive infinity.
     assert_eq!(format_decimals(-0.5, 0), "-1");
     assert_eq!(round_half_up(-0.5), 0.0);
 }

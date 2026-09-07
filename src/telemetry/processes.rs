@@ -185,9 +185,8 @@ impl ProcessReader {
 
 /// Parse the `index`-th space-separated field as an integer, defaulting to zero.
 ///
-/// Zero for a missing or unparseable field mirrors the original's `Number(x) ||
-/// 0`, and is the right default here regardless: an unreadable counter means no
-/// measured work, not a failed tick.
+/// Zero for a missing or unparseable field is the right default here: an
+/// unreadable counter means no measured work, not a failed tick.
 fn nth_field(rest: &[u8], index: usize) -> u64 {
     let mut field = rest.split(|byte| *byte == b' ').nth(index).unwrap_or(b"");
     // Guard against a trailing newline on the final field.

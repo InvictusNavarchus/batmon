@@ -195,8 +195,8 @@ fn a_process_name_needing_json_escaping_is_escaped() {
 
 #[test]
 fn whole_numbers_render_without_a_decimal_point() {
-    // JSON.stringify emits 6, not 6.0. serde_json would emit 6.0 and break
-    // byte-compatible with the rows already on disk.
+    // A whole number is written "6", not "6.0". serde_json emits "6.0", which
+    // would break byte-compatibility with the rows already on disk.
     let tmp = procfs(&[(1, "app", 0, 0, 0)]);
     let mut reader = ProcessReader::new(tmp.path());
     reader.read(10_000, 1_000_000).unwrap();

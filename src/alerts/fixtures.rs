@@ -1,7 +1,7 @@
 //! Shared sample fixtures for the alert state machine tests.
 //!
-//! One place to build a plausible sample, so the
-//! ported assertions describe the same scenarios.
+//! One place to build a plausible sample, so the assertions across the alert
+//! families describe the same scenarios.
 
 use crate::types::{PowerState, Sample};
 

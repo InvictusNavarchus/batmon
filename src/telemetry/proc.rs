@@ -203,7 +203,7 @@ fn meminfo_field(meminfo: &str, name: &str) -> Option<u64> {
         };
         if key.trim() == name {
             // The value carries a trailing unit, so a plain parse would reject
-            // it; parseInt semantics stop at the first non-digit.
+            // it, whereas the leading-integer parse stops at the unit.
             return parse_leading_int(value).and_then(|kb| u64::try_from(kb).ok());
         }
     }

@@ -136,9 +136,8 @@ pub fn format_decimals(value: f64, digits: usize) -> String {
         return format!("{value}");
     }
 
-    // Sign is taken from a strict comparison so negative zero renders unsigned,
-    // matching the spec's "if x < 0" step: (-0).toFixed(1) is "0.0" but
-    // (-0.04).toFixed(1) is "-0.0".
+    // Sign is taken from a strict comparison so negative zero renders unsigned:
+    // -0.0 at one digit is "0.0", while -0.04 is "-0.0".
     let negative = value < 0.0;
 
     // The exact decimal expansion. Every finite f64 is a dyadic rational with at
