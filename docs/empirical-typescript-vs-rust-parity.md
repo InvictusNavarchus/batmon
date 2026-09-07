@@ -18,12 +18,16 @@ compared, and materially cheaper to run:**
   spanning six hours, every static and categorical column matched bit-for-bit. Every
   column that diverged is one that genuinely changes between two instants sampled
   250 ms apart.
-* **The cycle integral does not drift.** After 21,700 ticks and 1.335 accumulated
-  cycles, the two implementations agree to `0.000000000000`.
-* **Alerts are identical.** Both fired the same three alerts, in the same order, with
-  byte-identical text, on the same real battery.
-* **4.3× less resident memory.** Median 6.3 MB against 26.7 MB, sampled every 30 s
-  across the six-hour run, with 6 threads against 15.
+* **The cycle integral does not drift.** After 1.335 accumulated cycles at the six-hour
+  checkpoint and 2.065 at the end of the run, the two implementations agree to
+  `0.000000000000` at both.
+* **The integral survives a reboot.** The run was carried through a real shutdown and
+  restart. Each implementation resumed at exactly the value it stored before power was
+  cut, and both recorded the same two `boot_id`s with zero mismatches.
+* **Alerts are identical.** Both fired the same four alerts, in the same order, with
+  byte-identical text, within one tick of each other, on the same real battery.
+* **4.3× less resident memory.** Median 6.6 MB against 28.4 MB across 1,430 paired
+  observations spanning the whole run, with 6 threads against 15.
 * **~40% cheaper per sample.** 12.4 ms against 20.3 ms median.
 * **Two subprocess spawns per minute eliminated**, roughly 1,440 process creations a day.
 
@@ -44,9 +48,15 @@ in phase. The production daemon and its databases were not touched. Samples were
 on nearest timestamp; the median join offset was 250 ms, which is the irreducible floor
 for two independent processes on a one-second cadence.
 
-Two runs are reported. A 180-second smoke run established column parity; a **six-hour
-run** covering a full discharge, a charge to 80%, and a second discharge to 18%
-established everything that requires time to accumulate.
+A 180-second smoke run established column parity. Everything that requires time to
+accumulate comes from a **single long run**, started `2026-09-06T09:29:50Z` and examined
+at two checkpoints: at **six hours**, covering a full discharge, a charge to 80% and a
+second discharge to 18%; and at the **end of the run**, `2026-09-07T02:47:22Z`, after
+the machine had been shut down and rebooted. Sections 3.1–3.7 report the six-hour
+checkpoint; section 3.8 reports what the remainder of the run added.
+
+The end state spans 17.3 h of wall time but **11.9 h of sampling** — 9.4 h in the first
+boot session and 2.5 h in the second, with the machine off for 5 h 26 m in between.
 
 ---
 
@@ -136,7 +146,7 @@ The tick cadence difference is the deadline-scheduling claim, measured:
 
 **The TypeScript daemon recorded 113 fewer samples from the same window**, about
 7.5 minutes of lost coverage per day. Thirteen tick overruns were logged by the Rust
-daemon, all inside a single 90-second window — one system event, 0.06% of ticks — and
+daemon, all inside a single 114-second window — one system event, 0.06% of ticks — and
 both implementations show gaps at the same moments.
 
 ### 3.6 Resource cost
@@ -174,26 +184,132 @@ floor, not the floor itself. The larger single win was elsewhere: caching hwmon 
 paths, since numbering is fixed at driver initialisation, removed a **3.9 ms rescan from
 every tick**.
 
+### 3.8 The reboot boundary
+
+The six-hour checkpoint named one gap as the one that mattered most: the cycle
+integrator's carry-forward had been exercised only by unit and property tests, because
+the run had covered a single boot session. Getting carry-forward wrong silently
+corrupts the long-term number with no alert, so the run was left in place and carried
+through a real shutdown and reboot.
+
+Two boot sessions were recorded, `7653dc99…` and `be846abc…`, identically by both
+implementations. Comparing the last row of the first session against the first row of
+the second:
+
+| | last row before shutdown | first row after reboot |
+| :--- | :--- | :--- |
+| Rust | `1.32829858729941` | `1.32829858729941` |
+| TypeScript | `1.32473254697572` | `1.32473254697572` |
+
+**Both resumed at exactly the value they had stored**, and the cycle integral finished
+the run where the six-hour checkpoint left it — identical:
+
+```
+rust final       2.065114525
+typescript final 2.065114525
+final gap        0.000000000000 cycles
+```
+
+The 0.0036 offset between the two columns above is not divergence. Their last
+pre-shutdown rows are 23 s apart, and 23 s of discharge accrues 0.009 cycles, so the
+offset is well *inside* what the sampling gap alone explains. Over the
+post-reboot window the mean gap never exceeded 0.12 ticks of accrual and the worst
+excursion was 2.52 ticks, with the first- and last-quarter means at 2.3e-05 and 3.8e-05
+— bounded, not accumulating.
+
+`ac_idle` — the other gap named at six hours — was also reached. The battery charged to
+100% and sat at Full for 97 rows, and both implementations made the transition between
+the same pair of minutes:
+
+```
+rust  17:12:48 Charging/charging 99%  ->  17:13:48 Full/ac_idle 100%
+ts    17:12:07 Charging/charging 99%  ->  17:13:07 Full/ac_idle 100%
+```
+
+Over the full run the rail-state census was `discharging` 356/352, `charging` 265/264,
+`ac_idle` 97/98 (rust/TypeScript), the ±1 differences being which side of a transition
+each implementation's downsample instant fell on.
+
+Four alerts fired in total, in the same order, with byte-identical bodies, within one
+tick (local time, UTC+07):
+
+| Alert | Rust | TypeScript |
+| :--- | :--- | :--- |
+| Low Battery: 20% remaining | 18:08:50 | 18:08:49 |
+| Battery Charge Target Reached: 80% | 19:01:43 | 19:01:42 |
+| Low Battery: 20% remaining | 21:55:39 | 21:55:39 |
+| Battery Charge Target Reached: 80% | 22:41:57 | 22:41:57 |
+
+Neither implementation panicked, logged an error, or was restarted by systemd after a
+failure — `NRestarts` was 0 for both across all 1,430 observations. The daemons were
+stopped and started cleanly twice: once to redeploy the harness mid-run, and once by the
+system shutdown. **Both times the Rust daemon logged a clean `batmon stopped`**, so
+SIGTERM at system poweroff is handled rather than the process being killed. The Rust
+daemon logged 14 tick overruns in 11.9 h of sampling, 13 of them inside the single
+114-second window under load already noted in §3.5.
+
+Resource use over the whole run, 1,430 paired observations sampled every 30 s:
+
+| Metric | TypeScript (Bun) | Rust | Change |
+| :--- | :--- | :--- | :--- |
+| Resident memory (median) | 28.4 MB | 6.6 MB | **4.3× less** |
+| Resident memory (peak) | 57.8 MB | 9.5 MB | 6.1× less |
+| Resident memory (range) | 13.6 – 57.8 MB | 4.6 – 9.5 MB | — |
+| Threads (median) | 15 | 6 | 2.5× fewer |
+
+Neither implementation leaks. The TypeScript figure looks like growth inside any single
+window — it rose 32 MB to 43 MB across the post-reboot session — but per hour across the
+whole run it is a garbage-collection sawtooth that trends *down*: 43.5, 33.7, 28.2,
+24.8, 23.0, 23.9, 29.4, 28.3, 25.5, 23.4 MB. The Rust figure plateaus, moving 0.02 MB
+over the final hour.
+
 ---
 
 ## 4. Limitations
 
-The six-hour run covered a full discharge, a charge, and a second discharge. What it did
-**not** reach is not a matter of running longer — each needs a specific condition:
+The run covered three discharge legs, two charges past the 80% target, a charge all the
+way to 100%, a spell at Full, and a reboot — an 18%–100% span in all.
+Two of the four gaps named at the six-hour checkpoint were closed by letting it run;
+the rest are not a matter of running longer, because each needs a specific condition
+this hardware or this experiment cannot produce.
 
-* **`ac_idle`** — the battery never sat at Full or at a vendor charge limit. This is a
-  three-line branch in the charge ladder with four unit tests.
-* **A reboot boundary** — one boot session only, so the cycle integrator's carry-forward
-  was exercised only by its unit and property tests. This is the gap that matters most,
-  because getting carry-forward wrong silently corrupts the long-term number with no
-  alert.
+**Closed by the full run:**
+
+* ~~**A reboot boundary**~~ — closed. Both implementations carried the cycle integral
+  across a real shutdown exactly, and agreed on `boot_id` (§3.8).
+* ~~**`ac_idle`**~~ — closed. The battery reached Full and both classified the
+  transition in the same minute (§3.8).
+
+**Still open:**
+
 * **Heat-soak and thermal anomaly** — the CPU never reached 85 °C while charging or
-  80 °C while idle. Both are covered by the shared debounce latch's own tests.
-* **`battery_temp_c`** — null in all rows. This hardware has no pack sensor, so the
-  battery thermal family cannot be differentially tested here at all, ever.
+  80 °C while idle. Both are covered by the shared debounce latch's own tests, but
+  neither has been observed differentially.
+* **`battery_temp_c`** — null in every row of both runs. This hardware has no pack
+  sensor, so the battery thermal family cannot be differentially tested here at all,
+  ever.
+* **`time_to_full_s`** — null in every row. UPower never produced a full-time estimate
+  on this hardware, so the column is read verbatim by both and compared only as "both
+  null".
+* **One machine.** Everything here validates a single battery, kernel, driver set and
+  hwmon topology. It says nothing about a different sensor layout, a charge-reporting
+  rather than energy-reporting battery, or a second battery.
 
-One artefact worth recording: three notifications failed with
-`ExcessNotificationGeneration`. That is the notification server rate-limiting because
-*three* daemons — production plus both differential instances — alerted on the same
-battery simultaneously. The daemon logged it and continued, which is the designed
-degradation, but it is an artefact of the experiment rather than a property of the port.
+**A methodological limit worth recording**, because it will bite anyone repeating this:
+the flight recorder prunes to a six-hour window, so a long unattended run **cannot
+preserve fine-grained evidence of its own beginning**. By the end of this run the
+charging portion had been pruned, and the 1-second-cadence comparison at a 253 ms join
+offset covered the post-reboot discharge only. Charging parity at that resolution rests
+on the six-hour checkpoint's 9,714 charging pairs (§3.4); across the full run it rests
+on the one-minute history store, where the only two apparent mismatches sit exactly on
+rail transitions at a 13 s join offset and resolve to identical behaviour on inspection.
+Read the flight recorder at checkpoints, or raise its retention, rather than reading it
+once at the end.
+
+One artefact worth recording: every alert notification failed with
+`ExcessNotificationGeneration`. That is the notification server rate-limiting, because
+two daemons alerted on the same battery within a second of each other. It is an artefact
+of the experiment, not a property of the port. It appears one-sided only because the
+TypeScript implementation spawns `notify-send` with `stderr: "ignore"` and discards the
+exit status, so it hits the same limit silently; the Rust daemon logs the failure and
+continues, which is the designed degradation.
