@@ -13,6 +13,7 @@ use batmon::config::{Schedule, Thresholds};
 use batmon::daemon::Daemon;
 use batmon::db::{Database, Store};
 use batmon::dbus::{DesktopNotifier, UPower};
+use batmon::lock::LockOutcome;
 use batmon::paths::Paths;
 use batmon::telemetry::{Sampler, TelemetrySource};
 
@@ -100,6 +101,19 @@ fn sampler(paths: &Paths) -> Sampler {
 
 /// Run until a termination signal arrives.
 fn daemon(paths: &Paths, thresholds: Thresholds, schedule: Schedule) -> Result<()> {
+    let _lock = match LockOutcome::acquire(&paths.lock_path())? {
+        LockOutcome::Acquired(handle) => handle,
+        LockOutcome::AlreadyRunning { pid } => {
+            let pid_info = pid.map(|p| format!(" (PID {p})")).unwrap_or_default();
+            eprintln!("batmon daemon is already running{pid_info}.");
+            eprintln!();
+            eprintln!("To check service status:  systemctl --user status batmon");
+            eprintln!("To view live logs:        journalctl --user -u batmon -f");
+            eprintln!("To run a diagnostic test: batmon --oneshot");
+            anyhow::bail!("another daemon instance is already active{pid_info}");
+        }
+    };
+
     let (debug, historical) = stores(paths)?;
 
     let mut daemon = Daemon::new(

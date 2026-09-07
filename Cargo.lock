@@ -219,6 +219,7 @@ dependencies = [
  "jiff",
  "proptest",
  "rusqlite",
+ "rustix",
  "serde_json",
  "signal-hook",
  "tempfile",
