@@ -178,6 +178,45 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --all
 ```
 
+### Where tests live
+
+Tests are unit tests in the same crate, because most of them exercise private
+items — a sibling module cannot see them, so the test module has to stay a
+descendant of the module it tests.
+
+**A test module of 100 lines or more moves into its own file**, declared as a
+child module:
+
+```rust
+// src/telemetry/thermal.rs
+#[cfg(test)]
+mod tests;          // -> src/telemetry/thermal/tests.rs
+```
+
+`super` still resolves to the parent module, so imports are unaffected and
+test paths are unchanged. Below 100 lines the tests stay inline at the bottom
+of the file, where colocation is still worth more than the indirection; four
+modules are in that category today, and all four are under 200 lines total.
+
+When adding a test file, **check that the `mod` declaration exists**. A test
+file that is never declared compiles, runs nothing, and leaves the suite green
+at a lower count — the one failure mode here that no assertion catches.
+
+### Blaming through the extraction
+
+The test modules were extracted in `refactor/extract-test-modules`, which moved
+4,884 lines without changing any test logic. Plain `git blame` on those files
+reports only the move. To see who actually wrote a line:
+
+```bash
+git blame -w -C -C -C src/telemetry/thermal/tests.rs
+```
+
+`-w` is the part that matters: extraction dedented every line by one level, and
+without it the copy detection in `-C` finds nothing. A `.git-blame-ignore-revs`
+file does *not* help here — the content landed in new files, so ignoring the
+extraction commit leaves blame with nothing earlier to attribute to.
+
 ---
 
 ## 🗑️ Uninstallation
