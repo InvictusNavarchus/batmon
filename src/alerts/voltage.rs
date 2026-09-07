@@ -2,7 +2,7 @@
 
 use crate::alerts::notify::{AlertFamily, Notification, Urgency};
 use crate::config::Thresholds;
-use crate::parity::to_fixed;
+use crate::formats::format_decimals;
 use crate::types::Sample;
 
 /// Whether the over-voltage warning has been shown.
@@ -45,7 +45,7 @@ impl VoltageState {
                     title: "Warning: Over-Voltage Charging".to_owned(),
                     body: format!(
                         "Voltage {} V well above design {} V",
-                        to_fixed(sample.voltage_v, 2),
+                        format_decimals(sample.voltage_v, 2),
                         sample.voltage_design_v
                     ),
                     urgency: Urgency::Normal,

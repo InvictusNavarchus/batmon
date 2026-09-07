@@ -12,7 +12,7 @@
 use crate::alerts::debounce::{Debounced, Observation};
 use crate::alerts::notify::{AlertFamily, Notification, Urgency};
 use crate::config::Thresholds;
-use crate::parity::to_fixed;
+use crate::formats::format_decimals;
 use crate::types::Sample;
 
 /// Debounce latch for the thermal anomaly detector.
@@ -63,9 +63,12 @@ impl AnomalyState {
             .expect("a qualifying observation requires a reading");
         let detail = match evidence.expect("a qualifying observation requires idle evidence") {
             IdleEvidence::Utilisation => {
-                format!("{}% CPU", to_fixed(sample.cpu_pct.unwrap_or_default(), 0))
+                format!(
+                    "{}% CPU",
+                    format_decimals(sample.cpu_pct.unwrap_or_default(), 0)
+                )
             }
-            IdleEvidence::Power => format!("{} W", to_fixed(sample.power_w, 1)),
+            IdleEvidence::Power => format!("{} W", format_decimals(sample.power_w, 1)),
         };
 
         (
@@ -75,7 +78,7 @@ impl AnomalyState {
                 title: "CRITICAL: Thermal Anomaly".to_owned(),
                 body: format!(
                     "CPU at {} °C during low workload ({detail}) – check cooling fans & ventilation",
-                    to_fixed(temp, 0)
+                    format_decimals(temp, 0)
                 ),
                 urgency: Urgency::Critical,
                 icon: "dialog-error",

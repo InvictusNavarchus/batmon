@@ -1,14 +1,13 @@
 //! Assembling one complete telemetry sample.
 //!
 //! The [`Sampler`] owns every reader and every piece of state that has to
-//! survive between ticks. In the TypeScript daemon that state lived in nine
-//! module-level mutables, which is why four `resetForTesting` functions had to
-//! be exported from production modules; here a fresh `Sampler` is a fresh state
-//! and those escape hatches do not exist.
+//! survive between ticks. Holding it here rather than in module-level mutables
+//! is what keeps the tests honest: a fresh `Sampler` is a fresh state, so no
+//! production module has to export a `reset_for_testing` escape hatch.
 
 use std::time::{Duration, Instant};
 
-use crate::parity::{now_iso8601_millis, round_js, round_to};
+use crate::formats::{now_iso8601_millis, round_half_up, round_to};
 use crate::paths::Paths;
 use crate::telemetry::battery::BatteryReader;
 use crate::telemetry::proc::ProcReader;
@@ -169,15 +168,15 @@ impl TelemetrySource for Sampler {
             && power_state == PowerState::Discharging
             && power_w > MIN_RATE_FOR_ESTIMATE_W
         {
-            time_to_empty_s = Some(round_js(energy.now_wh / power_w * 3_600.0) as i64);
+            time_to_empty_s = Some(round_half_up(energy.now_wh / power_w * 3_600.0) as i64);
         }
         if time_to_full_s.is_none() && is_charging && power_w > MIN_RATE_FOR_ESTIMATE_W {
             time_to_full_s =
-                Some(round_js((energy.full_wh - energy.now_wh) / power_w * 3_600.0) as i64);
+                Some(round_half_up((energy.full_wh - energy.now_wh) / power_w * 3_600.0) as i64);
         }
 
-        // /proc/stat is read once and its totals shared. The TypeScript parsed
-        // it separately for utilisation and for the process scan.
+        // /proc/stat is read once and its totals shared between the utilisation
+        // figure and the process scan, which both need them.
         let cpu_times = self.proc.cpu_times();
         let cpu_pct = cpu_times.and_then(|times| self.proc.cpu_pct(times));
         // Both are required: process memory is a percentage of total, and

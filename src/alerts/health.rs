@@ -2,7 +2,7 @@
 
 use crate::alerts::notify::{AlertFamily, Notification, Urgency};
 use crate::config::Thresholds;
-use crate::parity::to_fixed;
+use crate::formats::format_decimals;
 use crate::types::Sample;
 
 /// Whether the wear notice has been shown.
@@ -32,7 +32,7 @@ impl HealthState {
                     title: "Battery Health Notice".to_owned(),
                     body: format!(
                         "Battery health at {}% of design capacity",
-                        to_fixed(sample.health_pct, 1)
+                        format_decimals(sample.health_pct, 1)
                     ),
                     urgency: Urgency::Normal,
                     icon: "battery-caution",

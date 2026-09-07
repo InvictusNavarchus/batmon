@@ -8,7 +8,7 @@
 use crate::alerts::debounce::{Debounced, Observation};
 use crate::alerts::notify::{AlertFamily, Notification, Urgency};
 use crate::config::Thresholds;
-use crate::parity::to_fixed;
+use crate::formats::format_decimals;
 use crate::types::Sample;
 
 /// Debounce latch for the heat-soak warning.
@@ -54,7 +54,7 @@ impl CpuHeatState {
                 title: "Warning: Heat-Soak Risk".to_owned(),
                 body: format!(
                     "Charging while CPU at {} °C – unplug charger to preserve health",
-                    to_fixed(temp, 0)
+                    format_decimals(temp, 0)
                 ),
                 urgency: Urgency::Normal,
                 icon: "dialog-warning",

@@ -78,11 +78,11 @@ impl PowerState {
 /// because the hardware may not expose them.
 ///
 /// [`Default`] exists to serve as the test fixture: `Sample { charge_pct: 80.0,
-/// ..Default::default() }` replaces the `createMockSample` helper the TypeScript
-/// tests carried, without a fixture module that production code can reach.
+/// ..Default::default() }` gives a test the one field it cares about without a
+/// fixture module that production code could reach.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Sample {
-    /// UTC timestamp, `toISOString` shape. See [`crate::parity::iso8601_millis`].
+    /// UTC timestamp, `toISOString` shape. See [`crate::formats::iso8601_millis`].
     pub ts: String,
     /// State of charge, percent.
     pub charge_pct: f64,

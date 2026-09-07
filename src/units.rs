@@ -7,7 +7,7 @@
 //! watt-hours, volts) arrives in exactly one encoding and is used in exactly one
 //! expression, so wrapping it would add ceremony without removing a failure mode.
 
-use crate::parity::round_to;
+use crate::formats::round_to;
 
 /// SI micro- divisor.
 ///
@@ -53,12 +53,12 @@ impl Celsius {
         (degrees.is_finite() && value >= Self::MIN_PLAUSIBLE).then_some(value)
     }
 
-    /// Rounded to one decimal place with JavaScript tie semantics.
+    /// Rounded to one decimal place, ties toward positive infinity.
     ///
-    /// Deliberately *not* folded into the constructors: the TypeScript daemon
-    /// rounds system temperatures but stores battery temperature unrounded, and
-    /// the port reproduces that asymmetry rather than quietly correcting it.
-    /// Normalising the two is a behaviour change and belongs in its own commit.
+    /// Deliberately *not* folded into the constructors. System temperatures are
+    /// stored rounded and battery temperature is stored raw; that asymmetry is
+    /// inherited and is preserved here rather than quietly corrected, because
+    /// normalising the two changes stored values and belongs in its own commit.
     #[must_use]
     pub fn rounded_tenth(self) -> Self {
         Self(round_to(self.0, 1))
@@ -73,8 +73,9 @@ impl Celsius {
 
 /// Constrain a computed percentage to 0..=100.
 ///
-/// Replaces the `Math.max(0, Math.min(100, x))` sandwich repeated at three call
-/// sites. `f64::clamp` propagates NaN exactly as the JavaScript pair did.
+/// One helper for a bound applied at three call sites. `f64::clamp` propagates
+/// NaN rather than collapsing it to a bound, which is what the callers want:
+/// an unreadable percentage stays unreadable.
 #[must_use]
 pub fn clamp_percent(value: f64) -> f64 {
     value.clamp(0.0, 100.0)
@@ -104,7 +105,7 @@ mod tests {
 
     #[test]
     fn non_finite_readings_are_not_temperatures() {
-        // Reachable only through the public constructors, since js_number
+        // Reachable only through the public constructors, since parse_number
         // filters these out of sysfs — but an infinite reading would otherwise
         // pass the floor and reach a sample and an alert threshold.
         for raw in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
@@ -123,8 +124,8 @@ mod tests {
 
     #[test]
     fn both_encodings_agree_on_the_floor() {
-        // The two constants the TypeScript config carried (-50000 millidegrees
-        // and -500 tenths) were the same physical bound written twice.
+        // -50000 millidegrees and -500 tenths are the same physical bound
+        // written in the two units the kernel reports.
         assert_eq!(
             Celsius::from_millidegrees(-50_000.0).unwrap(),
             Celsius::from_tenths(-500.0).unwrap()
@@ -132,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn rounded_tenth_uses_javascript_tie_semantics() {
+    fn rounded_tenth_breaks_ties_toward_positive_infinity() {
         assert_eq!(
             Celsius::from_millidegrees(84_450.0)
                 .unwrap()

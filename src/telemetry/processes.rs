@@ -22,17 +22,16 @@ use std::fmt::Write as _;
 use std::io::Read;
 use std::path::PathBuf;
 
-use crate::parity::round_to;
+use crate::formats::round_to;
 
 /// How many process groups appear in the recorded snapshot.
 const TOP_GROUPS: usize = 5;
 
 /// Memory page size assumed when converting RSS pages to kilobytes.
 ///
-/// Hard-coded, matching the TypeScript daemon, and correct for x86-64 and the
-/// common arm64 configuration. A kernel built with 16K or 64K pages would report
+/// Hard-coded, and correct for x86-64 and the common arm64 configuration. A kernel built with 16K or 64K pages would report
 /// proportionally low memory here. Reading the real value is a behaviour change
-/// and belongs in its own commit rather than being smuggled into a port.
+/// and belongs in its own commit.
 const PAGE_SIZE_KB: u64 = 4;
 
 /// Field offsets within `/proc/PID/stat`, counted from the field after the
@@ -186,9 +185,8 @@ impl ProcessReader {
 
 /// Parse the `index`-th space-separated field as an integer, defaulting to zero.
 ///
-/// Zero for a missing or unparseable field mirrors the original's `Number(x) ||
-/// 0`, and is the right default here regardless: an unreadable counter means no
-/// measured work, not a failed tick.
+/// Zero for a missing or unparseable field is the right default here: an
+/// unreadable counter means no measured work, not a failed tick.
 fn nth_field(rest: &[u8], index: usize) -> u64 {
     let mut field = rest.split(|byte| *byte == b' ').nth(index).unwrap_or(b"");
     // Guard against a trailing newline on the final field.
@@ -236,8 +234,8 @@ fn render(groups: &mut [Group], elapsed_ticks: u64, mem_total_kb: u64) -> String
         // and control bytes in a process name...
         json.push_str(&serde_json::to_string(name).unwrap_or_else(|_| "\"\"".to_owned()));
         // ...but Rust's own float formatting for the numbers, because it emits
-        // the shortest round-tripping form exactly as JSON.stringify does. A
-        // serde_json number would render 6 as "6.0" and break byte parity.
+        // the shortest round-tripping form. A serde_json number would render 6
+        // as "6.0", which every row already on disk spells "6".
         let _ = write!(json, ",\"cpu\":{cpu},\"mem\":{mem},\"count\":{count}}}");
     }
     json.push(']');

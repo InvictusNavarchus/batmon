@@ -1,10 +1,10 @@
 //! Stateful alerting with hysteresis, debouncing and priority escalation.
 //!
 //! Every alert family is a state machine, and that is the whole design. The
-//! TypeScript implementation tracked eleven independent booleans and counters
-//! and maintained the relationships between them by hand, with comments like
-//! "critical suppresses warning" standing in for an invariant the code could
-//! not express. Here those rules are structural: there is no state meaning
+//! obvious alternative — a boolean latch per alert — makes the relationships
+//! between them a matter of discipline, upheld by comments like "critical
+//! suppresses warning" standing in for an invariant the code cannot express.
+//! Here those rules are structural: there is no state meaning
 //! "warning fired and critical fired", so the suppression cannot be forgotten,
 //! and an exhaustive `match` makes the compiler point at every site that would
 //! need updating if a state were added.

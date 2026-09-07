@@ -143,14 +143,14 @@ proptest! {
         prop_assert_eq!(compute_estimated_cycles(&current, None), 0.0);
     }
 
-    /// Documents a quirk carried over deliberately rather than an invariant.
+    /// Documents inherited behaviour, not an invariant.
     ///
     /// When the design capacity reads as zero — a transient sysfs failure
     /// makes it zero rather than absent — the result is 0.0 rather than the
-    /// carried count, so the accumulated history is discarded. This matches
-    /// the TypeScript exactly and is reproduced for parity; whether it
-    /// should keep doing that is a separate question from whether the port
-    /// is faithful.
+    /// carried count, so months of accumulated history are discarded on a
+    /// single failed read. This is almost certainly wrong. It is pinned here
+    /// so that changing it is a deliberate act with a visible diff, not a
+    /// silent one.
     #[test]
     fn an_unusable_design_capacity_discards_the_carried_count(
         (previous, current) in arb_pair(),

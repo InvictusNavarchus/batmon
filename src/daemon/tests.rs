@@ -36,7 +36,7 @@ impl TelemetrySource for Scripted {
 fn present(charge_pct: f64, energy_wh: f64) -> Sample {
     Sample {
         // Stamped now, so retention-window tests measure against real time.
-        ts: crate::parity::now_iso8601_millis(),
+        ts: crate::formats::now_iso8601_millis(),
         charge_pct,
         status: "Discharging".to_owned(),
         power_state: PowerState::Discharging,
