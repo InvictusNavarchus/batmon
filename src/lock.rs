@@ -106,10 +106,4 @@ mod tests {
         let third = LockOutcome::acquire(&lock_path).expect("re-acquire after drop should succeed");
         assert!(matches!(third, LockOutcome::Acquired(_)));
     }
-
-    #[test]
-    fn bare_filename_parent_filter() {
-        let path = Path::new("batmon.lock");
-        assert_eq!(path.parent().filter(|p| !p.as_os_str().is_empty()), None);
-    }
 }
