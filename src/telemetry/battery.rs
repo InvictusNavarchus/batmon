@@ -203,7 +203,16 @@ impl BatteryReader {
             return Some(false);
         }
         if self.has("present") {
-            return self.read_str("present").map(|value| value == "1");
+            return self
+                .read_str("present")
+                .and_then(|value| match value.as_str() {
+                    "1" => Some(true),
+                    "0" => Some(false),
+                    // The ABI defines only 0 and 1. Anything else is a malformed
+                    // read, and mapping it to "absent" would let one garbled byte
+                    // clear every alert latch.
+                    _ => None,
+                });
         }
         Some(true)
     }

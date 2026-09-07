@@ -183,6 +183,16 @@ fn a_present_attribute_is_obeyed_in_both_directions() {
 }
 
 #[test]
+fn a_malformed_present_value_is_unknown_rather_than_absent() {
+    // The ABI defines only 0 and 1, so anything else is a bad read rather
+    // than a report that the pack has gone.
+    for value in ["2", "yes", "-1"] {
+        let (_tmp, reader) = battery(&[("present", value)]);
+        assert_eq!(reader.is_present(), None, "present={value}");
+    }
+}
+
+#[test]
 fn an_unreadable_present_attribute_is_unknown_rather_than_absent() {
     // Absence clears every alert latch, so it must be a reading rather than a
     // failure to read: an empty `present` file says nothing about the pack.
