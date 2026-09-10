@@ -21,7 +21,8 @@ pub struct Daemon<S: TelemetrySource, N: Notifier> {
     source: S,
     notifier: N,
     engine: AlertEngine,
-    /// One row per tick, pruned to the newest window's worth of rows.
+    /// One row per tick that reads a battery, pruned to the newest window's
+    /// worth of rows.
     debug: Store,
     /// One row per minute, kept forever.
     historical: Store,

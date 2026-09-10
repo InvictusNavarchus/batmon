@@ -296,7 +296,8 @@ fn require_into(problems: &mut Vec<String>, holds: bool, message: &str) {
 /// the daemon's wakeup count — and therefore its power draw — predictable.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Schedule {
-    /// Flight recorder period. Every tick writes one row to `debug.db`.
+    /// Flight recorder period. Every tick that reads a battery writes one row
+    /// to `debug.db`; an unreadable or absent one writes nothing.
     pub sample_interval: Duration,
     /// Ticks between rows written to the permanent `battery.db`.
     pub historical_interval_ticks: u64,
