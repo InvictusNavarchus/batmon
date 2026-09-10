@@ -272,10 +272,10 @@ pub const DEBUG_MIGRATIONS: &[Migration] = &[
             rename_table_if_exists(conn, "samples_debug", "samples")?;
             // Migration 1 created this index on `samples`. When the rename above
             // takes the empty-placeholder branch it drops that table, and the
-            // index goes with it — leaving a 1 Hz recorder to prune by full
-            // table scan for the rest of the database's life. Recreating the
-            // index here closes that hole, and is schema-only: it changes no
-            // stored value.
+            // index goes with it — leaving that database with a different schema
+            // from every other, and time-range queries on it to scan the whole
+            // table. Recreating the index here closes that hole, and is
+            // schema-only: it changes no stored value.
             if has_table(conn, "samples")? {
                 conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_debug_ts ON samples(ts);")?;
             }

@@ -196,12 +196,12 @@ fn carry_one(digits: &mut Vec<u8>) {
 
 /// `Date.prototype.toISOString()`: UTC with exactly three fractional digits.
 ///
-/// The fixed width is a correctness requirement, not cosmetics. Debug rows are
-/// pruned with `WHERE ts < cutoff`, which SQLite evaluates as a *string*
-/// comparison, and jiff's default `Display` emits only as many fractional digits
-/// as the value needs. Mixed widths sort wrongly against each other: `Z` is
-/// `0x5A` and `.` is `0x2E`, so a whole-second `…:56Z` sorts *after*
-/// `…:56.789Z` from the same second, and prune would spare rows it should drop.
+/// The fixed width is a correctness requirement, not cosmetics. `ts` is stored
+/// as text, so SQLite orders and range-compares it as a *string* — in the `ts`
+/// index and in any query that selects rows by time — and jiff's default
+/// `Display` emits only as many fractional digits as the value needs. Mixed
+/// widths sort wrongly against each other: `Z` is `0x5A` and `.` is `0x2E`, so a
+/// whole-second `…:56Z` sorts *after* `…:56.789Z` from the same second.
 #[must_use]
 pub fn iso8601_millis(ts: Timestamp) -> String {
     format!("{ts:.3}")

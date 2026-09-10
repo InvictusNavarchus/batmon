@@ -197,8 +197,8 @@ fn renames_samples_debug_over_an_empty_placeholder_samples_table() {
 #[test]
 fn the_flight_recorder_index_survives_the_table_rename() {
     // The rename's empty-placeholder branch drops the destination table,
-    // taking migration 1's index with it. Without recreating it, every
-    // prune on a 1 Hz recorder becomes a full table scan.
+    // taking migration 1's index with it. Without recreating it, that database
+    // ends up with a different schema from every other.
     let conn = memory();
     conn.execute_batch(
         "CREATE TABLE samples_debug (
@@ -219,7 +219,7 @@ fn the_flight_recorder_index_survives_the_table_rename() {
         indexes(&conn, "samples")
             .iter()
             .any(|i| i == "idx_debug_ts"),
-        "prune would fall back to a full table scan"
+        "the rename dropped migration 1's index without recreating it"
     );
     // And the rows still made it across.
     let count: i64 = conn

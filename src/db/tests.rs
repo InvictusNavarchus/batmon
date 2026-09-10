@@ -120,36 +120,102 @@ fn integration_writes_the_computed_value_back_to_the_caller() {
     );
 }
 
-#[test]
-fn prune_drops_rows_outside_the_retention_window() {
-    let store = Store::open_in_memory(Database::Debug).unwrap();
-
-    let now = Timestamp::now();
-    let old = iso8601_millis(now.checked_sub(SignedDuration::from_hours(10)).unwrap());
-    let recent = iso8601_millis(now.checked_sub(SignedDuration::from_hours(1)).unwrap());
-    store.insert(&sample(&old, 70.0)).unwrap();
-    store.insert(&sample(&recent, 65.0)).unwrap();
-
-    let removed = store.prune_older_than(6).unwrap();
-
-    assert_eq!(removed, 1);
-    assert_eq!(store.latest().unwrap().unwrap().ts, recent);
+/// The `ts` of every row, oldest first.
+fn timestamps(store: &Store) -> Vec<String> {
+    let mut statement = store
+        .conn
+        .prepare("SELECT ts FROM samples ORDER BY id")
+        .unwrap();
+    statement
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
 }
 
 #[test]
-fn prune_refuses_a_non_positive_retention_window() {
+fn retain_newest_keeps_exactly_the_newest_rows() {
+    let store = Store::open_in_memory(Database::Debug).unwrap();
+    for second in 0..5 {
+        store
+            .insert(&sample(&format!("2026-09-06T00:00:0{second}.000Z"), 80.0))
+            .unwrap();
+    }
+
+    let removed = store.retain_newest(3).unwrap();
+
+    assert_eq!(removed, 2);
+    assert_eq!(
+        timestamps(&store),
+        [
+            "2026-09-06T00:00:02.000Z",
+            "2026-09-06T00:00:03.000Z",
+            "2026-09-06T00:00:04.000Z",
+        ]
+    );
+}
+
+#[test]
+fn retain_newest_ignores_how_old_the_rows_are() {
+    // The point of counting rows: a run recorded before a long power-off is
+    // still the most recent recording, however long ago it was.
+    let store = Store::open_in_memory(Database::Debug).unwrap();
+    store
+        .insert(&sample("2020-01-01T00:00:00.000Z", 70.0))
+        .unwrap();
+    store
+        .insert(&sample("2026-09-06T00:00:00.000Z", 65.0))
+        .unwrap();
+
+    assert_eq!(store.retain_newest(21_600).unwrap(), 0);
+    assert_eq!(store.row_count().unwrap(), 2);
+}
+
+#[test]
+fn retain_newest_is_exact_across_gaps_in_ids() {
+    // A deleted row in the middle leaves a hole in `id`. Arithmetic on
+    // `MAX(id)` would then keep one row too few; finding the boundary row by
+    // position does not.
+    let store = Store::open_in_memory(Database::Debug).unwrap();
+    for second in 0..6 {
+        store
+            .insert(&sample(&format!("2026-09-06T00:00:0{second}.000Z"), 80.0))
+            .unwrap();
+    }
+    store
+        .conn
+        .execute(
+            "DELETE FROM samples WHERE ts = '2026-09-06T00:00:04.000Z'",
+            [],
+        )
+        .unwrap();
+
+    store.retain_newest(3).unwrap();
+
+    assert_eq!(
+        timestamps(&store),
+        [
+            "2026-09-06T00:00:02.000Z",
+            "2026-09-06T00:00:03.000Z",
+            "2026-09-06T00:00:05.000Z",
+        ]
+    );
+}
+
+#[test]
+fn retain_newest_refuses_a_non_positive_row_count() {
     let store = Store::open_in_memory(Database::Debug).unwrap();
     store
         .insert(&sample("2026-09-06T00:00:00.000Z", 80.0))
         .unwrap();
 
-    for hours in [0, -6] {
+    for rows in [0, -6] {
         assert!(
             matches!(
-                store.prune_older_than(hours),
+                store.retain_newest(rows),
                 Err(StoreError::InvalidRetention { .. })
             ),
-            "retention of {hours} hours should be refused"
+            "retaining {rows} rows should be refused"
         );
     }
 
@@ -160,9 +226,9 @@ fn prune_refuses_a_non_positive_retention_window() {
 }
 
 #[test]
-fn prune_on_an_empty_database_is_a_no_op() {
+fn retain_newest_on_an_empty_database_is_a_no_op() {
     let store = Store::open_in_memory(Database::Debug).unwrap();
-    assert_eq!(store.prune_older_than(6).unwrap(), 0);
+    assert_eq!(store.retain_newest(21_600).unwrap(), 0);
 }
 
 #[test]

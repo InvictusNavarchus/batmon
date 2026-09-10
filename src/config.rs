@@ -296,13 +296,15 @@ fn require_into(problems: &mut Vec<String>, holds: bool, message: &str) {
 /// the daemon's wakeup count — and therefore its power draw — predictable.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Schedule {
-    /// Flight recorder period. Every tick writes one row to `debug.db`.
+    /// Flight recorder period. Every tick that reads a battery writes one row
+    /// to `debug.db`; an unreadable or absent one writes nothing.
     pub sample_interval: Duration,
     /// Ticks between rows written to the permanent `battery.db`.
     pub historical_interval_ticks: u64,
     /// Ticks between prune sweeps of `debug.db`.
     pub prune_interval_ticks: u64,
-    /// Rolling window `debug.db` retains.
+    /// Hours of *recording* `debug.db` retains. Time spent not recording does
+    /// not count against it; see [`Schedule::debug_retention_rows`].
     pub debug_retention_hours: i64,
 }
 
@@ -330,8 +332,10 @@ impl Schedule {
         if self.prune_interval_ticks == 0 {
             problems.push("  - prune_interval_ticks must be at least 1".to_owned());
         }
-        if self.debug_retention_hours <= 0 {
-            problems.push("  - debug_retention_hours must be above zero".to_owned());
+        if self.debug_retention_rows() <= 0 {
+            problems.push(
+                "  - debug_retention_hours must span at least one sample_interval".to_owned(),
+            );
         }
 
         if problems.is_empty() {
@@ -339,6 +343,21 @@ impl Schedule {
         } else {
             Err(InvalidThresholds(problems.join("\n")))
         }
+    }
+
+    /// Rows `debug.db` keeps: one retention window's worth of ticks.
+    ///
+    /// Derived rather than stored, so changing the interval cannot leave the
+    /// row count describing a different window than the hours advertise.
+    /// Degenerate inputs yield zero, which validation rejects.
+    #[must_use]
+    pub fn debug_retention_rows(&self) -> i64 {
+        let hours = u64::try_from(self.debug_retention_hours).unwrap_or(0);
+        let window = Duration::from_secs(hours.saturating_mul(3600));
+        window
+            .as_nanos()
+            .checked_div(self.sample_interval.as_nanos())
+            .map_or(0, |rows| i64::try_from(rows).unwrap_or(i64::MAX))
     }
 }
 

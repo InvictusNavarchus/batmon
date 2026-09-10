@@ -21,7 +21,8 @@ pub struct Daemon<S: TelemetrySource, N: Notifier> {
     source: S,
     notifier: N,
     engine: AlertEngine,
-    /// One row per tick, pruned to a rolling window.
+    /// One row per tick that reads a battery, pruned to the newest window's
+    /// worth of rows.
     debug: Store,
     /// One row per minute, kept forever.
     historical: Store,
@@ -91,11 +92,11 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
     }
 
     fn tick(&mut self) -> Result<(), StoreError> {
-        // Retention is a property of the window, not of this tick. Both early
-        // returns below skip the rest of the work, and leaving pruning behind
-        // them meant a battery that stayed unreadable -- or absent -- held the
-        // flight recorder at whatever it contained when reads stopped, well
-        // past the window it advertises.
+        // Safe ahead of the early returns: retention counts rows, so a tick that
+        // records nothing pushes nothing out, and a battery that stays
+        // unreadable -- or absent -- leaves what was recorded before it intact.
+        // That run-up is the evidence; erasing it by age once the outage
+        // outlasted the window was the opposite of what a recorder is for.
         self.prune_if_due()?;
 
         // Unreadable, as opposed to absent: the hardware is still there, so the
@@ -164,17 +165,18 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
         Ok(())
     }
 
-    /// Prune the flight recorder on its interval, skipping the first tick so a
-    /// restart is not a prune.
+    /// Prune the flight recorder on its interval.
+    ///
+    /// Tick zero included: a prune only trims to the newest window's worth of
+    /// rows, so one on restart cannot touch the run before it.
     fn prune_if_due(&mut self) -> Result<(), StoreError> {
-        if self.tick_count > 0
-            && self
-                .tick_count
-                .is_multiple_of(self.schedule.prune_interval_ticks)
+        if self
+            .tick_count
+            .is_multiple_of(self.schedule.prune_interval_ticks)
         {
             let removed = self
                 .debug
-                .prune_older_than(self.schedule.debug_retention_hours)?;
+                .retain_newest(self.schedule.debug_retention_rows())?;
             tracing::debug!(removed, "pruned flight recorder");
         }
         Ok(())

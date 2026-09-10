@@ -237,7 +237,7 @@ fn iso8601_millis_is_fixed_width_so_string_comparison_orders_correctly() {
     let later: Timestamp = "2026-09-06T12:34:56.789Z".parse().unwrap();
 
     // The bug this prevents: jiff's default Display drops trailing zeros,
-    // which inverts the lexicographic order the prune query depends on.
+    // which inverts the lexicographic order time-range queries depend on.
     assert!(earlier.to_string() > later.to_string());
     assert!(iso8601_millis(earlier) < iso8601_millis(later));
 }

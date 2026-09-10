@@ -33,13 +33,13 @@ The installer automatically detects your architecture (`x86_64` or `aarch64`), d
                ├──────────────────────────────┤ ├──────────────────────────────┤
                │ • 1s sample resolution       │ │ • 60s sample resolution      │
                │ • SQLite WAL + sync=NORMAL   │ │ • SQLite WAL + sync=NORMAL   │
-               │ • Auto-pruned (last 6 hours) │ │ • Permanent wear records     │
+               │ • Keeps last 6h of recording │ │ • Permanent wear records     │
                │ • Crash & panic forensics    │ │ • Cycle count & degradation  │
                └──────────────────────────────┘ └──────────────────────────────┘
 ```
 
 1. **High-Frequency Flight Recorder (`debug.db`):**  
-   Records every 1 second directly to SQLite using WAL mode (`PRAGMA synchronous = NORMAL`). Commits are written to the Linux kernel page cache via `write()` without invoking an `fsync()` on each tick, consuming negligible disk I/O and power (<15 mW). Data is immediately queryable across processes. Disk durability operates on a best-effort basis via SQLite's automatic WAL checkpoints (`wal_autocheckpoint = 100` pages) and standard Linux dirty page writeback—preventing database corruption during crashes while trading immediate per-second fsync persistence for drive longevity. Auto-prunes older records on a rolling window (default: 6 hours).
+   Records every 1 second directly to SQLite using WAL mode (`PRAGMA synchronous = NORMAL`). Commits are written to the Linux kernel page cache via `write()` without invoking an `fsync()` on each tick, consuming negligible disk I/O and power (<15 mW). Data is immediately queryable across processes. Disk durability operates on a best-effort basis via SQLite's automatic WAL checkpoints (`wal_autocheckpoint = 100` pages) and standard Linux dirty page writeback—preventing database corruption during crashes while trading immediate per-second fsync persistence for drive longevity. Keeps the most recent 6 hours of *recording* (21,600 rows at 1 Hz), pruning by row count rather than wall-clock age: time spent powered off, suspended, or with the battery unreadable does not count against the window, so the run-up to a crash is still there however long the machine stays off afterwards.
 
 2. **Long-Term Historical Telemetry (`battery.db`):**  
    Records downsampled samples every 60 seconds. Tracks long-term battery degradation, design wear capacity, and software-integrated cycle count over months and years.
@@ -87,10 +87,18 @@ The installer automatically detects your architecture (`x86_64` or `aarch64`), d
 ## 🔍 Post-Mortem Forensics & SQL Recipes
 
 ### 1. Inspect the last 30 seconds before a crash
+Run after rebooting from the crash. By then the daemon is already recording the new boot, so the newest rows are not the crash; this finds the boot before the current one and shows how it ended. A boot that died within seconds yields fewer than 30 rows rather than borrowing from an older boot.
 ```bash
 sqlite3 ~/.local/share/batmon/debug.db "
+WITH previous_boot AS (
+  SELECT boot_id FROM samples
+  WHERE boot_id IS NOT '$(cat /proc/sys/kernel/random/boot_id)'
+  ORDER BY id DESC
+  LIMIT 1
+)
 SELECT ts, power_w, voltage_v, cpu_freq_mhz, cpu_temp_c, gpu_power_w, cpu_pct, top_processes
 FROM samples
+JOIN previous_boot USING (boot_id)
 ORDER BY id DESC
 LIMIT 30;"
 ```
