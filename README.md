@@ -87,10 +87,12 @@ The installer automatically detects your architecture (`x86_64` or `aarch64`), d
 ## 🔍 Post-Mortem Forensics & SQL Recipes
 
 ### 1. Inspect the last 30 seconds before a crash
+Run after rebooting from the crash. By then the daemon is already recording the new boot, so the newest rows are not the crash; this skips everything from the current boot and shows how the previous one ended.
 ```bash
 sqlite3 ~/.local/share/batmon/debug.db "
 SELECT ts, power_w, voltage_v, cpu_freq_mhz, cpu_temp_c, gpu_power_w, cpu_pct, top_processes
 FROM samples
+WHERE boot_id IS NOT '$(cat /proc/sys/kernel/random/boot_id)'
 ORDER BY id DESC
 LIMIT 30;"
 ```
