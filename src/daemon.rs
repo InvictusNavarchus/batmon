@@ -164,13 +164,14 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
         Ok(())
     }
 
-    /// Prune the flight recorder on its interval, skipping the first tick so a
-    /// restart is not a prune.
+    /// Prune the flight recorder on its interval.
+    ///
+    /// Tick zero included: a prune only trims to the newest window's worth of
+    /// rows, so one on restart cannot touch the run before it.
     fn prune_if_due(&mut self) -> Result<(), StoreError> {
-        if self.tick_count > 0
-            && self
-                .tick_count
-                .is_multiple_of(self.schedule.prune_interval_ticks)
+        if self
+            .tick_count
+            .is_multiple_of(self.schedule.prune_interval_ticks)
         {
             let removed = self
                 .debug

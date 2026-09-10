@@ -358,17 +358,6 @@ fn a_restart_falls_back_to_the_historical_database() {
     );
 }
 
-#[test]
-fn the_first_tick_does_not_prune() {
-    // A restart must not be a prune; the schedule skips tick zero.
-    let mut daemon = daemon(Scripted::repeating(present(80.0, 46.0)));
-    daemon.schedule.prune_interval_ticks = 1;
-
-    daemon.run_tick();
-
-    assert!(daemon.debug.latest().unwrap().is_some());
-}
-
 /// A row from a run that ended long ago, as a crash followed by a long
 /// power-off leaves it.
 fn before_the_power_off() -> Sample {
