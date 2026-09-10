@@ -27,7 +27,31 @@ sign-tag = false
 # Refuse to release from a branch other than master, or with a dirty tree.
 allow-branch = ["master"]
 
+# Roll CHANGELOG.md over inside the release commit, so the tag already carries
+# the finished section: "## [Unreleased] - ReleaseDate" becomes
+# "## [x.y.z] - <today>", a fresh empty Unreleased heading goes above it, and
+# the compare links at the bottom move along. These run in order, and the first
+# rewrites *every* "Unreleased" — the word must not appear anywhere else in the
+# file.
+pre-release-replacements = [
+  { file = "CHANGELOG.md", search = "Unreleased", replace = "{{version}}", min = 1 },
+  { file = "CHANGELOG.md", search = "\\.\\.\\.HEAD", replace = "...{{tag_name}}", exactly = 1 },
+  { file = "CHANGELOG.md", search = "ReleaseDate", replace = "{{date}}", min = 1 },
+  { file = "CHANGELOG.md", search = "<!-- next-header -->", replace = "<!-- next-header -->\n\n## [Unreleased] - ReleaseDate", exactly = 1 },
+  { file = "CHANGELOG.md", search = "<!-- next-url -->", replace = "<!-- next-url -->\n[Unreleased]: {{repository}}/compare/{{tag_name}}...HEAD", exactly = 1 },
+]
+
+# Refuse to release with nothing under the heading, since that section is the
+# release notes. The hook runs after the replacements but also during a dry
+# run, which does not write them — so the section to check is still called
+# Unreleased in a preview and already renamed in a real run.
+pre-release-hook = [
+  "sh", "-c",
+  'if [ "$DRY_RUN" = true ]; then v=Unreleased; else v="$NEW_VERSION"; fi; scripts/release-notes.sh "$v" >/dev/null',
+]
+
 # GitHub releases are not created here. cargo-release stops at the tag; publish
 # the release from it with:
 #
-#   gh release create "v$(cargo pkgid | sed 's/.*#//')" --generate-notes
+#   v=$(cargo pkgid | sed 's/.*#//')
+#   gh release create "v$v" --notes-file <(scripts/release-notes.sh "$v")
