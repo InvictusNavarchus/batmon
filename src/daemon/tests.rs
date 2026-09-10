@@ -56,7 +56,6 @@ impl TelemetrySource for Scripted {
 
 fn present(charge_pct: f64, energy_wh: f64) -> Sample {
     Sample {
-        // Stamped now, so retention-window tests measure against real time.
         ts: crate::formats::now_iso8601_millis(),
         charge_pct,
         status: "Discharging".to_owned(),
@@ -370,53 +369,68 @@ fn the_first_tick_does_not_prune() {
     assert!(daemon.debug.latest().unwrap().is_some());
 }
 
+/// A row from a run that ended long ago, as a crash followed by a long
+/// power-off leaves it.
+fn before_the_power_off() -> Sample {
+    Sample {
+        ts: "2020-01-01T00:00:00.000Z".to_owned(),
+        ..present(50.0, 30.0)
+    }
+}
+
 #[test]
-fn pruning_still_runs_on_ticks_that_produce_no_sample() {
-    // Retention describes the window, not this tick. A battery that stays
-    // unreadable used to hold the recorder at whatever it contained when the
-    // reads stopped, indefinitely past the advertised window.
-    let mut daemon = daemon(WithGaps::new(vec![None]));
+fn a_long_power_off_does_not_age_out_the_previous_run() {
+    // Pruning by wall-clock age erased this row five minutes into the next
+    // boot whenever the machine had been off longer than the window -- the
+    // run-up to a crash, gone before anyone could read it.
+    let mut daemon = daemon(Scripted::repeating(present(80.0, 46.0)));
     daemon.schedule.prune_interval_ticks = 1;
+    daemon.debug.insert(&before_the_power_off()).unwrap();
 
-    daemon
-        .debug
-        .insert(&Sample {
-            ts: "2020-01-01T00:00:00.000Z".to_owned(),
-            ..present(50.0, 30.0)
-        })
-        .unwrap();
+    for _ in 0..3 {
+        daemon.run_tick();
+    }
 
-    daemon.run_tick(); // tick 0 never prunes
-    daemon.run_tick(); // tick 1 does, despite yielding no sample
-
-    assert!(
-        daemon.debug.latest().unwrap().is_none(),
-        "the stale row must be pruned even though no tick produced a sample"
+    assert_eq!(
+        daemon.debug.row_count().unwrap(),
+        4,
+        "the previous run is still the newest recording, however old"
     );
 }
 
 #[test]
-fn pruning_drops_rows_outside_the_retention_window() {
+fn an_unreadable_stretch_does_not_erase_what_led_up_to_it() {
+    // Reverses the reasoning of a8a3626, which pruned through the stretch so
+    // the recorder would honour a wall-clock window: after six unreadable
+    // hours, that deleted the lead-up to the very fault being investigated.
+    let mut daemon = daemon(WithGaps::new(vec![None]));
+    daemon.schedule.prune_interval_ticks = 1;
+    daemon.debug.insert(&before_the_power_off()).unwrap();
+
+    for _ in 0..3 {
+        daemon.run_tick();
+    }
+
+    assert_eq!(daemon.debug.latest().unwrap(), Some(before_the_power_off()));
+}
+
+#[test]
+fn pruning_keeps_the_newest_window_of_samples() {
     let mut daemon = daemon(Scripted::repeating(present(80.0, 46.0)));
-    daemon.schedule.prune_interval_ticks = 2;
+    daemon.schedule.prune_interval_ticks = 1;
+    // One hour at twenty-minute ticks: a window of three rows.
+    daemon.schedule.debug_retention_hours = 1;
+    daemon.schedule.sample_interval = std::time::Duration::from_secs(20 * 60);
+    daemon.debug.insert(&before_the_power_off()).unwrap();
 
-    // A row far outside the window, written directly.
-    daemon
-        .debug
-        .insert(&Sample {
-            ts: "2020-01-01T00:00:00.000Z".to_owned(),
-            ..present(50.0, 30.0)
-        })
-        .unwrap();
+    for _ in 0..4 {
+        daemon.run_tick();
+    }
 
-    daemon.run_tick();
-    daemon.run_tick();
-    daemon.run_tick();
-
-    // The stale row is gone and the recent ones survived.
-    let survivor = daemon.debug.latest().unwrap().unwrap();
-    assert_ne!(survivor.ts, "2020-01-01T00:00:00.000Z");
-    assert_eq!(survivor.charge_pct, 80.0);
+    // Five rows written. The prune runs at the top of the tick, so what remains
+    // is the window plus the row the last tick wrote after it; the oldest --
+    // the pre-power-off row -- is the one that went.
+    assert_eq!(daemon.debug.row_count().unwrap(), 3 + 1);
 }
 
 #[test]

@@ -46,6 +46,30 @@ fn schedule_defaults_match_the_documented_cadence() {
     assert_eq!(s.historical_interval_ticks, 60);
     assert_eq!(s.prune_interval_ticks, 300);
     assert_eq!(s.debug_retention_hours, 6);
+    assert_eq!(s.debug_retention_rows(), 21_600);
+}
+
+#[test]
+fn retention_rows_follow_the_sample_interval() {
+    let s = Schedule {
+        sample_interval: Duration::from_secs(2),
+        ..Schedule::default()
+    };
+    assert_eq!(s.debug_retention_rows(), 10_800);
+}
+
+#[test]
+fn rejects_a_retention_window_shorter_than_one_sample() {
+    let err = Schedule {
+        sample_interval: Duration::from_secs(2 * 3600),
+        debug_retention_hours: 1,
+        ..Schedule::default()
+    }
+    .validate()
+    .unwrap_err()
+    .to_string();
+
+    assert!(err.contains("debug_retention_hours"), "{err}");
 }
 
 #[test]

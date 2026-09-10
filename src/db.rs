@@ -6,11 +6,9 @@
 
 use std::path::{Path, PathBuf};
 
-use jiff::{SignedDuration, Timestamp};
-use rusqlite::{Connection, Row, named_params};
+use rusqlite::{Connection, OptionalExtension, Row, named_params};
 
 use crate::cycles::compute_estimated_cycles;
-use crate::formats::iso8601_millis;
 use crate::migrations::{DEBUG_MIGRATIONS, HISTORICAL_MIGRATIONS, Migration, migrate};
 use crate::types::{PowerState, Sample};
 
@@ -24,10 +22,8 @@ pub enum StoreError {
         path: PathBuf,
         source: std::io::Error,
     },
-    #[error("timestamp arithmetic failed: {0}")]
-    Time(#[from] jiff::Error),
-    #[error("retention window must be positive, got {hours} hours")]
-    InvalidRetention { hours: i64 },
+    #[error("retention must keep at least one row, got {rows}")]
+    InvalidRetention { rows: i64 },
 }
 
 type Result<T> = std::result::Result<T, StoreError>;
@@ -179,25 +175,50 @@ impl Store {
         Ok(previous)
     }
 
-    /// Drop rows older than `hours`, returning how many went.
-    pub fn prune_older_than(&self, hours: i64) -> Result<usize> {
-        // A negative window puts the cutoff in the future, and this statement
-        // deletes everything older than it — which is every row. Schedule
-        // validation already rejects that, but the guard belongs here too: this
-        // is the boundary where the destructive statement is issued, and it is
-        // public.
-        if hours <= 0 {
-            return Err(StoreError::InvalidRetention { hours });
+    /// Keep only the newest `rows` rows, returning how many older ones went.
+    ///
+    /// Counted in insertion order, never by age. Time in which nothing was
+    /// recorded — the machine off, suspended, or its battery unreadable — adds
+    /// no rows and so pushes nothing out. Pruning by wall-clock age instead
+    /// erased the run before a crash five minutes into the next boot, whenever
+    /// the machine had stayed off longer than the window: exactly the rows a
+    /// flight recorder exists to keep.
+    pub fn retain_newest(&self, rows: i64) -> Result<usize> {
+        // Zero would delete every row, and a negative count reaches SQLite as an
+        // OFFSET it clamps to zero, keeping only one. Schedule validation rules
+        // out both, but the guard belongs here too: this is the boundary where
+        // the destructive statement is issued, and it is public.
+        if rows <= 0 {
+            return Err(StoreError::InvalidRetention { rows });
         }
 
-        let cutoff = Timestamp::now().checked_sub(SignedDuration::from_hours(hours))?;
-        // Compared as text, which is only sound because every timestamp is
-        // written fixed-width. See formats::iso8601_millis.
-        let removed = self.conn.execute(
-            "DELETE FROM samples WHERE ts < ?1",
-            [iso8601_millis(cutoff)],
-        )?;
+        // The oldest row that survives: the `rows`-th newest.
+        let boundary: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT id FROM samples ORDER BY id DESC LIMIT 1 OFFSET ?1",
+                [rows - 1],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        // Fewer rows than the limit: nothing is past it yet.
+        let Some(boundary) = boundary else {
+            return Ok(0);
+        };
+
+        let removed = self
+            .conn
+            .execute("DELETE FROM samples WHERE id < ?1", [boundary])?;
         Ok(removed)
+    }
+
+    /// How many rows the table holds.
+    #[cfg(test)]
+    pub(crate) fn row_count(&self) -> Result<i64> {
+        Ok(self
+            .conn
+            .query_row("SELECT COUNT(*) FROM samples", [], |row| row.get(0))?)
     }
 
     /// Flush the write-ahead log into the main database file.
