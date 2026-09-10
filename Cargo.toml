@@ -1,6 +1,6 @@
 [package]
 name = "batmon"
-version = "0.8.1"
+version = "0.8.2"
 edition = "2024"
 rust-version = "1.87"
 description = "Battery health monitor & flight recorder for Linux laptops (sysfs -> SQLite)"
