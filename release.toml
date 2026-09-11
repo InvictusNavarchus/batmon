@@ -50,8 +50,6 @@ pre-release-hook = [
   'if [ "$DRY_RUN" = true ]; then v=Unreleased; else v="$NEW_VERSION"; fi; scripts/release-notes.sh "$v" >/dev/null',
 ]
 
-# GitHub releases are not created here. cargo-release stops at the tag; publish
-# the release from it with:
-#
-#   v=$(cargo pkgid | sed 's/.*#//')
-#   gh release create "v$v" --notes-file <(scripts/release-notes.sh "$v")
+# GitHub releases are not created here. cargo-release stops at the pushed tag;
+# .github/workflows/release.yml builds from it and publishes the release, with
+# that version's CHANGELOG.md section as the notes.
