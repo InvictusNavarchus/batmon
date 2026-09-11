@@ -10,6 +10,8 @@ name: Release
 # the web UI: the publish job creates it, and fails if it already exists.
 #
 # A manual run builds the matrix only — a rehearsal, never a release.
+#
+# The full release process is in docs/releasing.md.
 
 on:
   push:

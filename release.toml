@@ -1,14 +1,6 @@
 # cargo-release configuration, replacing the release-it setup that went with
-# package.json.
-#
-#   cargo install cargo-release
-#
-#   cargo release minor        # previews only — cargo-release is dry-run by default
-#   cargo release minor -x     # -x/--execute is what actually performs it
-#
-# Substitute patch or major for minor. The dry run is not optional politeness:
-# there are no interactive prompts, so --execute is the confirmation step, and
-# running without it is the single most common way to conclude nothing happened.
+# package.json. How to cut a release, and what each step does, is in
+# docs/releasing.md; the comments here explain individual settings.
 #
 # The version lives only in Cargo.toml now; nothing else needs to be kept in
 # step with it.
