@@ -14,7 +14,7 @@ tag-message = "Release v{{version}}"
 publish = false
 
 push = true
-sign-tag = false
+sign-tag = true
 
 # Refuse to release from a branch other than master, or with a dirty tree.
 allow-branch = ["master"]
