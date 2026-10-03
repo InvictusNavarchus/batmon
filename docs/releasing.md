@@ -8,7 +8,9 @@ them, and how to write the changelog entries that become the release notes.
 1. **Write changelog entries as part of each change**, under the
    `## [Unreleased]` heading at the top of [`CHANGELOG.md`](../CHANGELOG.md).
    Write them while the context is fresh, not at release time. See
-   [§3](#3-writing-changelog-entries) for what to write.
+   [§3](#3-writing-changelog-entries) for what to write. Do not create a new
+   version heading manually; `cargo-release` rolls `[Unreleased]` into the target
+   version during step 3.
 2. **Preview the release:**
 
    ```bash
