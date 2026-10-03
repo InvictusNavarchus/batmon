@@ -13,6 +13,20 @@ release notes; v0.3.0 and earlier had none.
 
 ## [Unreleased] - ReleaseDate
 
+**Upgrading:** databases migrate automatically on first start.
+
+### Added
+
+- Storage stall and I/O pressure telemetry in the flight recorder and
+  historical databases (#16):
+  - `iowait_pct`: CPU time spent waiting on disk I/O, separated from idle time
+    in `/proc/stat`.
+  - `procs_blocked`: count of processes currently waiting for I/O (`nr_iowait`).
+  - `dirty_kb`: uncommitted dirty writeback memory from `/proc/meminfo`.
+  - `psi_io_some` and `psi_io_full`: 10-second rolling averages from Linux
+    Pressure Stall Information (`/proc/pressure/io`), falling back to `None` on
+    kernels built without `CONFIG_PSI`.
+
 ## [0.8.2] - 2026-09-10
 
 ### Changed
