@@ -67,8 +67,13 @@ The installer automatically detects your architecture (`x86_64` or `aarch64`), d
 | | `gpu_power_w` | sysfs (`hwmon`) | AMD APU / GPU package power (PPT via amdgpu) (Watts) |
 | | `gpu_pct` | sysfs (DRM) | GPU compute / shader utilization (%) |
 | **System Load & Host** | `cpu_pct` | `/proc/stat` | Global CPU utilization (%) |
+| | `iowait_pct` | `/proc/stat` | CPU I/O wait utilization (%) |
 | | `mem_pct` | `/proc/meminfo` | Global Memory utilization (%) |
+| | `dirty_kb` | `/proc/meminfo` | Uncommitted dirty writeback memory (kB) |
 | | `load1` | `/proc/loadavg` | 1-minute system load average |
+| | `procs_blocked` | `/proc/stat` | Count of processes blocked in uninterruptible disk sleep (`D` state) |
+| | `psi_io_some` | `/proc/pressure/io` | Linux PSI I/O pressure `some` (10s rolling avg %) |
+| | `psi_io_full` | `/proc/pressure/io` | Linux PSI I/O pressure `full` (10s rolling avg %) |
 | | `boot_id` | `/proc/sys/kernel/random/boot_id` | Linux kernel boot session UUID |
 | | `uptime_s` | `/proc/uptime` | Monotonic system uptime (seconds) |
 | | `top_processes` | `/proc/[pid]/stat` | Top 5 aggregated process groups by 1s CPU delta (JSON) |
@@ -96,7 +101,7 @@ WITH previous_boot AS (
   ORDER BY id DESC
   LIMIT 1
 )
-SELECT ts, power_w, voltage_v, cpu_freq_mhz, cpu_temp_c, gpu_power_w, cpu_pct, top_processes
+SELECT ts, power_w, voltage_v, cpu_freq_mhz, cpu_temp_c, gpu_power_w, cpu_pct, iowait_pct, procs_blocked, psi_io_full, top_processes
 FROM samples
 JOIN previous_boot USING (boot_id)
 ORDER BY id DESC
