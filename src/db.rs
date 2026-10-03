@@ -52,13 +52,15 @@ const INSERT_SQL: &str = "INSERT INTO samples (
     power_w, voltage_v, voltage_design_v, cycle_count, estimated_cycle_count,
     battery_temp_c, health_pct, is_charging, is_present, time_to_empty_s, time_to_full_s,
     cpu_temp_c, gpu_temp_c, nvme_temp_c, cpu_pct, mem_pct, top_processes,
-    cpu_freq_mhz, gpu_pct, gpu_power_w, load1, boot_id, uptime_s
+    cpu_freq_mhz, gpu_pct, gpu_power_w, load1, boot_id, uptime_s,
+    iowait_pct, procs_blocked, dirty_kb, psi_io_some, psi_io_full
 ) VALUES (
     :ts, :charge_pct, :status, :power_state, :energy_wh, :energy_full_wh, :energy_design_wh,
     :power_w, :voltage_v, :voltage_design_v, :cycle_count, :estimated_cycle_count,
     :battery_temp_c, :health_pct, :is_charging, :is_present, :time_to_empty_s, :time_to_full_s,
     :cpu_temp_c, :gpu_temp_c, :nvme_temp_c, :cpu_pct, :mem_pct, :top_processes,
-    :cpu_freq_mhz, :gpu_pct, :gpu_power_w, :load1, :boot_id, :uptime_s
+    :cpu_freq_mhz, :gpu_pct, :gpu_power_w, :load1, :boot_id, :uptime_s,
+    :iowait_pct, :procs_blocked, :dirty_kb, :psi_io_some, :psi_io_full
 )";
 
 /// An open, migrated connection to one of the databases.
@@ -153,6 +155,11 @@ impl Store {
                 ":load1": sample.load1,
                 ":boot_id": sample.boot_id,
                 ":uptime_s": sample.uptime_s,
+                ":iowait_pct": sample.iowait_pct,
+                ":procs_blocked": sample.procs_blocked,
+                ":dirty_kb": sample.dirty_kb,
+                ":psi_io_some": sample.psi_io_some,
+                ":psi_io_full": sample.psi_io_full,
             },
         )?;
         Ok(())
@@ -290,6 +297,11 @@ fn sample_from_row(row: &Row<'_>) -> rusqlite::Result<Sample> {
         gpu_pct: row.get("gpu_pct")?,
         gpu_power_w: row.get("gpu_power_w")?,
         load1: row.get("load1")?,
+        iowait_pct: row.get("iowait_pct")?,
+        procs_blocked: row.get("procs_blocked")?,
+        dirty_kb: row.get("dirty_kb")?,
+        psi_io_some: row.get("psi_io_some")?,
+        psi_io_full: row.get("psi_io_full")?,
         boot_id: row.get("boot_id")?,
         uptime_s: row.get("uptime_s")?,
     })

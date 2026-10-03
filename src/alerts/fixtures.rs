@@ -36,6 +36,11 @@ pub(crate) fn mock() -> Sample {
         gpu_pct: None,
         gpu_power_w: None,
         load1: Some(0.5),
+        iowait_pct: None,
+        procs_blocked: None,
+        dirty_kb: None,
+        psi_io_some: None,
+        psi_io_full: None,
         boot_id: Some("mock-boot-id".to_owned()),
         uptime_s: Some(12_345.6),
     }

@@ -30,11 +30,11 @@ fn user_version(conn: &Connection) -> u32 {
 }
 
 #[test]
-fn historical_ladder_reaches_version_seven_with_every_column() {
+fn historical_ladder_reaches_version_eight_with_every_column() {
     let conn = memory();
     migrate(&conn, HISTORICAL_MIGRATIONS).unwrap();
 
-    assert_eq!(user_version(&conn), 7);
+    assert_eq!(user_version(&conn), 8);
 
     let cols = columns(&conn, "samples");
     for expected in [
@@ -56,6 +56,11 @@ fn historical_ladder_reaches_version_seven_with_every_column() {
         "power_state",
         "boot_id",
         "uptime_s",
+        "iowait_pct",
+        "procs_blocked",
+        "dirty_kb",
+        "psi_io_some",
+        "psi_io_full",
     ] {
         assert!(cols.iter().any(|c| c == expected), "missing {expected}");
     }
@@ -63,11 +68,11 @@ fn historical_ladder_reaches_version_seven_with_every_column() {
 }
 
 #[test]
-fn debug_ladder_reaches_version_five_with_every_column() {
+fn debug_ladder_reaches_version_six_with_every_column() {
     let conn = memory();
     migrate(&conn, DEBUG_MIGRATIONS).unwrap();
 
-    assert_eq!(user_version(&conn), 5);
+    assert_eq!(user_version(&conn), 6);
 
     let cols = columns(&conn, "samples");
     for expected in [
@@ -79,6 +84,11 @@ fn debug_ladder_reaches_version_five_with_every_column() {
         "power_state",
         "boot_id",
         "uptime_s",
+        "iowait_pct",
+        "procs_blocked",
+        "dirty_kb",
+        "psi_io_some",
+        "psi_io_full",
     ] {
         assert!(cols.iter().any(|c| c == expected), "missing {expected}");
     }
@@ -97,7 +107,7 @@ fn running_the_ladder_twice_changes_nothing() {
 
     migrate(&conn, HISTORICAL_MIGRATIONS).unwrap();
 
-    assert_eq!(user_version(&conn), 7);
+    assert_eq!(user_version(&conn), 8);
     assert_eq!(columns(&conn, "samples"), after_first);
 }
 
@@ -112,9 +122,15 @@ fn resumes_from_an_intermediate_version() {
 
     migrate(&conn, HISTORICAL_MIGRATIONS).unwrap();
 
-    assert_eq!(user_version(&conn), 7);
+    assert_eq!(user_version(&conn), 8);
     let cols = columns(&conn, "samples");
-    for expected in ["cpu_pct", "boot_id", "uptime_s"] {
+    for expected in [
+        "cpu_pct",
+        "boot_id",
+        "uptime_s",
+        "iowait_pct",
+        "psi_io_full",
+    ] {
         assert!(cols.iter().any(|c| c == expected), "missing {expected}");
     }
 }
@@ -291,5 +307,5 @@ fn a_database_already_at_the_latest_version_is_left_alone() {
         .query_row("SELECT count(*) FROM samples", [], |row| row.get(0))
         .unwrap();
     assert_eq!(count, 1);
-    assert_eq!(user_version(&conn), 7);
+    assert_eq!(user_version(&conn), 8);
 }

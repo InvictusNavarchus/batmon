@@ -27,7 +27,43 @@ fn cpu_times_sum_the_aggregate_line() {
 
     let times = reader.cpu_times().unwrap();
     assert_eq!(times.idle, 840, "idle counts iowait");
+    assert_eq!(times.iowait, 40, "iowait tracked separately");
     assert_eq!(times.total, 1_000);
+}
+
+#[test]
+fn cpu_rates_computes_both_cpu_and_iowait() {
+    let (tmp, mut reader) = procfs(&[("stat", &stat_line(100, 0, 100, 800, 0))]);
+    let first = reader.cpu_times().unwrap();
+    assert_eq!(reader.cpu_rates(first), None);
+
+    // 250 more ticks: 50 user, 50 sys, 100 idle, 50 iowait:
+    // Total delta: 250.
+    // Idle delta: 150 (100 idle + 50 iowait).
+    // Busy: 100 / 250 = 40.0%.
+    // IOWait: 50 / 250 = 20.0%.
+    std::fs::write(tmp.path().join("stat"), stat_line(150, 0, 150, 900, 50)).unwrap();
+    let second = reader.cpu_times().unwrap();
+
+    let rates = reader.cpu_rates(second).unwrap();
+    assert_eq!(rates.cpu_pct, 40.0);
+    assert_eq!(rates.iowait_pct, 20.0);
+}
+
+#[test]
+fn procs_blocked_is_parsed_from_stat() {
+    let stat = "cpu  100 0 100 800 0 0 0 0 0 0\nprocs_running 2\nprocs_blocked 7\n";
+    let (_tmp, reader) = procfs(&[("stat", stat)]);
+    let stat_info = reader.proc_stat().unwrap();
+    assert_eq!(stat_info.procs_blocked, Some(7));
+}
+
+#[test]
+fn missing_procs_blocked_yields_none() {
+    let stat = "cpu  100 0 100 800 0 0 0 0 0 0\n";
+    let (_tmp, reader) = procfs(&[("stat", stat)]);
+    let stat_info = reader.proc_stat().unwrap();
+    assert_eq!(stat_info.procs_blocked, None);
 }
 
 #[test]
@@ -160,6 +196,41 @@ fn meminfo_lines_without_a_colon_are_skipped_not_fatal() {
     )]);
 
     assert_eq!(reader.mem_pct(), Some(60.0));
+}
+
+#[test]
+fn dirty_memory_is_parsed_from_meminfo() {
+    let (_tmp, reader) = procfs(&[(
+        "meminfo",
+        "MemTotal:       1000000 kB\nMemFree:          10000 kB\nDirty:             6144 kB\n",
+    )]);
+    assert_eq!(reader.dirty_kb(), Some(6_144));
+}
+
+#[test]
+fn missing_dirty_memory_yields_none() {
+    let (_tmp, reader) = procfs(&[(
+        "meminfo",
+        "MemTotal:       1000000 kB\nMemFree:          10000 kB\n",
+    )]);
+    assert_eq!(reader.dirty_kb(), None);
+}
+
+#[test]
+fn io_pressure_parses_some_and_full() {
+    let contents = "some avg10=12.34 avg60=5.67 avg300=1.23 total=123456\nfull avg10=7.89 avg60=2.34 avg300=0.50 total=78901\n";
+    let (_tmp, reader) = procfs(&[("pressure/io", contents)]);
+    let pressure = reader.io_pressure();
+    assert_eq!(pressure.some_avg10, Some(12.34));
+    assert_eq!(pressure.full_avg10, Some(7.89));
+}
+
+#[test]
+fn io_pressure_missing_file_yields_defaults() {
+    let (_tmp, reader) = procfs(&[("stat", "cpu  1 1 1 1\n")]);
+    let pressure = reader.io_pressure();
+    assert_eq!(pressure.some_avg10, None);
+    assert_eq!(pressure.full_avg10, None);
 }
 
 #[test]
