@@ -122,7 +122,7 @@ pub struct Sample {
     pub load1: Option<f64>,
     /// CPU I/O wait percentage over the interval.
     pub iowait_pct: Option<f64>,
-    /// Number of processes currently blocked waiting for I/O (`D` state).
+    /// Number of processes currently blocked waiting for I/O (`procs_blocked` / `nr_iowait`).
     pub procs_blocked: Option<i64>,
     /// Uncommitted dirty memory in kilobytes waiting to be written to disk.
     pub dirty_kb: Option<i64>,

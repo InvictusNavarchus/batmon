@@ -150,8 +150,19 @@ fn assembles_a_complete_sample_from_every_source() {
     .unwrap();
     machine.process(1, "systemd", 0);
 
-    let sample = machine
-        .sampler()
+    let mut sampler = machine.sampler();
+    sampler
+        .sample()
+        .expect("a readable battery yields a sample");
+
+    // Advance proc/stat to establish rates across the tick:
+    // 250 ticks delta: 100 busy (50 user + 50 sys) = 40.0%, 50 iowait = 20.0%.
+    machine.proc(&[(
+        "stat",
+        "cpu  1050 100 550 8100 450 0 0 0 0 0\nprocs_blocked 3\n",
+    )]);
+
+    let sample = sampler
         .sample()
         .expect("a readable battery yields a sample");
 
@@ -170,6 +181,8 @@ fn assembles_a_complete_sample_from_every_source() {
 
     assert_eq!(sample.cpu_freq_mhz, Some(1749.0));
     assert_eq!(sample.gpu_pct, Some(0.0));
+    assert_eq!(sample.cpu_pct, Some(40.0));
+    assert_eq!(sample.iowait_pct, Some(20.0));
     assert_eq!(sample.mem_pct, Some(60.0));
     assert_eq!(sample.dirty_kb, Some(2048));
     assert_eq!(sample.procs_blocked, Some(3));

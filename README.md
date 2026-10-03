@@ -71,7 +71,7 @@ The installer automatically detects your architecture (`x86_64` or `aarch64`), d
 | | `mem_pct` | `/proc/meminfo` | Global Memory utilization (%) |
 | | `dirty_kb` | `/proc/meminfo` | Uncommitted dirty writeback memory (kB) |
 | | `load1` | `/proc/loadavg` | 1-minute system load average |
-| | `procs_blocked` | `/proc/stat` | Count of processes blocked in uninterruptible disk sleep (`D` state) |
+| | `procs_blocked` | `/proc/stat` | Count of processes currently waiting for I/O (`nr_iowait`) |
 | | `psi_io_some` | `/proc/pressure/io` | Linux PSI I/O pressure `some` (10s rolling avg %) |
 | | `psi_io_full` | `/proc/pressure/io` | Linux PSI I/O pressure `full` (10s rolling avg %) |
 | | `boot_id` | `/proc/sys/kernel/random/boot_id` | Linux kernel boot session UUID |
