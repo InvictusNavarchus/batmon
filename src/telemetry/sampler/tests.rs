@@ -60,13 +60,17 @@ impl Machine {
             ("present", "1"),
         ]);
         machine.proc(&[
-            ("stat", "cpu  1000 100 500 8000 400 0 0 0 0 0\n"),
+            ("stat", "cpu  1000 100 500 8000 400 0 0 0 0 0\nprocs_blocked 3\n"),
             (
                 "meminfo",
-                "MemTotal:       1000000 kB\nMemAvailable:    400000 kB\n",
+                "MemTotal:       1000000 kB\nMemAvailable:    400000 kB\nDirty:             2048 kB\n",
             ),
             ("loadavg", "1.19 0.94 0.83 2/1543 1\n"),
             ("uptime", "59289.86 412345.67\n"),
+            (
+                "pressure/io",
+                "some avg10=2.50 avg60=1.00 avg300=0.50 total=1000\nfull avg10=1.25 avg60=0.50 avg300=0.10 total=500\n",
+            ),
             (
                 "sys/kernel/random/boot_id",
                 "7d0e0b50-a9e4-4880-8366-14fe16e77f9b\n",
@@ -146,8 +150,19 @@ fn assembles_a_complete_sample_from_every_source() {
     .unwrap();
     machine.process(1, "systemd", 0);
 
-    let sample = machine
-        .sampler()
+    let mut sampler = machine.sampler();
+    sampler
+        .sample()
+        .expect("a readable battery yields a sample");
+
+    // Advance proc/stat to establish rates across the tick:
+    // 250 ticks delta: 100 busy (50 user + 50 sys) = 40.0%, 50 iowait = 20.0%.
+    machine.proc(&[(
+        "stat",
+        "cpu  1050 100 550 8100 450 0 0 0 0 0\nprocs_blocked 3\n",
+    )]);
+
+    let sample = sampler
         .sample()
         .expect("a readable battery yields a sample");
 
@@ -166,7 +181,13 @@ fn assembles_a_complete_sample_from_every_source() {
 
     assert_eq!(sample.cpu_freq_mhz, Some(1749.0));
     assert_eq!(sample.gpu_pct, Some(0.0));
+    assert_eq!(sample.cpu_pct, Some(40.0));
+    assert_eq!(sample.iowait_pct, Some(20.0));
     assert_eq!(sample.mem_pct, Some(60.0));
+    assert_eq!(sample.dirty_kb, Some(2048));
+    assert_eq!(sample.procs_blocked, Some(3));
+    assert_eq!(sample.psi_io_some, Some(2.50));
+    assert_eq!(sample.psi_io_full, Some(1.25));
     assert_eq!(sample.load1, Some(1.19));
     assert_eq!(sample.uptime_s, Some(59_289.86));
     assert_eq!(

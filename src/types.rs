@@ -120,6 +120,16 @@ pub struct Sample {
     pub gpu_pct: Option<f64>,
     pub gpu_power_w: Option<f64>,
     pub load1: Option<f64>,
+    /// CPU I/O wait percentage over the interval.
+    pub iowait_pct: Option<f64>,
+    /// Number of processes currently blocked waiting for I/O (`procs_blocked` / `nr_iowait`).
+    pub procs_blocked: Option<i64>,
+    /// Uncommitted dirty memory in kilobytes waiting to be written to disk.
+    pub dirty_kb: Option<i64>,
+    /// Linux Pressure Stall Information (PSI) I/O `some` 10-second average percentage.
+    pub psi_io_some: Option<f64>,
+    /// Linux Pressure Stall Information (PSI) I/O `full` 10-second average percentage.
+    pub psi_io_full: Option<f64>,
     /// Kernel boot session UUID, used to detect reboots between samples.
     pub boot_id: Option<String>,
     /// Monotonic uptime, used to detect reboots when `boot_id` is unavailable.

@@ -32,6 +32,11 @@ fn sample(ts: &str, charge_pct: f64) -> Sample {
         gpu_pct: Some(3.0),
         gpu_power_w: Some(6.25),
         load1: Some(0.42),
+        iowait_pct: Some(1.2),
+        procs_blocked: Some(0),
+        dirty_kb: Some(4_096),
+        psi_io_some: Some(0.15),
+        psi_io_full: Some(0.0),
         boot_id: Some("boot-uuid-1".to_owned()),
         uptime_s: Some(1_000.0),
     }
@@ -335,8 +340,8 @@ fn the_two_databases_get_their_own_ladders() {
             .unwrap()
     };
 
-    assert_eq!(version(&historical), 7);
-    assert_eq!(version(&debug), 5);
+    assert_eq!(version(&historical), 8);
+    assert_eq!(version(&debug), 6);
 }
 
 #[test]

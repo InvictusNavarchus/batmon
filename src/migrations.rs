@@ -210,6 +210,17 @@ pub const HISTORICAL_MIGRATIONS: &[Migration] = &[
             add_column_if_not_exists(conn, "samples", "uptime_s", "REAL")
         },
     },
+    Migration {
+        version: 8,
+        name: "add_io_stall_and_pressure_telemetry",
+        up: |conn| {
+            add_column_if_not_exists(conn, "samples", "iowait_pct", "REAL")?;
+            add_column_if_not_exists(conn, "samples", "procs_blocked", "INTEGER")?;
+            add_column_if_not_exists(conn, "samples", "dirty_kb", "INTEGER")?;
+            add_column_if_not_exists(conn, "samples", "psi_io_some", "REAL")?;
+            add_column_if_not_exists(conn, "samples", "psi_io_full", "REAL")
+        },
+    },
 ];
 
 // ── debug flight recorder (debug.db) ─────────────────────────────────
@@ -293,6 +304,17 @@ pub const DEBUG_MIGRATIONS: &[Migration] = &[
         up: |conn| {
             add_column_if_not_exists(conn, "samples", "boot_id", "TEXT")?;
             add_column_if_not_exists(conn, "samples", "uptime_s", "REAL")
+        },
+    },
+    Migration {
+        version: 6,
+        name: "add_io_stall_and_pressure_telemetry",
+        up: |conn| {
+            add_column_if_not_exists(conn, "samples", "iowait_pct", "REAL")?;
+            add_column_if_not_exists(conn, "samples", "procs_blocked", "INTEGER")?;
+            add_column_if_not_exists(conn, "samples", "dirty_kb", "INTEGER")?;
+            add_column_if_not_exists(conn, "samples", "psi_io_some", "REAL")?;
+            add_column_if_not_exists(conn, "samples", "psi_io_full", "REAL")
         },
     },
 ];

@@ -232,14 +232,23 @@ impl TelemetrySource for Sampler {
         }
 
         // /proc/stat is read once and its totals shared between the utilisation
-        // figure and the process scan, which both need them.
-        let cpu_times = self.proc.cpu_times();
-        let cpu_pct = cpu_times.and_then(|times| self.proc.cpu_pct(times));
+        // figure, blocked procs count, and the process scan, which all need them.
+        let proc_stat = self.proc.proc_stat();
+        let cpu_times = proc_stat.map(|stat| stat.times);
+        let procs_blocked = proc_stat.and_then(|stat| stat.procs_blocked);
+
+        let cpu_rates = cpu_times.and_then(|times| self.proc.cpu_rates(times));
+        let cpu_pct = cpu_rates.map(|rates| rates.cpu_pct);
+        let iowait_pct = cpu_rates.map(|rates| rates.iowait_pct);
+
         // Both are required: process memory is a percentage of total, and
         // without a denominator the ranking is omitted rather than invented.
         let top_processes = cpu_times
             .zip(self.proc.mem_total_kb())
             .and_then(|(times, mem_total_kb)| self.processes.read(times.total, mem_total_kb));
+
+        let (mem_pct, dirty_kb) = self.proc.memory_stats();
+        let io_pressure = self.proc.io_pressure();
 
         Some(Sample {
             ts: now_iso8601_millis(),
@@ -271,7 +280,12 @@ impl TelemetrySource for Sampler {
             gpu_temp_c: thermals.gpu_c,
             nvme_temp_c: thermals.nvme_c,
             cpu_pct,
-            mem_pct: self.proc.mem_pct(),
+            iowait_pct,
+            mem_pct,
+            dirty_kb,
+            procs_blocked,
+            psi_io_some: io_pressure.some_avg10,
+            psi_io_full: io_pressure.full_avg10,
             top_processes,
             cpu_freq_mhz: read_cpu_freq_mhz(&self.paths.cpu_base, &self.paths.proc_base),
             gpu_pct: read_gpu_pct(&self.paths.drm_base),
