@@ -249,6 +249,7 @@ impl TelemetrySource for Sampler {
 
         let (mem_pct, dirty_kb) = self.proc.memory_stats();
         let io_pressure = self.proc.io_pressure();
+        let memory_pressure = self.proc.memory_pressure();
 
         Some(Sample {
             ts: now_iso8601_millis(),
@@ -286,6 +287,8 @@ impl TelemetrySource for Sampler {
             procs_blocked,
             psi_io_some: io_pressure.some_avg10,
             psi_io_full: io_pressure.full_avg10,
+            psi_mem_some: memory_pressure.some_avg10,
+            psi_mem_full: memory_pressure.full_avg10,
             top_processes,
             cpu_freq_mhz: read_cpu_freq_mhz(&self.paths.cpu_base, &self.paths.proc_base),
             gpu_pct: read_gpu_pct(&self.paths.drm_base),

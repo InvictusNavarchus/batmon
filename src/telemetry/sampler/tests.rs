@@ -72,6 +72,10 @@ impl Machine {
                 "some avg10=2.50 avg60=1.00 avg300=0.50 total=1000\nfull avg10=1.25 avg60=0.50 avg300=0.10 total=500\n",
             ),
             (
+                "pressure/memory",
+                "some avg10=1.80 avg60=0.90 avg300=0.30 total=800\nfull avg10=0.60 avg60=0.20 avg300=0.05 total=200\n",
+            ),
+            (
                 "sys/kernel/random/boot_id",
                 "7d0e0b50-a9e4-4880-8366-14fe16e77f9b\n",
             ),
@@ -188,6 +192,8 @@ fn assembles_a_complete_sample_from_every_source() {
     assert_eq!(sample.procs_blocked, Some(3));
     assert_eq!(sample.psi_io_some, Some(2.50));
     assert_eq!(sample.psi_io_full, Some(1.25));
+    assert_eq!(sample.psi_mem_some, Some(1.80));
+    assert_eq!(sample.psi_mem_full, Some(0.60));
     assert_eq!(sample.load1, Some(1.19));
     assert_eq!(sample.uptime_s, Some(59_289.86));
     assert_eq!(

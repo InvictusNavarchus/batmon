@@ -39,14 +39,20 @@ pub struct ProcStat {
     pub procs_blocked: Option<i64>,
 }
 
-/// Linux Pressure Stall Information (PSI) for I/O.
+/// Linux Pressure Stall Information (PSI) rolling stall averages.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct IoPressure {
-    /// Percentage of time some tasks were stalled on I/O (10-second rolling average).
+pub struct PsiPressure {
+    /// Percentage of time some tasks were stalled (10-second rolling average).
     pub some_avg10: Option<f64>,
-    /// Percentage of time ALL non-idle tasks were stalled on I/O (10-second rolling average).
+    /// Percentage of time ALL non-idle tasks were stalled (10-second rolling average).
     pub full_avg10: Option<f64>,
 }
+
+/// Linux Pressure Stall Information (PSI) for I/O.
+pub type IoPressure = PsiPressure;
+
+/// Linux Pressure Stall Information (PSI) for memory.
+pub type MemoryPressure = PsiPressure;
 
 /// Reads the process filesystem, remembering what it needs between ticks.
 #[derive(Debug)]
@@ -170,7 +176,18 @@ impl ProcReader {
     #[must_use]
     pub fn io_pressure(&self) -> IoPressure {
         std::fs::read_to_string(self.base.join("pressure/io"))
-            .map(|contents| parse_io_pressure(&contents))
+            .map(|contents| parse_psi_record(&contents))
+            .unwrap_or_default()
+    }
+
+    /// Linux Pressure Stall Information (PSI) for memory.
+    ///
+    /// Reads `/proc/pressure/memory`. Returns default (None) if the kernel was built
+    /// without `CONFIG_PSI` or the file is otherwise unavailable.
+    #[must_use]
+    pub fn memory_pressure(&self) -> MemoryPressure {
+        std::fs::read_to_string(self.base.join("pressure/memory"))
+            .map(|contents| parse_psi_record(&contents))
             .unwrap_or_default()
     }
 
@@ -297,7 +314,7 @@ fn calculate_mem_pct(meminfo: &str) -> Option<f64> {
     Some(round_to(clamp_percent(used), 1))
 }
 
-/// Parse the `avg10=` value from a line in `/proc/pressure/io`.
+/// Parse the `avg10=` value from a line in `/proc/pressure/*`.
 fn parse_psi_avg10(line: &str) -> Option<f64> {
     for part in line.split_ascii_whitespace() {
         if let Some(val_str) = part.strip_prefix("avg10=") {
@@ -310,8 +327,8 @@ fn parse_psi_avg10(line: &str) -> Option<f64> {
     None
 }
 
-/// Parse `/proc/pressure/io` for both `some` and `full` stall averages.
-fn parse_io_pressure(contents: &str) -> IoPressure {
+/// Parse `/proc/pressure/*` for both `some` and `full` stall averages.
+fn parse_psi_record(contents: &str) -> PsiPressure {
     let mut some_avg10 = None;
     let mut full_avg10 = None;
 
@@ -323,7 +340,7 @@ fn parse_io_pressure(contents: &str) -> IoPressure {
         }
     }
 
-    IoPressure {
+    PsiPressure {
         some_avg10,
         full_avg10,
     }

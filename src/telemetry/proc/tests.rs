@@ -234,6 +234,23 @@ fn io_pressure_missing_file_yields_defaults() {
 }
 
 #[test]
+fn memory_pressure_parses_some_and_full() {
+    let contents = "some avg10=18.42 avg60=8.10 avg300=2.45 total=987654\nfull avg10=4.12 avg60=1.05 avg300=0.20 total=32109\n";
+    let (_tmp, reader) = procfs(&[("pressure/memory", contents)]);
+    let pressure = reader.memory_pressure();
+    assert_eq!(pressure.some_avg10, Some(18.42));
+    assert_eq!(pressure.full_avg10, Some(4.12));
+}
+
+#[test]
+fn memory_pressure_missing_file_yields_defaults() {
+    let (_tmp, reader) = procfs(&[("stat", "cpu  1 1 1 1\n")]);
+    let pressure = reader.memory_pressure();
+    assert_eq!(pressure.some_avg10, None);
+    assert_eq!(pressure.full_avg10, None);
+}
+
+#[test]
 fn total_memory_is_resolved_once_and_cached() {
     let (tmp, reader) = procfs(&[("meminfo", "MemTotal:       1000000 kB\n")]);
     assert_eq!(reader.mem_total_kb(), Some(1_000_000));

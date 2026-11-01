@@ -41,6 +41,8 @@ pub(crate) fn mock() -> Sample {
         dirty_kb: None,
         psi_io_some: None,
         psi_io_full: None,
+        psi_mem_some: None,
+        psi_mem_full: None,
         boot_id: Some("mock-boot-id".to_owned()),
         uptime_s: Some(12_345.6),
     }
