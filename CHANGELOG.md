@@ -13,6 +13,16 @@ release notes; v0.3.0 and earlier had none.
 
 ## [Unreleased] - ReleaseDate
 
+**Upgrading:** databases migrate automatically on first start.
+
+### Added
+
+- Linux Pressure Stall Information (PSI) memory pressure telemetry in the flight
+  recorder and historical databases:
+  - `psi_mem_some` and `psi_mem_full`: 10-second rolling averages from Linux
+    Pressure Stall Information (`/proc/pressure/memory`), falling back to `None`
+    on kernels built without `CONFIG_PSI`.
+
 ## [0.8.3] - 2026-10-03
 
 **Upgrading:** databases migrate automatically on first start.
