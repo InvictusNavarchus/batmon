@@ -37,6 +37,8 @@ fn sample(ts: &str, charge_pct: f64) -> Sample {
         dirty_kb: Some(4_096),
         psi_io_some: Some(0.15),
         psi_io_full: Some(0.0),
+        psi_mem_some: Some(0.25),
+        psi_mem_full: Some(0.05),
         boot_id: Some("boot-uuid-1".to_owned()),
         uptime_s: Some(1_000.0),
     }
@@ -340,8 +342,8 @@ fn the_two_databases_get_their_own_ladders() {
             .unwrap()
     };
 
-    assert_eq!(version(&historical), 8);
-    assert_eq!(version(&debug), 6);
+    assert_eq!(version(&historical), 9);
+    assert_eq!(version(&debug), 7);
 }
 
 #[test]

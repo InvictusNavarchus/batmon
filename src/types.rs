@@ -130,6 +130,10 @@ pub struct Sample {
     pub psi_io_some: Option<f64>,
     /// Linux Pressure Stall Information (PSI) I/O `full` 10-second average percentage.
     pub psi_io_full: Option<f64>,
+    /// Linux Pressure Stall Information (PSI) Memory `some` 10-second average percentage.
+    pub psi_mem_some: Option<f64>,
+    /// Linux Pressure Stall Information (PSI) Memory `full` 10-second average percentage.
+    pub psi_mem_full: Option<f64>,
     /// Kernel boot session UUID, used to detect reboots between samples.
     pub boot_id: Option<String>,
     /// Monotonic uptime, used to detect reboots when `boot_id` is unavailable.

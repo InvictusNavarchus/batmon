@@ -221,6 +221,14 @@ pub const HISTORICAL_MIGRATIONS: &[Migration] = &[
             add_column_if_not_exists(conn, "samples", "psi_io_full", "REAL")
         },
     },
+    Migration {
+        version: 9,
+        name: "add_memory_pressure_telemetry",
+        up: |conn| {
+            add_column_if_not_exists(conn, "samples", "psi_mem_some", "REAL")?;
+            add_column_if_not_exists(conn, "samples", "psi_mem_full", "REAL")
+        },
+    },
 ];
 
 // ── debug flight recorder (debug.db) ─────────────────────────────────
@@ -315,6 +323,14 @@ pub const DEBUG_MIGRATIONS: &[Migration] = &[
             add_column_if_not_exists(conn, "samples", "dirty_kb", "INTEGER")?;
             add_column_if_not_exists(conn, "samples", "psi_io_some", "REAL")?;
             add_column_if_not_exists(conn, "samples", "psi_io_full", "REAL")
+        },
+    },
+    Migration {
+        version: 7,
+        name: "add_memory_pressure_telemetry",
+        up: |conn| {
+            add_column_if_not_exists(conn, "samples", "psi_mem_some", "REAL")?;
+            add_column_if_not_exists(conn, "samples", "psi_mem_full", "REAL")
         },
     },
 ];

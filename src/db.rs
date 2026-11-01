@@ -53,14 +53,16 @@ const INSERT_SQL: &str = "INSERT INTO samples (
     battery_temp_c, health_pct, is_charging, is_present, time_to_empty_s, time_to_full_s,
     cpu_temp_c, gpu_temp_c, nvme_temp_c, cpu_pct, mem_pct, top_processes,
     cpu_freq_mhz, gpu_pct, gpu_power_w, load1, boot_id, uptime_s,
-    iowait_pct, procs_blocked, dirty_kb, psi_io_some, psi_io_full
+    iowait_pct, procs_blocked, dirty_kb, psi_io_some, psi_io_full,
+    psi_mem_some, psi_mem_full
 ) VALUES (
     :ts, :charge_pct, :status, :power_state, :energy_wh, :energy_full_wh, :energy_design_wh,
     :power_w, :voltage_v, :voltage_design_v, :cycle_count, :estimated_cycle_count,
     :battery_temp_c, :health_pct, :is_charging, :is_present, :time_to_empty_s, :time_to_full_s,
     :cpu_temp_c, :gpu_temp_c, :nvme_temp_c, :cpu_pct, :mem_pct, :top_processes,
     :cpu_freq_mhz, :gpu_pct, :gpu_power_w, :load1, :boot_id, :uptime_s,
-    :iowait_pct, :procs_blocked, :dirty_kb, :psi_io_some, :psi_io_full
+    :iowait_pct, :procs_blocked, :dirty_kb, :psi_io_some, :psi_io_full,
+    :psi_mem_some, :psi_mem_full
 )";
 
 /// An open, migrated connection to one of the databases.
@@ -160,6 +162,8 @@ impl Store {
                 ":dirty_kb": sample.dirty_kb,
                 ":psi_io_some": sample.psi_io_some,
                 ":psi_io_full": sample.psi_io_full,
+                ":psi_mem_some": sample.psi_mem_some,
+                ":psi_mem_full": sample.psi_mem_full,
             },
         )?;
         Ok(())
@@ -302,6 +306,8 @@ fn sample_from_row(row: &Row<'_>) -> rusqlite::Result<Sample> {
         dirty_kb: row.get("dirty_kb")?,
         psi_io_some: row.get("psi_io_some")?,
         psi_io_full: row.get("psi_io_full")?,
+        psi_mem_some: row.get("psi_mem_some")?,
+        psi_mem_full: row.get("psi_mem_full")?,
         boot_id: row.get("boot_id")?,
         uptime_s: row.get("uptime_s")?,
     })

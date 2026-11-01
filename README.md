@@ -74,6 +74,8 @@ The installer automatically detects your architecture (`x86_64` or `aarch64`), d
 | | `procs_blocked` | `/proc/stat` | Count of processes currently waiting for I/O (`nr_iowait`) |
 | | `psi_io_some` | `/proc/pressure/io` | Linux PSI I/O pressure `some` (10s rolling avg %) |
 | | `psi_io_full` | `/proc/pressure/io` | Linux PSI I/O pressure `full` (10s rolling avg %) |
+| | `psi_mem_some` | `/proc/pressure/memory` | Linux PSI memory pressure `some` (10s rolling avg %) |
+| | `psi_mem_full` | `/proc/pressure/memory` | Linux PSI memory pressure `full` (10s rolling avg %) |
 | | `boot_id` | `/proc/sys/kernel/random/boot_id` | Linux kernel boot session UUID |
 | | `uptime_s` | `/proc/uptime` | Monotonic system uptime (seconds) |
 | | `top_processes` | `/proc/[pid]/stat` | Top 5 aggregated process groups by 1s CPU delta (JSON) |
@@ -101,7 +103,7 @@ WITH previous_boot AS (
   ORDER BY id DESC
   LIMIT 1
 )
-SELECT ts, power_w, voltage_v, cpu_freq_mhz, cpu_temp_c, gpu_power_w, cpu_pct, iowait_pct, procs_blocked, psi_io_full, top_processes
+SELECT ts, power_w, voltage_v, cpu_freq_mhz, cpu_temp_c, gpu_power_w, cpu_pct, iowait_pct, procs_blocked, psi_io_full, psi_mem_full, top_processes
 FROM samples
 JOIN previous_boot USING (boot_id)
 ORDER BY id DESC
