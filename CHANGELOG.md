@@ -13,6 +13,8 @@ release notes; v0.3.0 and earlier had none.
 
 ## [Unreleased] - ReleaseDate
 
+## [0.8.4] - 2026-11-01
+
 **Upgrading:** databases migrate automatically on first start.
 
 ### Added
@@ -244,7 +246,8 @@ install steps from your setup.
   threshold is crossed.
 
 <!-- next-url -->
-[Unreleased]: https://github.com/InvictusNavarchus/batmon/compare/v0.8.3...HEAD
+[Unreleased]: https://github.com/InvictusNavarchus/batmon/compare/v0.8.4...HEAD
+[0.8.4]: https://github.com/InvictusNavarchus/batmon/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/InvictusNavarchus/batmon/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/InvictusNavarchus/batmon/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/InvictusNavarchus/batmon/compare/v0.8.0...v0.8.1
