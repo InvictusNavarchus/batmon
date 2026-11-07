@@ -9,9 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Sections up to v0.8.2 were rewritten into this format from the original
 release notes; v0.3.0 and earlier had none.
 
-<!-- next-header -->
-
-## [Unreleased] - ReleaseDate
+## [Unreleased]
 
 ## [0.8.4] - 2026-11-01
 
@@ -245,7 +243,6 @@ install steps from your setup.
   repeated every 60 s while the condition held; they now fire once, when the
   threshold is crossed.
 
-<!-- next-url -->
 [Unreleased]: https://github.com/InvictusNavarchus/batmon/compare/v0.8.4...HEAD
 [0.8.4]: https://github.com/InvictusNavarchus/batmon/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/InvictusNavarchus/batmon/compare/v0.8.2...v0.8.3

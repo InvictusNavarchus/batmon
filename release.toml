@@ -20,18 +20,12 @@ sign-tag = true
 # Refuse to release from a branch other than master, or with a dirty tree.
 allow-branch = ["master"]
 
-# Roll CHANGELOG.md over inside the release commit, so the tag already carries
-# the finished section: "## [Unreleased] - ReleaseDate" becomes
-# "## [x.y.z] - <today>", a fresh empty Unreleased heading goes above it, and
-# the compare links at the bottom move along. These run in order, and the first
-# rewrites *every* "Unreleased" — the word must not appear anywhere else in the
-# file.
+# Roll the pending notes into a dated section inside the release commit.
+# Match exactly one heading and comparison-link definition; mentions of
+# Unreleased or ReleaseDate in prose are left untouched.
 pre-release-replacements = [
-  { file = "CHANGELOG.md", search = "Unreleased", replace = "{{version}}", min = 1 },
-  { file = "CHANGELOG.md", search = "\\.\\.\\.HEAD", replace = "...{{tag_name}}", exactly = 1 },
-  { file = "CHANGELOG.md", search = "ReleaseDate", replace = "{{date}}", min = 1 },
-  { file = "CHANGELOG.md", search = "<!-- next-header -->", replace = "<!-- next-header -->\n\n## [Unreleased] - ReleaseDate", exactly = 1 },
-  { file = "CHANGELOG.md", search = "<!-- next-url -->", replace = "<!-- next-url -->\n[Unreleased]: {{repository}}/compare/{{tag_name}}...HEAD", exactly = 1 },
+  { file = "CHANGELOG.md", search = '(?m)^## \[Unreleased\]$', replace = "## [Unreleased]\n\n## [{{version}}] - {{date}}", exactly = 1, prerelease = true },
+  { file = "CHANGELOG.md", search = '(?m)^\[Unreleased\]: .*$', replace = "[Unreleased]: {{repository}}/compare/{{tag_name}}...HEAD\n[{{version}}]: {{repository}}/compare/v{{prev_version}}...{{tag_name}}", exactly = 1, prerelease = true },
 ]
 
 # Refuse to release with nothing under the heading, since that section is the

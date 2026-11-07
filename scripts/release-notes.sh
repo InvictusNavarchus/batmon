@@ -17,8 +17,8 @@ changelog="$(dirname "$0")/../CHANGELOG.md"
 # A section ends at the next version heading, or at the link definitions for
 # the last one. Leading blank lines are dropped; $(...) drops trailing ones.
 notes=$(awk -v heading="## [$version]" '
-  index($0, heading) == 1 { found = 1; next }
-  found && (/^## \[/ || /^<!-- next-url -->/) { exit }
+  $0 == heading || index($0, heading " - ") == 1 { found = 1; next }
+  found && (/^## \[/ || /^\[[^]]+\]:[[:space:]]/) { exit }
   found && !started && /^[[:space:]]*$/ { next }
   found { started = 1; print }
 ' "$changelog")

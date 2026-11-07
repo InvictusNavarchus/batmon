@@ -48,8 +48,8 @@ refuses otherwise.
 `pre-release-replacements` in [`release.toml`](../release.toml) edit
 `CHANGELOG.md` before cargo-release commits the version bump:
 
-- `## [Unreleased] - ReleaseDate` becomes `## [0.9.0] - 2026-09-20`;
-- a fresh, empty `## [Unreleased] - ReleaseDate` is inserted above it;
+- `## [Unreleased]` becomes `## [0.9.0] - 2026-09-20`;
+- a fresh, empty `## [Unreleased]` is inserted above it;
 - the compare links at the bottom of the file gain a line for the new version.
 
 Because this happens in the `chore(release)` commit, the tag already contains
@@ -174,10 +174,9 @@ implementation. Existing databases carry over unchanged.
 
 ## 4. Gotchas and recovery
 
-- **The words `Unreleased` and `ReleaseDate` must not appear anywhere in
-  `CHANGELOG.md` except the heading and link cargo-release manages.** The
-  rollover replaces every occurrence, so a stray one in an entry gets rewritten
-  into a version number or a date.
+- **Keep exactly one `## [Unreleased]` heading and `[Unreleased]: ...` link.**
+  The rollover matches those complete lines and refuses missing or duplicate
+  matches. Mentions of `Unreleased` or `ReleaseDate` in prose are safe.
 - **Dates are UTC.** Depending on the time of day, a release can carry a date
   one day off from your local calendar.
 - **The publish job failed after creating the draft.** Re-running fails because
