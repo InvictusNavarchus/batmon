@@ -36,7 +36,8 @@ them, and how to write the changelog entries that become the release notes.
    do.
 
 **Never create or publish a release in the GitHub web UI.** The workflow
-creates the release itself and fails if one already exists for the tag.
+creates the release itself, resumes existing drafts, and refuses to modify an
+already published release.
 
 Releases are cut from `master` with a clean working tree; cargo-release
 refuses otherwise.
@@ -179,10 +180,9 @@ implementation. Existing databases carry over unchanged.
   matches. Mentions of `Unreleased` or `ReleaseDate` in prose are safe.
 - **Dates are UTC.** Depending on the time of day, a release can carry a date
   one day off from your local calendar.
-- **The publish job failed after creating the draft.** Re-running fails because
-  the release exists. Finish it by hand:
-  `gh release edit vX.Y.Z --draft=false` — or delete the draft and re-run the
-  job.
+- **The publish job failed after creating the draft.** Re-run the failed job.
+  It resumes the draft and replaces incomplete uploads before publishing.
+  Already published releases are refused, so their assets stay unchanged.
 - **A build failed.** Nothing is public yet. If it was a flake, re-run the
   failed jobs of the tag's workflow run. If the fix needs a new commit, the tag
   points at broken code: delete it (`git push --delete origin vX.Y.Z` and

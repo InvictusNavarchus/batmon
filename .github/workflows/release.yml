@@ -7,7 +7,8 @@ name: Release
 # the one-line installer 404s until they are.
 #
 # Push the tag with `cargo release <level> -x`. Do not create the release in
-# the web UI: the publish job creates it, and fails if it already exists.
+# the web UI: the publish job creates it, resumes drafts, and rejects published
+# releases.
 #
 # A manual run builds the matrix only — a rehearsal, never a release.
 #
@@ -97,8 +98,8 @@ jobs:
           path: dist
           merge-multiple: true
 
-      # Created as a draft with every asset attached, then flipped public in a
-      # separate step: the release never exists publicly without its binaries.
+      # Assemble a resumable draft, then flip it public after every upload:
+      # the release never exists publicly without its binaries.
       # release-notes.sh fails on a missing or empty section, which stops the
       # job before anything is created.
       - name: Publish release
@@ -107,5 +108,15 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           scripts/release-notes.sh "${TAG#v}" > notes.md
-          gh release create "$TAG" dist/* --draft --verify-tag --title "$TAG" --notes-file notes.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" != "true" ]; then
+              echo "::error::$TAG is already published; refusing to replace its assets."
+              exit 1
+            fi
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" --draft --verify-tag --title "$TAG" --notes-file notes.md
+          fi
+
+          gh release upload "$TAG" dist/* --clobber
           gh release edit "$TAG" --draft=false
