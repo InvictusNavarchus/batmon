@@ -28,7 +28,8 @@ them, and how to write the changelog entries that become the release notes.
    ```
 
    `-x`/`--execute` is the confirmation step. Without it nothing happens, which
-   is the most common way to conclude the release "didn't work".
+   is the most common way to conclude the release "didn't work". The release
+   commit and tag are signed, so your Git signing key must be available.
 4. **Wait for the workflow.** Pushing the tag starts
    [`release.yml`](../.github/workflows/release.yml), which builds both targets
    and publishes the GitHub release with its notes and binaries. Nothing else to
