@@ -69,11 +69,17 @@ fixing it means deleting and re-pushing the tag.
 
 On a pushed `v*` tag, the workflow:
 
-1. builds `x86_64` and `aarch64` musl binaries, packaging each with a `.sha256`;
-2. extracts that version's section from `CHANGELOG.md` as the notes, failing if
+1. verifies the tag matches the Cargo version and runs `cargo test --locked`;
+2. builds `x86_64` and `aarch64` musl binaries with `--locked`, packaging each
+   with a `.sha256`;
+3. extracts that version's section from `CHANGELOG.md` as the notes, failing if
    it is empty;
-3. creates the release **as a draft** with every archive attached;
-4. makes it public.
+4. creates the release **as a draft** with every archive attached;
+5. makes it public.
+
+The build matrix waits for validation. A manually pushed tag cannot bypass the
+version check or test suite. Manual workflow runs perform validation and builds
+but never publish, even when dispatched against a tag.
 
 Publishing last matters because `install.sh` downloads from
 `releases/latest/`, which points at a release the moment it is public. The
