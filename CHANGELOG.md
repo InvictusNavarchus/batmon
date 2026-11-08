@@ -19,6 +19,9 @@ release notes; v0.3.0 and earlier had none.
 
 ### Fixed
 
+- Custom binary directories are now used consistently by the service, subsequent
+  updates, and the installed `batmon-uninstall` command. Uninstalling no longer
+  requires keeping a source checkout, and preserves the databases.
 - Release downloads now require a valid SHA-256 checksum before replacing the
   installed binary or stopping the service. The archive and checksum are fetched
   from the same resolved release tag, even if a new release appears mid-download.

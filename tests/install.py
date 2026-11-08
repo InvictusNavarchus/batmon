@@ -5,6 +5,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -138,6 +139,42 @@ class Installation(unittest.TestCase):
         (self.source / "Cargo.toml").write_text((REPO / "Cargo.toml").read_text())
         self.run_script("--build", env=dict(self.env, MOCK_BUILD_FAIL="1"), ok=False)
         self.assertFalse(any(c[0] in ("curl", "systemctl") for c in self.commands()))
+
+    def test_custom_directory_is_used_by_service_and_remembered_for_updates(self):
+        custom = self.root / 'custom bin %$"'
+        self.run_script(env=dict(self.env, BIN_DIR=str(custom)))
+        unit = (self.home / ".config/systemd/user/batmon.service").read_text()
+        escaped = str(custom / "batmon").replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%')
+        self.assertIn('ExecStart=:"' + escaped + '"', unit)
+        self.run_script()
+        self.assertTrue((custom / "batmon").exists())
+        self.assertFalse((self.home / ".local/bin/batmon").exists())
+        self.assertEqual((self.home / ".local/share/batmon/bin-dir").read_text().strip(), str(custom))
+
+    def test_installed_uninstaller_works_after_checkout_is_deleted_and_preserves_data(self):
+        custom = self.root / "custom bin"
+        self.run_script(env=dict(self.env, BIN_DIR=str(custom)))
+        data = self.home / ".local/share/batmon"
+        (data / "battery.db").write_text("history")
+        shutil.rmtree(self.source)
+        self.run_script(script=str(custom / "batmon-uninstall"))
+        self.assertFalse((custom / "batmon").exists())
+        self.assertFalse((custom / "batmon-uninstall").exists())
+        self.assertFalse((data / "bin-dir").exists())
+        self.assertFalse((self.home / ".config/systemd/user/batmon.service").exists())
+        self.assertEqual((data / "battery.db").read_text(), "history")
+
+    def test_changing_directory_removes_the_previous_install_after_success(self):
+        first, second = self.root / "first", self.root / "second"
+        self.run_script(env=dict(self.env, BIN_DIR=str(first)))
+        self.run_script(env=dict(self.env, BIN_DIR=str(second)))
+        self.assertFalse((first / "batmon").exists())
+        self.assertFalse((first / "batmon-uninstall").exists())
+        self.assertTrue((second / "batmon").exists())
+
+    def test_control_characters_in_binary_directory_are_rejected(self):
+        self.run_script(env=dict(self.env, BIN_DIR="bad\npath"), ok=False)
+        self.assertEqual(self.commands(), [])
 
 
 if __name__ == "__main__":

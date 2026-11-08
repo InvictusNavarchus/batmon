@@ -9,11 +9,26 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Saved with its installation paths so removal works without this checkout.
+uninstall() {
+  systemctl --user disable --now batmon.service 2>/dev/null || true
+  systemctl --user disable --now batmon.timer 2>/dev/null || true
+  rm -f "$SYSTEMD_DIR/batmon.service" "$SYSTEMD_DIR/batmon.timer"
+  systemctl --user daemon-reload
+  rm -f "$BIN_DIR/batmon" "$BIN_DIR/batmon-uninstall"
+  rm -f "$DATA_DIR/bin-dir" "$DATA_DIR/uninstall.sh"
+  echo "batmon removed. Databases preserved in $DATA_DIR."
+}
+
 main() {
   local REPO="InvictusNavarchus/batmon"
-  local BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
   local DATA_DIR="$HOME/.local/share/batmon"
   local SYSTEMD_DIR="$HOME/.config/systemd/user"
+  local previous_bin_dir=""
+  if [ -f "$DATA_DIR/bin-dir" ]; then
+    previous_bin_dir=$(cat "$DATA_DIR/bin-dir")
+  fi
+  local BIN_DIR="${BIN_DIR:-${previous_bin_dir:-$HOME/.local/bin}}"
   local SCRIPT_DIR=""
 
   if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
@@ -34,6 +49,15 @@ main() {
       *) echo "ERROR: Unknown option '$arg'. Use --help for usage." >&2; exit 1 ;;
     esac
   done
+
+  if [[ "$BIN_DIR" =~ [[:cntrl:]] ]]; then
+    echo "ERROR: BIN_DIR must not contain control characters." >&2
+    exit 1
+  fi
+  case "$BIN_DIR" in
+    /*) ;;
+    *) BIN_DIR="$PWD/$BIN_DIR" ;;
+  esac
 
   echo "==> batmon installer"
 
@@ -141,6 +165,7 @@ main() {
 
   # ── install binary ──────────────────────────────────────────────────
   mkdir -p "$BIN_DIR"
+  BIN_DIR=$(cd "$BIN_DIR" && pwd -P)
   install -m 755 "$binary" "$BIN_DIR/batmon"
   echo "    binary → $BIN_DIR/batmon"
 
@@ -151,6 +176,15 @@ main() {
 
   # ── data directory ──────────────────────────────────────────────────
   mkdir -p "$DATA_DIR"
+  printf '%s\n' "$BIN_DIR" > "$DATA_DIR/bin-dir"
+  {
+    printf '#!/usr/bin/env bash\nset -euo pipefail\n'
+    printf 'BIN_DIR=%q\nDATA_DIR=%q\nSYSTEMD_DIR=%q\n' "$BIN_DIR" "$DATA_DIR" "$SYSTEMD_DIR"
+    declare -f uninstall
+    printf '\nuninstall\n'
+  } > "$DATA_DIR/uninstall.sh"
+  chmod 755 "$DATA_DIR/uninstall.sh"
+  ln -sf "$DATA_DIR/uninstall.sh" "$BIN_DIR/batmon-uninstall"
 
   if command -v chattr &>/dev/null && [ "$(stat -f -c %T "$DATA_DIR" 2>/dev/null || true)" = "btrfs" ]; then
     if chattr +C "$DATA_DIR" 2>/dev/null; then
@@ -171,6 +205,8 @@ main() {
   systemctl --user disable --now batmon.timer 2>/dev/null || true
   rm -f "$SYSTEMD_DIR/batmon.timer"
 
+  local service_binary
+  service_binary=$(printf '%s' "$BIN_DIR/batmon" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/%/%%/g')
   cat > "$SYSTEMD_DIR/batmon.service" <<EOF
 [Unit]
 Description=batmon – battery health monitor & flight recorder (sysfs → SQLite)
@@ -178,7 +214,7 @@ Documentation=https://github.com/InvictusNavarchus/batmon
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/batmon
+ExecStart=:"$service_binary"
 Restart=on-failure
 RestartSec=5s
 Nice=10
@@ -202,6 +238,9 @@ EOF
 
   # ── enable & start service ──────────────────────────────────────────
   systemctl --user enable --now batmon.service
+  if [ -n "$previous_bin_dir" ] && [ "$previous_bin_dir" != "$BIN_DIR" ]; then
+    rm -f "$previous_bin_dir/batmon" "$previous_bin_dir/batmon-uninstall"
+  fi
   echo "    service → enabled & started (1s flight recorder + 60s history)"
   echo ""
   echo "    Check historical data (if sqlite3 CLI is installed):"

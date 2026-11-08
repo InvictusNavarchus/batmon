@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BIN_DIR="$HOME/.local/bin"
 DATA_DIR="$HOME/.local/share/batmon"
+if [ -f "$DATA_DIR/uninstall.sh" ]; then
+  exec bash "$DATA_DIR/uninstall.sh"
+fi
+
+# Compatibility for installations made before paths were recorded.
+BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 SYSTEMD_DIR="$HOME/.config/systemd/user"
 
 echo "==> batmon uninstaller"

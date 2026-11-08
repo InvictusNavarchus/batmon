@@ -28,6 +28,10 @@ verified binary, and starts the updated service. No checkout or Rust compiler is
 needed. From a checkout, `./install.sh` also downloads a release; only
 `./install.sh --build` compiles local source.
 
+Set `BIN_DIR` on the installer command to choose another binary directory. That
+location is recorded for future updates, the service, and uninstalling; subsequent
+updates can use the normal installation command without repeating `BIN_DIR`.
+
 ---
 
 ## 🎯 Architecture: Dual-Tier Monitoring
@@ -258,9 +262,12 @@ extraction commit leaves blame with nothing earlier to attribute to.
 ## 🗑️ Uninstallation
 
 ```bash
-./uninstall.sh
+batmon-uninstall
 ```
-*(Databases in `~/.local/share/batmon/` are preserved upon uninstall).*
+No checkout is needed. If the binary directory is not on your PATH, run
+`bash ~/.local/share/batmon/uninstall.sh`. Existing databases are preserved.
+For older installations without a stored uninstaller, run `./uninstall.sh` from
+a source checkout; supply `BIN_DIR` if it used a custom location.
 
 ## Limitations
 
