@@ -11,6 +11,12 @@ release notes; v0.3.0 and earlier had none.
 
 ## [Unreleased]
 
+### Changed
+
+- Re-running the installer updates to the latest stable release, including when
+  run from a source checkout. Local compilation now requires `--build` and uses
+  the committed dependency lockfile.
+
 ### Fixed
 
 - Release downloads now require a valid SHA-256 checksum before replacing the

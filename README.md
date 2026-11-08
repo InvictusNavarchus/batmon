@@ -20,6 +20,14 @@ Downloads require `curl`, `tar`, and `sha256sum`. The installer resolves one
 release tag and verifies its archive against that release's checksum before
 changing an existing installation. Missing or invalid checksums stop the update.
 
+### Updating
+
+Run the same installation command again to update to the latest stable release.
+Your databases are preserved; the installer stops the old service, installs the
+verified binary, and starts the updated service. No checkout or Rust compiler is
+needed. From a checkout, `./install.sh` also downloads a release; only
+`./install.sh --build` compiles local source.
+
 ---
 
 ## 🎯 Architecture: Dual-Tier Monitoring

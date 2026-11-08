@@ -19,6 +19,15 @@ with open(os.environ["COMMAND_LOG"], "a") as log:
     log.write(json.dumps([name, *args]) + "\n")
 if name == "uname": print("Linux" if args == ["-s"] else os.environ.get("MOCK_ARCH", "x86_64"))
 elif name == "stat": print("ext4")
+elif name == "cargo":
+    if os.environ.get("MOCK_BUILD_FAIL"): sys.exit(1)
+    target = pathlib.Path(os.environ["SOURCE_TARGET"])
+    if args[0] == "metadata": print(json.dumps({"target_directory": str(target)}))
+    else:
+        binary = target / "release/batmon"
+        binary.parent.mkdir(parents=True, exist_ok=True)
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
 elif name == "curl":
     if "-w" in args:
         print("https://github.com/InvictusNavarchus/batmon/releases/tag/v0.8.5", end="")
@@ -45,7 +54,7 @@ class Installation(unittest.TestCase):
         self.home.mkdir()
         self.bin = self.root / "bin"
         self.bin.mkdir()
-        for name in ("uname", "curl", "systemctl", "stat"):
+        for name in ("uname", "curl", "systemctl", "stat", "cargo"):
             command = self.bin / name
             command.write_text(MOCK)
             command.chmod(0o755)
@@ -62,7 +71,8 @@ class Installation(unittest.TestCase):
             checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
             archive.with_name(archive.name + ".sha256").write_text(f"{checksum}  {archive.name}\n")
         self.env = dict(os.environ, PATH=str(self.bin) + ":" + os.environ["PATH"],
-                        TEST_USER_HOME=str(self.home), COMMAND_LOG=str(self.log), RELEASE_DIR=str(self.releases))
+                        TEST_USER_HOME=str(self.home), COMMAND_LOG=str(self.log), RELEASE_DIR=str(self.releases),
+                        SOURCE_TARGET=str(self.source / "target"))
         for key in ("BIN_DIR", "BATMON_VERSION", "BATMON_FROM_RELEASE"):
             self.env.pop(key, None)
 
@@ -105,6 +115,28 @@ class Installation(unittest.TestCase):
 
     def test_invalid_tag_is_rejected_before_download(self):
         self.run_script(env=dict(self.env, BATMON_VERSION="../master"), ok=False)
+        self.assertFalse(any(c[0] in ("curl", "systemctl") for c in self.commands()))
+
+    def test_checkout_defaults_to_release_download_even_with_cargo_installed(self):
+        (self.source / "Cargo.toml").write_text((REPO / "Cargo.toml").read_text())
+        self.run_script()
+        self.assertTrue(any(c[0] == "curl" for c in self.commands()))
+        self.assertFalse(any(c[0] == "cargo" for c in self.commands()))
+
+    def test_explicit_source_build_is_locked_and_does_not_download(self):
+        (self.source / "Cargo.toml").write_text((REPO / "Cargo.toml").read_text())
+        self.run_script("--build")
+        self.assertTrue(any(c[:2] == ["cargo", "build"] and "--locked" in c for c in self.commands()))
+        self.assertFalse(any(c[0] == "curl" for c in self.commands()))
+
+    def test_unknown_options_and_build_without_checkout_fail_before_changes(self):
+        self.run_script("--unknown", ok=False)
+        self.run_script("--build", ok=False)
+        self.assertFalse(any(c[0] in ("curl", "cargo", "systemctl") for c in self.commands()))
+
+    def test_failed_source_build_does_not_fall_back_to_a_release(self):
+        (self.source / "Cargo.toml").write_text((REPO / "Cargo.toml").read_text())
+        self.run_script("--build", env=dict(self.env, MOCK_BUILD_FAIL="1"), ok=False)
         self.assertFalse(any(c[0] in ("curl", "systemctl") for c in self.commands()))
 
 

@@ -20,6 +20,21 @@ main() {
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   fi
 
+  local force_build=0
+  for arg in "$@"; do
+    case "$arg" in
+      --build | -b) force_build=1 ;;
+      --help | -h)
+        echo "Usage: bash install.sh [--build]"
+        echo "Installs or updates to the latest verified release by default."
+        echo "--build compiles a local checkout; BIN_DIR selects the installation directory."
+        echo "BATMON_VERSION=vX.Y.Z selects a release."
+        return
+        ;;
+      *) echo "ERROR: Unknown option '$arg'. Use --help for usage." >&2; exit 1 ;;
+    esac
+  done
+
   echo "==> batmon installer"
 
   # ── platform & architecture check ───────────────────────────────────
@@ -53,29 +68,28 @@ main() {
 
   # ── binary acquisition (local build vs. release download) ───────────
   local binary=""
-  local force_build=0
 
-  for arg in "$@"; do
-    if [ "$arg" = "--build" ] || [ "$arg" = "-b" ]; then
-      force_build=1
+  # A checkout does not change the default: source builds are always explicit.
+  if [ "$force_build" -eq 1 ]; then
+    if [ -z "$SCRIPT_DIR" ] || [ ! -f "$SCRIPT_DIR/Cargo.toml" ]; then
+      echo "ERROR: --build requires running install.sh from a source checkout." >&2
+      exit 1
     fi
-  done
-
-  # Build from source if explicitly requested or running locally in repo with Cargo
-  if [ "$force_build" -eq 1 ] || { [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/Cargo.toml" ] && [ "${BATMON_FROM_RELEASE:-0}" != "1" ]; }; then
     if command -v cargo &>/dev/null; then
-      echo "==> Building from source (local repository detected)…"
-      cargo build --release --manifest-path "$SCRIPT_DIR/Cargo.toml"
+      echo "==> Building from source…"
+      cargo build --release --locked --manifest-path "$SCRIPT_DIR/Cargo.toml"
 
       local target_dir
       target_dir="$(cargo metadata --format-version 1 --no-deps --manifest-path "$SCRIPT_DIR/Cargo.toml" 2>/dev/null \
         | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
       binary="${target_dir:-$SCRIPT_DIR/target}/release/batmon"
-    elif [ "$force_build" -eq 1 ]; then
+    else
       echo "ERROR: cargo not found. Install Rust: https://rustup.rs" >&2
       exit 1
-    else
-      echo "    cargo not found, falling back to pre-compiled binary download…"
+    fi
+    if [ ! -x "$binary" ]; then
+      echo "ERROR: The source build did not produce an executable at $binary." >&2
+      exit 1
     fi
   fi
 
