@@ -81,24 +81,32 @@ main() {
 
   # Download release binary if not built locally
   if [ -z "$binary" ] || [ ! -x "$binary" ]; then
+    for tool in curl tar sha256sum; do
+      if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "ERROR: $tool is required to download and verify releases." >&2
+        exit 1
+      fi
+    done
     local version="${BATMON_VERSION:-latest}"
-    local download_url
     if [ "$version" = "latest" ]; then
-      download_url="https://github.com/$REPO/releases/latest/download/batmon-${target}.tar.gz"
-    else
-      download_url="https://github.com/$REPO/releases/download/${version}/batmon-${target}.tar.gz"
+      local url
+      url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest")
+      version="${url##*/}"
     fi
+    if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+      echo "ERROR: Expected a release tag such as v0.8.4; got '$version'." >&2
+      exit 1
+    fi
+    local base="https://github.com/$REPO/releases/download/$version"
+    local filename="batmon-${target}.tar.gz"
 
-    echo "==> Downloading pre-compiled binary ($target)…"
+    echo "==> Downloading $version ($target)…"
     TMP_DIR="$(mktemp -d -t batmon-install.XXXXXX)"
-    local archive="$TMP_DIR/batmon.tar.gz"
-
-    if command -v curl &>/dev/null; then
-      curl -fsSL "$download_url" -o "$archive"
-    elif command -v wget &>/dev/null; then
-      wget -qO "$archive" "$download_url"
-    else
-      echo "ERROR: Neither curl nor wget found. Please install curl or wget." >&2
+    local archive="$TMP_DIR/$filename"
+    curl -fsSL "$base/$filename" -o "$archive"
+    curl -fsSL "$base/$filename.sha256" -o "$archive.sha256"
+    if ! (cd "$TMP_DIR" && sha256sum --check "$filename.sha256"); then
+      echo "ERROR: Release checksum verification failed; installation was not changed." >&2
       exit 1
     fi
 

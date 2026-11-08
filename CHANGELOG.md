@@ -11,6 +11,12 @@ release notes; v0.3.0 and earlier had none.
 
 ## [Unreleased]
 
+### Fixed
+
+- Release downloads now require a valid SHA-256 checksum before replacing the
+  installed binary or stopping the service. The archive and checksum are fetched
+  from the same resolved release tag, even if a new release appears mid-download.
+
 ## [0.8.4] - 2026-11-01
 
 **Upgrading:** databases migrate automatically on first start.

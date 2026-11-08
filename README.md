@@ -16,6 +16,10 @@ curl -fsSL https://raw.githubusercontent.com/InvictusNavarchus/batmon/master/ins
 
 The installer automatically detects your architecture (`x86_64` or `aarch64`), downloads the pre-compiled static binary to `~/.local/bin/batmon`, configures and starts the `systemd` user service, and verifies the installation.
 
+Downloads require `curl`, `tar`, and `sha256sum`. The installer resolves one
+release tag and verifies its archive against that release's checksum before
+changing an existing installation. Missing or invalid checksums stop the update.
+
 ---
 
 ## 🎯 Architecture: Dual-Tier Monitoring
