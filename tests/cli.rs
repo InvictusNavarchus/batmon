@@ -114,10 +114,10 @@ fn oneshot_creates_both_databases_and_records_one_sample() {
 
     assert_eq!(
         query::<i64>(&historical, "PRAGMA user_version"),
-        9,
+        10,
         "history must be migrated to the shipped schema"
     );
-    assert_eq!(query::<i64>(&debug, "PRAGMA user_version"), 7);
+    assert_eq!(query::<i64>(&debug, "PRAGMA user_version"), 8);
 
     assert_eq!(query::<i64>(&historical, "SELECT count(*) FROM samples"), 1);
     assert_eq!(query::<i64>(&debug, "SELECT count(*) FROM samples"), 1);

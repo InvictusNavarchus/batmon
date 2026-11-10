@@ -229,6 +229,11 @@ pub const HISTORICAL_MIGRATIONS: &[Migration] = &[
             add_column_if_not_exists(conn, "samples", "psi_mem_full", "REAL")
         },
     },
+    Migration {
+        version: 10,
+        name: "add_ac_online",
+        up: |conn| add_column_if_not_exists(conn, "samples", "ac_online", "INTEGER"),
+    },
 ];
 
 // ── debug flight recorder (debug.db) ─────────────────────────────────
@@ -332,6 +337,11 @@ pub const DEBUG_MIGRATIONS: &[Migration] = &[
             add_column_if_not_exists(conn, "samples", "psi_mem_some", "REAL")?;
             add_column_if_not_exists(conn, "samples", "psi_mem_full", "REAL")
         },
+    },
+    Migration {
+        version: 8,
+        name: "add_ac_online",
+        up: |conn| add_column_if_not_exists(conn, "samples", "ac_online", "INTEGER"),
     },
 ];
 

@@ -216,6 +216,7 @@ impl TelemetrySource for Sampler {
 
         Some(Sample {
             ts: now_iso8601_millis(),
+            ac_online: crate::telemetry::battery::read_ac_online(&self.paths.power_supply_base),
             charge_pct,
             status,
             power_state,

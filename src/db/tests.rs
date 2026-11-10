@@ -4,6 +4,7 @@ use super::*;
 
 fn sample(ts: &str, charge_pct: f64) -> Sample {
     Sample {
+        ac_online: None,
         ts: ts.to_owned(),
         charge_pct: Some(charge_pct),
         status: "Discharging".to_owned(),
@@ -342,8 +343,8 @@ fn the_two_databases_get_their_own_ladders() {
             .unwrap()
     };
 
-    assert_eq!(version(&historical), 9);
-    assert_eq!(version(&debug), 7);
+    assert_eq!(version(&historical), 10);
+    assert_eq!(version(&debug), 8);
 }
 
 #[test]

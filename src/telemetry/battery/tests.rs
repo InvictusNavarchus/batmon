@@ -245,3 +245,17 @@ fn an_incomplete_energy_pair_reads_as_absent() {
     assert_eq!(reader.energy(), None);
     assert_eq!(reader.charge_pct(), None);
 }
+
+#[test]
+fn charger_presence_distinguishes_online_offline_and_unknown() {
+    let tmp = tempfile::tempdir().unwrap();
+    assert_eq!(read_ac_online(tmp.path()), None);
+    let supply = tmp.path().join("AC");
+    std::fs::create_dir(&supply).unwrap();
+    std::fs::write(supply.join("type"), "Mains").unwrap();
+    assert_eq!(read_ac_online(tmp.path()), None);
+    for (raw, expected) in [("0", Some(false)), ("1", Some(true)), ("2", Some(true)), ("bad", None)] {
+        std::fs::write(supply.join("online"), raw).unwrap();
+        assert_eq!(read_ac_online(tmp.path()), expected);
+    }
+}

@@ -11,6 +11,11 @@ release notes; v0.3.0 and earlier had none.
 
 ## [Unreleased]
 
+### Added
+
+- External power connection (`ac_online`) is recorded independently of the
+  battery charging state, where the kernel exposes adapter status.
+
 ### Changed
 
 - Re-running the installer updates to the latest stable release, including when

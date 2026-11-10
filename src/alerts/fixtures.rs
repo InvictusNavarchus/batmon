@@ -8,6 +8,7 @@ use crate::types::{PowerState, Sample};
 /// A plausible mid-charge sample: 50%, discharging, everything nominal.
 pub(crate) fn mock() -> Sample {
     Sample {
+        ac_online: None,
         ts: "2026-08-28T00:00:00.000Z".to_owned(),
         charge_pct: Some(50.0),
         status: "Discharging".to_owned(),

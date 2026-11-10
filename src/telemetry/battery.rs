@@ -204,3 +204,29 @@ impl BatteryReader {
 
 #[cfg(test)]
 mod tests;
+
+/// Read system mains/USB supplies. An unreadable candidate prevents claiming
+/// offline, while any confirmed online supply establishes external power.
+#[must_use]
+pub fn read_ac_online(base: &Path) -> Option<bool> {
+    let entries = std::fs::read_dir(base).ok()?;
+    let mut found = false;
+    let mut unknown = false;
+    for entry in entries {
+        let Ok(entry) = entry else { unknown = true; continue; };
+        let reader = BatteryReader::new(entry.path());
+        if reader.read_str("scope").as_deref() == Some("Device") { continue; }
+        match reader.read_str("type").as_deref() {
+            Some("Mains" | "USB" | "USB_C" | "USB_PD" | "USB_PD_DRP" | "USB_DCP" | "USB_CDP" | "USB_ACA" | "Wireless") => {}
+            Some(_) => continue,
+            None => { unknown = true; continue; }
+        }
+        found = true;
+        match reader.read_str("online").as_deref() {
+            Some("1" | "2") => return Some(true),
+            Some("0") => {}
+            _ => unknown = true,
+        }
+    }
+    (found && !unknown).then_some(false)
+}

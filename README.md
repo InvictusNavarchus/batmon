@@ -280,3 +280,6 @@ measurements are stored as SQL `NULL`; alerts preserve their latches on missing
 readings, and estimated cycles do not integrate across missing energy readings.
 Historical cycle totals snapshot the per-second integral. Older stored zeros
 and health defaults cannot be retroactively distinguished from measurements.
+
+`ac_online` records external power independently of battery charging status;
+missing adapter attributes remain `NULL`. A plugged-in battery may discharge.
