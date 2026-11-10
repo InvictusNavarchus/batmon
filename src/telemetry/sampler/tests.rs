@@ -296,7 +296,8 @@ fn unknown_presence_preserves_system_recording() {
         }
     };
 
-    // Unknown presence: no sample at all, so no latch is cleared.
+    // Unknown presence yields a present-marked partial sample. Missing inputs
+    // preserve latches while system telemetry continues.
     let unknown = Machine::new();
     std::fs::write(unknown.paths.battery.join("present"), "").unwrap();
     strip(&unknown);
@@ -374,10 +375,8 @@ fn an_absent_battery_drops_the_cached_runtime_estimate() {
 
 #[test]
 fn a_present_but_unreadable_battery_preserves_system_telemetry() {
-    // Distinct from the case above. The hardware is still installed, so its
-    // latched alerts still describe something real; the tick simply has
-    // nothing to say. Reporting zeros instead announced a critical low
-    // battery and accrued most of a cycle in one tick.
+    // The installed battery is unreadable: preserve unknown battery fields
+    // and keep the system telemetry rather than inventing zeros.
     let machine = Machine::new();
     for attribute in [
         "capacity",

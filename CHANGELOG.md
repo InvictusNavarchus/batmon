@@ -15,7 +15,9 @@ release notes; v0.3.0 and earlier had none.
 
 - Battery identity and persistent observed cycle totals per identifiable pack.
   Replacements start their own totals; returning packs resume their totals
-  without counting energy differences across the replacement.
+  without counting energy differences across the replacement. These totals
+  reflect observed cycles since monitoring began, not lifetime BMS cycles.
+  Legacy unidentified cycle history stays separate.
 
 - Raw battery fault status (`battery_health`), separate from capacity wear.
 
@@ -32,7 +34,8 @@ release notes; v0.3.0 and earlier had none.
 
 - Battery read failures no longer interrupt system telemetry. Missing battery
   measurements remain unknown instead of appearing as zero or 100% health.
-  Historical cycle totals preserve gaps observed by the flight recorder.
+  Cycle integration pauses across missing energy or source readings. Existing
+  rows retain their historical zero/100% defaults; they are not repaired.
 
 - Custom binary directories are now used consistently by the service, subsequent
   updates, and the installed `batmon-uninstall` command. Uninstalling no longer
