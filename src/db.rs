@@ -185,7 +185,7 @@ impl Store {
         )?;
         if let Some(id) = &sample.battery_id {
             tx.execute(
-                "INSERT INTO battery_cycles VALUES (?1, ?2)
+                "INSERT INTO battery_cycles (battery_id, estimated_cycle_count) VALUES (?1, ?2)
                 ON CONFLICT(battery_id) DO UPDATE SET estimated_cycle_count =
                 max(battery_cycles.estimated_cycle_count, excluded.estimated_cycle_count)",
                 rusqlite::params![id, sample.estimated_cycle_count],
