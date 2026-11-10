@@ -18,7 +18,7 @@ fn sample(ts: &str, charge_pct: f64) -> Sample {
         voltage_v: Some(15.4),
         voltage_design_v: Some(15.4),
         cycle_count: Some(120),
-        estimated_cycle_count: 0.0,
+        estimated_cycle_count: Some(0.0),
         battery_temp_c: Some(32.1),
         health_pct: Some(94.3),
         is_charging: false,
@@ -86,11 +86,15 @@ fn inserting_with_integration_returns_the_previous_row_and_accrues_cycles() {
 
     let mut first = Sample {
         energy_wh: Some(50.0),
-        estimated_cycle_count: 2.0,
+        estimated_cycle_count: Some(2.0),
         ..sample("2026-09-06T00:00:00.000Z", 90.0)
     };
     assert_eq!(store.insert_integrating_cycles(&mut first).unwrap(), None);
-    assert_eq!(first.estimated_cycle_count, 0.0, "no history to carry");
+    assert_eq!(
+        first.estimated_cycle_count.unwrap(),
+        0.0,
+        "no history to carry"
+    );
 
     let mut second = Sample {
         energy_wh: Some(44.7), // 5.3 Wh out of a 53 Wh design capacity
@@ -102,7 +106,7 @@ fn inserting_with_integration_returns_the_previous_row_and_accrues_cycles() {
         .unwrap();
 
     assert_eq!(previous.ts, "2026-09-06T00:00:00.000Z");
-    assert!((second.estimated_cycle_count - 0.1).abs() < 1e-9);
+    assert!((second.estimated_cycle_count.unwrap() - 0.1).abs() < 1e-9);
 }
 
 #[test]
@@ -119,13 +123,13 @@ fn integration_writes_the_computed_value_back_to_the_caller() {
 
     let mut next = Sample {
         energy_wh: Some(44.7),
-        estimated_cycle_count: 999.0,
+        estimated_cycle_count: Some(999.0),
         ..sample("2026-09-06T00:01:00.000Z", 80.0)
     };
     store.insert_integrating_cycles(&mut next).unwrap();
 
     assert!(
-        next.estimated_cycle_count < 1.0,
+        next.estimated_cycle_count.unwrap() < 1.0,
         "caller's value was not replaced"
     );
 }
@@ -326,7 +330,7 @@ fn null_measurements_remain_unknown_on_read() {
         .unwrap();
 
     let row = store.latest().unwrap().unwrap();
-    assert_eq!(row.estimated_cycle_count, 0.0);
+    assert_eq!(row.estimated_cycle_count, None);
     assert_eq!(row.charge_pct, None);
     assert_eq!(row.energy_design_wh, None);
     assert_eq!(row.cycle_count, None);
@@ -389,11 +393,34 @@ fn new_battery_context_and_partial_measurements_round_trip() {
             battery_id: Some("pack-A".to_owned()),
             battery_health: Some("Overheat".to_owned()),
             ac_online: Some(true),
-            estimated_cycle_count: 2.5,
+            estimated_cycle_count: Some(2.5),
             ..Sample::default()
         };
         store.insert(&sample).unwrap();
         assert_eq!(store.latest().unwrap().unwrap(), sample);
         assert_eq!(store.cycles_for("pack-A").unwrap(), 2.5);
     }
+}
+
+#[test]
+fn oneshot_keeps_unknown_identity_totals_nullable_until_known_pack_returns() {
+    let store = Store::open_in_memory(Database::Debug).unwrap();
+    let known = Sample {
+        battery_id: Some("A".into()),
+        estimated_cycle_count: Some(5.0),
+        ..sample("known", 50.0)
+    };
+    store.insert(&known).unwrap();
+    let mut unknown = Sample {
+        battery_id: None,
+        ..known.clone()
+    };
+    for _ in 0..2 {
+        store.insert_integrating_cycles(&mut unknown).unwrap();
+        assert_eq!(unknown.estimated_cycle_count, None);
+        assert_eq!(store.latest().unwrap().unwrap().estimated_cycle_count, None);
+    }
+    let mut recovered = known;
+    store.insert_integrating_cycles(&mut recovered).unwrap();
+    assert_eq!(recovered.estimated_cycle_count, Some(5.0));
 }

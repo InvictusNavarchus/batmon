@@ -22,7 +22,7 @@ pub(crate) fn mock() -> Sample {
         voltage_v: Some(12.0),
         voltage_design_v: Some(12.0),
         cycle_count: Some(50),
-        estimated_cycle_count: 50.0,
+        estimated_cycle_count: Some(50.0),
         battery_temp_c: Some(30.0),
         health_pct: Some(95.0),
         is_charging: false,

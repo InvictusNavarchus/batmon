@@ -103,8 +103,8 @@ pub struct Sample {
     pub voltage_design_v: Option<f64>,
     /// Cycle count as reported by the battery management system, if it reports one.
     pub cycle_count: Option<i64>,
-    /// Cycle count integrated from observed energy throughput.
-    pub estimated_cycle_count: f64,
+    /// Observed energy-throughput cycles. NULL when pack attribution is uncertain.
+    pub estimated_cycle_count: Option<f64>,
     /// Battery pack temperature. Absent on many laptops.
     pub battery_temp_c: Option<f64>,
     /// Full-charge capacity as a percentage of design capacity.

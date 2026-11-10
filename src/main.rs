@@ -208,7 +208,7 @@ fn oneshot(paths: &Paths) -> Result<()> {
     tracing::info!(
         charge_pct = ?sample.charge_pct,
         health_pct = ?sample.health_pct,
-        cycles = sample.estimated_cycle_count,
+        cycles = ?sample.estimated_cycle_count,
         "sample recorded"
     );
     Ok(())

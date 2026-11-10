@@ -166,7 +166,8 @@ fn a_battery_that_comes_back_does_not_have_the_gap_counted_as_discharge() {
 
     let latest = daemon.debug.latest().unwrap().unwrap();
     assert_eq!(
-        latest.estimated_cycle_count, 0.0,
+        latest.estimated_cycle_count.unwrap(),
+        0.0,
         "the absence was integrated as discharge"
     );
 }
@@ -177,7 +178,7 @@ fn a_returning_battery_carries_the_accumulated_count_forward() {
     let debug = Store::open_in_memory(Database::Debug).unwrap();
     debug
         .insert(&Sample {
-            estimated_cycle_count: 12.5,
+            estimated_cycle_count: Some(12.5),
             ..present(100.0, 58.0)
         })
         .unwrap();
@@ -202,7 +203,8 @@ fn a_returning_battery_carries_the_accumulated_count_forward() {
     daemon.run_tick();
     let after_return = daemon.debug.latest().unwrap().unwrap();
     assert_eq!(
-        after_return.estimated_cycle_count, 12.5,
+        after_return.estimated_cycle_count.unwrap(),
+        12.5,
         "count was not carried"
     );
 
@@ -210,9 +212,9 @@ fn a_returning_battery_carries_the_accumulated_count_forward() {
     daemon.run_tick();
     let resumed = daemon.debug.latest().unwrap().unwrap();
     assert!(
-        resumed.estimated_cycle_count > 12.5,
+        resumed.estimated_cycle_count.unwrap() > 12.5,
         "integration did not resume: {}",
-        resumed.estimated_cycle_count
+        resumed.estimated_cycle_count.unwrap()
     );
 }
 
@@ -292,9 +294,9 @@ fn cycles_accumulate_across_ticks_at_flight_recorder_resolution() {
 
     let latest = daemon.debug.latest().unwrap().unwrap();
     assert!(
-        (latest.estimated_cycle_count - 0.02).abs() < 1e-9,
+        (latest.estimated_cycle_count.unwrap() - 0.02).abs() < 1e-9,
         "{}",
-        latest.estimated_cycle_count
+        latest.estimated_cycle_count.unwrap()
     );
 }
 
@@ -305,7 +307,7 @@ fn a_restart_resumes_the_cycle_count_from_the_flight_recorder() {
     let debug = Store::open_in_memory(Database::Debug).unwrap();
     debug
         .insert(&Sample {
-            estimated_cycle_count: 45.5,
+            estimated_cycle_count: Some(45.5),
             ..present(81.0, 58.0)
         })
         .unwrap();
@@ -323,9 +325,9 @@ fn a_restart_resumes_the_cycle_count_from_the_flight_recorder() {
 
     let latest = daemon.debug.latest().unwrap().unwrap();
     assert!(
-        (latest.estimated_cycle_count - 45.51).abs() < 1e-9,
+        (latest.estimated_cycle_count.unwrap() - 45.51).abs() < 1e-9,
         "{}",
-        latest.estimated_cycle_count
+        latest.estimated_cycle_count.unwrap()
     );
 }
 
@@ -334,7 +336,7 @@ fn a_restart_falls_back_to_the_historical_database() {
     let historical = Store::open_in_memory(Database::Historical).unwrap();
     historical
         .insert(&Sample {
-            estimated_cycle_count: 12.0,
+            estimated_cycle_count: Some(12.0),
             ..present(81.0, 58.0)
         })
         .unwrap();
@@ -357,6 +359,7 @@ fn a_restart_falls_back_to_the_historical_database() {
             .unwrap()
             .unwrap()
             .estimated_cycle_count
+            .unwrap()
             > 12.0
     );
 }
@@ -441,8 +444,8 @@ fn the_two_databases_integrate_cycles_independently() {
     let debug = daemon.debug.latest().unwrap().unwrap();
     let historical = daemon.historical.latest().unwrap().unwrap();
 
-    assert!((debug.estimated_cycle_count - 0.01).abs() < 1e-9);
-    assert!((historical.estimated_cycle_count - 0.01).abs() < 1e-9);
+    assert!((debug.estimated_cycle_count.unwrap() - 0.01).abs() < 1e-9);
+    assert!((historical.estimated_cycle_count.unwrap() - 0.01).abs() < 1e-9);
 }
 
 #[test]
@@ -500,7 +503,8 @@ fn partial_samples_preserve_latches_and_break_the_cycle_interval() {
             .latest()
             .unwrap()
             .unwrap()
-            .estimated_cycle_count,
+            .estimated_cycle_count
+            .unwrap(),
         0.0
     );
     assert_eq!(
@@ -509,7 +513,8 @@ fn partial_samples_preserve_latches_and_break_the_cycle_interval() {
             .latest()
             .unwrap()
             .unwrap()
-            .estimated_cycle_count,
+            .estimated_cycle_count
+            .unwrap(),
         0.0
     );
 }
@@ -537,7 +542,8 @@ fn pack_totals_survive_replacement_return_pruning_and_restart() {
             .latest()
             .unwrap()
             .unwrap()
-            .estimated_cycle_count,
+            .estimated_cycle_count
+            .unwrap(),
         0.0
     );
     daemon.debug.retain_newest(1).unwrap();
@@ -550,6 +556,7 @@ fn pack_totals_survive_replacement_return_pruning_and_restart() {
             .unwrap()
             .unwrap()
             .estimated_cycle_count
+            .unwrap()
             - 0.01)
             .abs()
             < 1e-9
@@ -572,7 +579,57 @@ fn a_source_gap_does_not_count_unobserved_discharge() {
             .latest()
             .unwrap()
             .unwrap()
-            .estimated_cycle_count,
+            .estimated_cycle_count
+            .unwrap(),
         0.0
+    );
+}
+
+#[test]
+fn missing_identity_records_no_attributed_total_and_restores_known_pack() {
+    let known = Sample {
+        battery_id: Some("A".into()),
+        estimated_cycle_count: Some(5.0),
+        ..present(50.0, 30.0)
+    };
+    let mut unknown = known.clone();
+    unknown.battery_id = None;
+    unknown.energy_wh = Some(20.0);
+    let mut daemon = daemon(Scripted::new(vec![unknown.clone(), unknown, known.clone()]));
+    daemon.schedule.historical_interval_ticks = 1;
+    daemon.debug.insert(&known).unwrap();
+    for _ in 0..2 {
+        daemon.run_tick();
+        assert_eq!(
+            daemon
+                .debug
+                .latest()
+                .unwrap()
+                .unwrap()
+                .estimated_cycle_count,
+            None
+        );
+        assert_eq!(
+            daemon
+                .historical
+                .latest()
+                .unwrap()
+                .unwrap()
+                .estimated_cycle_count,
+            None
+        );
+        assert_eq!(daemon.debug.cycles_for("A").unwrap(), 5.0);
+        daemon.previous = None;
+        daemon.last_known_battery_id = None; // restart during uncertainty
+    }
+    daemon.run_tick();
+    assert_eq!(
+        daemon
+            .debug
+            .latest()
+            .unwrap()
+            .unwrap()
+            .estimated_cycle_count,
+        Some(5.0)
     );
 }

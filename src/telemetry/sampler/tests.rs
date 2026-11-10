@@ -242,7 +242,7 @@ fn the_cycle_count_is_left_for_the_store_to_integrate() {
         .sample()
         .expect("a readable battery yields a sample");
 
-    assert_eq!(sample.estimated_cycle_count, 0.0);
+    assert_eq!(sample.estimated_cycle_count.unwrap(), 0.0);
 }
 
 #[test]

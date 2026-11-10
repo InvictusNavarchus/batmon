@@ -214,7 +214,7 @@ fn oneshot_never_moves_the_flight_recorder_cycle_count_backwards() {
         energy_wh: Some(42.0),
         energy_full_wh: Some(58.0),
         energy_design_wh: Some(60.0),
-        estimated_cycle_count: count,
+        estimated_cycle_count: Some(count),
         is_present: true,
         ..Sample::default()
     };

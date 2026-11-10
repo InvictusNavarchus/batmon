@@ -128,6 +128,9 @@ cycle total in `battery_cycles`, including after debug rows are pruned. These
 are observed cycles since monitoring began, not lifetime BMS cycles. Unknown
 packs cannot be distinguished reliably; identity transitions break integration.
 The first identifiable pack starts a separate total from legacy unidentified data.
+During a known pack’s identity read failure, `battery_id` and
+`estimated_cycle_count` are `NULL`; the durable pack total remains intact.
+Continuous legacy unidentified histories still estimate observed discharge.
 
 ---
 

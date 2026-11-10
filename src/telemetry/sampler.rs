@@ -250,7 +250,7 @@ impl TelemetrySource for Sampler {
             voltage_v: self.battery.voltage_v(),
             voltage_design_v: self.battery.voltage_design_v(),
             cycle_count: self.battery.cycle_count(),
-            estimated_cycle_count: 0.0,
+            estimated_cycle_count: Some(0.0),
             battery_temp_c: thermals.battery_c,
             health_pct: energy.and_then(crate::telemetry::battery::Energy::health_pct),
             is_charging,

@@ -183,12 +183,12 @@ impl Store {
                 ":psi_mem_full": sample.psi_mem_full,
             },
         )?;
-        if let Some(id) = &sample.battery_id {
+        if let (Some(id), Some(total)) = (&sample.battery_id, sample.estimated_cycle_count) {
             tx.execute(
                 "INSERT INTO battery_cycles (battery_id, estimated_cycle_count) VALUES (?1, ?2)
                 ON CONFLICT(battery_id) DO UPDATE SET estimated_cycle_count =
                 max(battery_cycles.estimated_cycle_count, excluded.estimated_cycle_count)",
-                rusqlite::params![id, sample.estimated_cycle_count],
+                rusqlite::params![id, total],
             )?;
         }
         tx.commit()?;
@@ -207,7 +207,7 @@ impl Store {
     /// Returns the previous row, if there was one.
     pub fn insert_integrating_cycles(&self, sample: &mut Sample) -> Result<Option<Sample>> {
         let previous = self.latest()?;
-        sample.estimated_cycle_count =
+        sample.estimated_cycle_count = Some(
             if previous.as_ref().map(|p| &p.battery_id) == Some(&sample.battery_id) {
                 compute_estimated_cycles(sample, previous.as_ref())
             } else {
@@ -215,7 +215,15 @@ impl Store {
                     Some(id) => self.cycles_for(id)?,
                     None => 0.0,
                 }
-            };
+            },
+        );
+        if sample.battery_id.is_none()
+            && previous
+                .as_ref()
+                .is_some_and(|p| p.battery_id.is_some() || p.estimated_cycle_count.is_none())
+        {
+            sample.estimated_cycle_count = None;
+        }
         self.insert(sample)?;
         Ok(previous)
     }
@@ -288,8 +296,7 @@ impl Store {
 /// `status` string that was always recorded alongside it. `is_charging` and
 /// `is_present` are stored as integers and become real booleans here.
 ///
-/// Nullable measurements remain optional; only the accumulated cycle counter
-/// defaults to zero for legacy rows.
+/// Nullable measurements and unattributed cycle totals remain optional.
 fn sample_from_row(row: &Row<'_>) -> rusqlite::Result<Sample> {
     let status: String = row.get::<_, Option<String>>("status")?.unwrap_or_default();
 
@@ -314,9 +321,7 @@ fn sample_from_row(row: &Row<'_>) -> rusqlite::Result<Sample> {
         voltage_v: row.get("voltage_v")?,
         voltage_design_v: row.get("voltage_design_v")?,
         cycle_count: row.get("cycle_count")?,
-        estimated_cycle_count: row
-            .get::<_, Option<f64>>("estimated_cycle_count")?
-            .unwrap_or(0.0),
+        estimated_cycle_count: row.get("estimated_cycle_count")?,
         battery_temp_c: row.get("battery_temp_c")?,
         health_pct: row.get("health_pct")?,
         is_charging: row.get::<_, Option<i64>>("is_charging")?.unwrap_or(0) != 0,

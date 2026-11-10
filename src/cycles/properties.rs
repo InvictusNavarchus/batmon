@@ -51,7 +51,7 @@ fn arb_pair() -> impl Strategy<Value = (Sample, Sample)> {
                 let previous = Sample {
                     energy_wh: Some(previous_energy),
                     energy_design_wh: Some(design),
-                    estimated_cycle_count: carried,
+                    estimated_cycle_count: Some(carried),
                     uptime_s: previous_uptime,
                     boot_id: previous_boot,
                     ..Sample::default()
@@ -76,9 +76,9 @@ proptest! {
     fn the_cycle_count_never_decreases((previous, current) in arb_pair()) {
         let result = compute_estimated_cycles(&current, Some(&previous));
         prop_assert!(
-            result >= previous.estimated_cycle_count,
+            result >= previous.estimated_cycle_count.unwrap(),
             "{result} < {}",
-            previous.estimated_cycle_count
+            previous.estimated_cycle_count.unwrap()
         );
     }
 
@@ -87,7 +87,7 @@ proptest! {
     #[test]
     fn a_single_tick_accrues_at_most_one_cycle((previous, current) in arb_pair()) {
         let result = compute_estimated_cycles(&current, Some(&previous));
-        let accrued = result - previous.estimated_cycle_count;
+        let accrued = result - previous.estimated_cycle_count.unwrap();
         prop_assert!(accrued <= 1.0, "accrued {accrued} in one tick");
     }
 
@@ -121,7 +121,7 @@ proptest! {
 
         prop_assert_eq!(
             compute_estimated_cycles(&current, Some(&previous)),
-            previous.estimated_cycle_count
+            previous.estimated_cycle_count.unwrap()
         );
     }
 
@@ -133,7 +133,7 @@ proptest! {
 
         prop_assert_eq!(
             compute_estimated_cycles(&current, Some(&previous)),
-            previous.estimated_cycle_count
+            previous.estimated_cycle_count.unwrap()
         );
     }
 
@@ -160,7 +160,7 @@ proptest! {
 
         prop_assert_eq!(
             compute_estimated_cycles(&current, Some(&previous)),
-            previous.estimated_cycle_count
+            previous.estimated_cycle_count.unwrap()
         );
     }
 }

@@ -156,19 +156,34 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
             };
             self.previous = Some(Sample {
                 energy_wh: None,
-                estimated_cycle_count: carried,
+                estimated_cycle_count: Some(carried),
                 ..sample.clone()
             });
         }
 
-        sample.estimated_cycle_count =
+        sample.estimated_cycle_count = Some(
             if !sample.is_present || std::mem::take(&mut self.battery_was_absent) {
                 self.previous
                     .as_ref()
-                    .map_or(0.0, |previous| previous.estimated_cycle_count)
+                    .and_then(|previous| previous.estimated_cycle_count)
+                    .unwrap_or(0.0)
             } else {
                 compute_estimated_cycles(&sample, self.previous.as_ref())
-            };
+            },
+        );
+
+        // Never attach an unattributed row to a cached pack. Legacy continuous
+        // unidentified histories remain usable, but a known-to-unknown transition
+        // cannot claim a cycle total until attribution returns.
+        if sample.battery_id.is_none()
+            && (self.last_known_battery_id.is_some()
+                || self
+                    .previous
+                    .as_ref()
+                    .is_some_and(|p| p.estimated_cycle_count.is_none()))
+        {
+            sample.estimated_cycle_count = None;
+        }
 
         // 1. Flight recorder, every tick.
         self.debug.insert(&sample)?;

@@ -7,7 +7,7 @@ fn discharging(energy_wh: f64, cycles: f64) -> Sample {
     Sample {
         energy_wh: Some(energy_wh),
         energy_design_wh: Some(50.0),
-        estimated_cycle_count: cycles,
+        estimated_cycle_count: Some(cycles),
         status: "Discharging".to_owned(),
         power_state: PowerState::Discharging,
         boot_id: Some("boot-uuid-1".to_owned()),
@@ -39,7 +39,7 @@ fn an_unusable_design_capacity_keeps_the_carried_count() {
 #[test]
 fn charging_never_accrues_wear() {
     let prev = Sample {
-        estimated_cycle_count: 3.5,
+        estimated_cycle_count: Some(3.5),
         ..discharging(40.0, 3.5)
     };
     let curr = Sample {
