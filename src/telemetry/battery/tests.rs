@@ -304,3 +304,18 @@ fn missing_identity_metadata_is_unknown_rather_than_a_new_pack() {
     std::fs::write(tmp.path().join("model_name"), "Pack").unwrap();
     assert_eq!(reader.identity(), Some(identity));
 }
+
+#[test]
+fn nonpositive_full_capacity_does_not_claim_capacity_wear() {
+    for full_wh in [0.0, -1.0] {
+        assert_eq!(
+            Energy {
+                now_wh: 0.0,
+                full_wh,
+                design_wh: 60.0
+            }
+            .health_pct(),
+            None
+        );
+    }
+}

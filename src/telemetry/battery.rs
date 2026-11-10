@@ -27,7 +27,7 @@ impl Energy {
     /// Unknown design capacity produces no health estimate.
     #[must_use]
     pub fn health_pct(self) -> Option<f64> {
-        if self.design_wh > 0.0 {
+        if self.design_wh > 0.0 && self.full_wh > 0.0 {
             Some(crate::formats::round_half_up((self.full_wh / self.design_wh) * 10_000.0) / 100.0)
         } else {
             None
