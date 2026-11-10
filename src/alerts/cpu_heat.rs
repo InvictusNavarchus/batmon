@@ -18,6 +18,13 @@ pub struct CpuHeatState(Debounced);
 impl CpuHeatState {
     #[must_use]
     pub fn step(self, sample: &Sample, t: &Thresholds) -> (Self, Option<Notification>) {
+        // Unknown status breaks an unfinished streak but preserves a fired latch.
+        if sample.power_state == crate::types::PowerState::Unknown && !sample.is_charging {
+            let (state, _) = self
+                .0
+                .observe(Observation::Neutral, t.cpu_heat_debounce_samples);
+            return (Self(state), None);
+        }
         // Unplugged, the alert is meaningless and its latch is dropped outright.
         if !sample.is_charging {
             return (Self(Debounced::Clear), None);

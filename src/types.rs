@@ -77,35 +77,42 @@ impl PowerState {
 /// layer nobody asked for. `Option` marks exactly the columns that are nullable
 /// because the hardware may not expose them.
 ///
-/// [`Default`] exists to serve as the test fixture: `Sample { charge_pct: 80.0,
+/// [`Default`] exists to serve as the test fixture: `Sample { charge_pct: Some(80.0),
 /// ..Default::default() }` gives a test the one field it cares about without a
 /// fixture module that production code could reach.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Sample {
     /// UTC timestamp, `toISOString` shape. See [`crate::formats::iso8601_millis`].
     pub ts: String,
+    /// Manufacturer/model/serial identity as JSON; all three must be readable
+    /// and the serial usable, otherwise identity is unknown.
+    pub battery_id: Option<String>,
+    /// Raw driver health/fault status; independent of capacity wear.
+    pub battery_health: Option<String>,
+    /// External power connection, independently of battery charging status.
+    pub ac_online: Option<bool>,
     /// State of charge, percent.
-    pub charge_pct: f64,
+    pub charge_pct: Option<f64>,
     /// Raw kernel `status` string, preserved verbatim alongside `power_state`.
     pub status: String,
     pub power_state: PowerState,
-    pub energy_wh: f64,
-    pub energy_full_wh: f64,
-    pub energy_design_wh: f64,
-    pub power_w: f64,
-    pub voltage_v: f64,
-    pub voltage_design_v: f64,
+    pub energy_wh: Option<f64>,
+    pub energy_full_wh: Option<f64>,
+    pub energy_design_wh: Option<f64>,
+    pub power_w: Option<f64>,
+    pub voltage_v: Option<f64>,
+    pub voltage_design_v: Option<f64>,
     /// Cycle count as reported by the battery management system, if it reports one.
     pub cycle_count: Option<i64>,
-    /// Cycle count integrated from observed energy throughput.
-    pub estimated_cycle_count: f64,
+    /// Observed energy-throughput cycles. NULL when pack attribution is uncertain.
+    pub estimated_cycle_count: Option<f64>,
     /// Battery pack temperature. Absent on many laptops.
     pub battery_temp_c: Option<f64>,
     /// Full-charge capacity as a percentage of design capacity.
-    pub health_pct: f64,
+    pub health_pct: Option<f64>,
     pub is_charging: bool,
-    /// Whether a battery is physically present. A false value suppresses all
-    /// recording and alerting for the tick.
+    /// Whether a battery is physically present. Confirmed absence suppresses
+    /// battery alerting while system recording continues.
     pub is_present: bool,
     pub time_to_empty_s: Option<i64>,
     pub time_to_full_s: Option<i64>,

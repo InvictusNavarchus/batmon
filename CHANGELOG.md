@@ -11,6 +11,21 @@ release notes; v0.3.0 and earlier had none.
 
 ## [Unreleased]
 
+### Added
+
+- Battery identity and persistent observed cycle totals per identifiable pack.
+  Replacements start their own totals; returning packs resume their totals
+  without counting energy differences across the replacement. These totals
+  reflect observed cycles since monitoring began, not lifetime BMS cycles.
+  Per-pack attribution requires readable manufacturer/model data and a usable
+  serial number. Packs without complete identity are not attributed. Legacy
+  unidentified cycle history stays separate.
+
+- Raw battery fault status (`battery_health`), separate from capacity wear.
+
+- External power connection (`ac_online`) is recorded independently of the
+  battery charging state, where the kernel exposes adapter status.
+
 ### Changed
 
 - Re-running the installer updates to the latest stable release, including when
@@ -18,6 +33,18 @@ release notes; v0.3.0 and earlier had none.
   the committed dependency lockfile.
 
 ### Fixed
+
+- Historical-store read/write failures no longer interrupt a healthy flight
+  recorder or make it forget a recorded gap in battery energy readings.
+
+- Legacy missing observed-cycle baselines initialize to zero during the identity
+  schema upgrade so unidentified packs can resume estimation. Later identity
+  uncertainty remains unknown across restarts.
+
+- Battery read failures no longer interrupt system telemetry. Missing battery
+  measurements remain unknown instead of appearing as zero or 100% health.
+  Cycle integration pauses across missing energy or source readings. Existing
+  rows retain their historical zero/100% defaults; they are not repaired.
 
 - Custom binary directories are now used consistently by the service, subsequent
   updates, and the installed `batmon-uninstall` command. Uninstalling no longer

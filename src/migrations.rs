@@ -229,6 +229,37 @@ pub const HISTORICAL_MIGRATIONS: &[Migration] = &[
             add_column_if_not_exists(conn, "samples", "psi_mem_full", "REAL")
         },
     },
+    Migration {
+        version: 10,
+        name: "add_ac_online",
+        up: |conn| add_column_if_not_exists(conn, "samples", "ac_online", "INTEGER"),
+    },
+    Migration {
+        version: 11,
+        name: "add_battery_health",
+        up: |conn| add_column_if_not_exists(conn, "samples", "battery_health", "TEXT"),
+    },
+    Migration {
+        version: 12,
+        name: "add_battery_id",
+        up: |conn| {
+            add_column_if_not_exists(conn, "samples", "battery_id", "TEXT")?;
+            // Normalize legacy baselines only at identity introduction. Some
+            // legacy schema fixtures omit the counter entirely.
+            if has_column(conn, "samples", "estimated_cycle_count")? {
+                conn.execute(
+                    "UPDATE samples SET estimated_cycle_count = 0.0
+                    WHERE battery_id IS NULL AND estimated_cycle_count IS NULL",
+                    [],
+                )?;
+            }
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS battery_cycles (
+                battery_id TEXT PRIMARY KEY, estimated_cycle_count REAL NOT NULL
+            );",
+            )
+        },
+    },
 ];
 
 // ── debug flight recorder (debug.db) ─────────────────────────────────
@@ -331,6 +362,37 @@ pub const DEBUG_MIGRATIONS: &[Migration] = &[
         up: |conn| {
             add_column_if_not_exists(conn, "samples", "psi_mem_some", "REAL")?;
             add_column_if_not_exists(conn, "samples", "psi_mem_full", "REAL")
+        },
+    },
+    Migration {
+        version: 8,
+        name: "add_ac_online",
+        up: |conn| add_column_if_not_exists(conn, "samples", "ac_online", "INTEGER"),
+    },
+    Migration {
+        version: 9,
+        name: "add_battery_health",
+        up: |conn| add_column_if_not_exists(conn, "samples", "battery_health", "TEXT"),
+    },
+    Migration {
+        version: 10,
+        name: "add_battery_id",
+        up: |conn| {
+            add_column_if_not_exists(conn, "samples", "battery_id", "TEXT")?;
+            // Normalize legacy baselines only at identity introduction. Some
+            // legacy schema fixtures omit the counter entirely.
+            if has_column(conn, "samples", "estimated_cycle_count")? {
+                conn.execute(
+                    "UPDATE samples SET estimated_cycle_count = 0.0
+                    WHERE battery_id IS NULL AND estimated_cycle_count IS NULL",
+                    [],
+                )?;
+            }
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS battery_cycles (
+                battery_id TEXT PRIMARY KEY, estimated_cycle_count REAL NOT NULL
+            );",
+            )
         },
     },
 ];

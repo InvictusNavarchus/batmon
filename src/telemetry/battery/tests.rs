@@ -43,17 +43,14 @@ fn reads_a_charge_reporting_driver_through_design_voltage() {
 }
 
 #[test]
-fn a_charge_driver_without_design_voltage_falls_back_to_the_present_one() {
+fn charge_conversion_requires_a_known_design_voltage() {
     let (_tmp, reader) = battery(&[
         ("charge_now", "4000000"),
         ("charge_full", "4000000"),
         ("voltage_now", "12000000"),
     ]);
 
-    let energy = reader
-        .energy()
-        .expect("charge_now and charge_full are present");
-    assert!((energy.now_wh - 48.0).abs() < 1e-9);
+    assert_eq!(reader.energy(), None);
 }
 
 #[test]
@@ -76,11 +73,11 @@ fn health_is_full_capacity_against_design_capacity() {
         full_wh: 48.6,
         design_wh: 53.0,
     };
-    assert_eq!(energy.health_pct(), 91.7);
+    assert_eq!(energy.health_pct(), Some(91.7));
 }
 
 #[test]
-fn health_reports_healthy_when_design_capacity_is_unknown() {
+fn health_is_unknown_when_design_capacity_is_unknown() {
     // An unreadable attribute is not evidence of a worn battery, and the
     // health alert must not fire on it.
     let energy = Energy {
@@ -88,7 +85,7 @@ fn health_reports_healthy_when_design_capacity_is_unknown() {
         full_wh: 48.6,
         design_wh: 0.0,
     };
-    assert_eq!(energy.health_pct(), 100.0);
+    assert_eq!(energy.health_pct(), None);
 }
 
 #[test]
@@ -99,26 +96,26 @@ fn power_prefers_the_direct_reading() {
         ("voltage_now", "12000000"),
     ]);
 
-    assert_eq!(reader.power_w(), 22.806);
+    assert_eq!(reader.power_w(), Some(22.806));
 }
 
 #[test]
 fn power_falls_back_to_current_times_voltage() {
     let (_tmp, reader) = battery(&[("current_now", "1500000"), ("voltage_now", "12000000")]);
 
-    assert_eq!(reader.power_w(), 18.0);
+    assert_eq!(reader.power_w(), Some(18.0));
 }
 
 #[test]
-fn power_is_zero_when_neither_source_is_available() {
+fn power_is_unknown_when_neither_source_is_available() {
     let (_tmp, reader) = battery(&[("capacity", "80")]);
-    assert_eq!(reader.power_w(), 0.0);
+    assert_eq!(reader.power_w(), None);
 }
 
 #[test]
-fn power_is_zero_when_only_one_half_of_the_fallback_exists() {
+fn power_is_unknown_when_only_one_half_of_the_fallback_exists() {
     let (_tmp, reader) = battery(&[("current_now", "1500000")]);
-    assert_eq!(reader.power_w(), 0.0);
+    assert_eq!(reader.power_w(), None);
 }
 
 #[test]
@@ -208,20 +205,20 @@ fn voltage_design_prefers_the_nominal_figure() {
         ("voltage_now", "12524000"),
     ]);
 
-    assert_eq!(reader.voltage_design_v(), 11.55);
-    assert_eq!(reader.voltage_v(), 12.524);
+    assert_eq!(reader.voltage_design_v(), Some(11.55));
+    assert_eq!(reader.voltage_v(), Some(12.524));
 }
 
 #[test]
-fn voltage_design_falls_back_to_the_present_reading() {
+fn voltage_design_does_not_substitute_the_present_reading() {
     let (_tmp, reader) = battery(&[("voltage_now", "12524000")]);
-    assert_eq!(reader.voltage_design_v(), 12.524);
+    assert_eq!(reader.voltage_design_v(), None);
 }
 
 #[test]
-fn voltage_design_is_zero_when_nothing_is_reported() {
+fn voltage_design_is_unknown_when_nothing_is_reported() {
     let (_tmp, reader) = battery(&[("capacity", "80")]);
-    assert_eq!(reader.voltage_design_v(), 0.0);
+    assert_eq!(reader.voltage_design_v(), None);
 }
 
 #[test]
@@ -247,4 +244,78 @@ fn an_incomplete_energy_pair_reads_as_absent() {
 
     assert_eq!(reader.energy(), None);
     assert_eq!(reader.charge_pct(), None);
+}
+
+#[test]
+fn charger_presence_distinguishes_online_offline_and_unknown() {
+    let tmp = tempfile::tempdir().unwrap();
+    assert_eq!(read_ac_online(tmp.path()), None);
+    let supply = tmp.path().join("AC");
+    std::fs::create_dir(&supply).unwrap();
+    std::fs::write(supply.join("type"), "Mains").unwrap();
+    assert_eq!(read_ac_online(tmp.path()), None);
+    for (raw, expected) in [
+        ("0", Some(false)),
+        ("1", Some(true)),
+        ("2", Some(true)),
+        ("bad", None),
+    ] {
+        std::fs::write(supply.join("online"), raw).unwrap();
+        assert_eq!(read_ac_online(tmp.path()), expected);
+    }
+}
+
+#[test]
+fn driver_health_is_preserved_without_guessing_or_restricting_fault_names() {
+    for value in ["Good", "Overheat", "Future fault"] {
+        let (_tmp, reader) = battery(&[("health", value)]);
+        assert_eq!(reader.reported_health().as_deref(), Some(value));
+    }
+    let (_tmp, reader) = battery(&[("health", " ")]);
+    assert_eq!(reader.reported_health(), None);
+}
+
+#[test]
+fn identity_requires_a_usable_serial_and_ignores_capacity_changes() {
+    for serial in ["", "0000", "Unknown", "N/A"] {
+        let (_tmp, reader) = battery(&[("serial_number", serial)]);
+        assert_eq!(reader.identity(), None);
+    }
+    let (tmp, reader) = battery(&[
+        ("serial_number", "ABC"),
+        ("model_name", "Pack"),
+        ("manufacturer", "Vendor"),
+    ]);
+    let identity = reader.identity().unwrap();
+    std::fs::write(tmp.path().join("energy_full"), "123").unwrap();
+    assert_eq!(reader.identity().as_deref(), Some(identity.as_str()));
+}
+
+#[test]
+fn missing_identity_metadata_is_unknown_rather_than_a_new_pack() {
+    let (tmp, reader) = battery(&[
+        ("serial_number", "ABC"),
+        ("model_name", "Pack"),
+        ("manufacturer", "Vendor"),
+    ]);
+    let identity = reader.identity().unwrap();
+    std::fs::remove_file(tmp.path().join("model_name")).unwrap();
+    assert_eq!(reader.identity(), None);
+    std::fs::write(tmp.path().join("model_name"), "Pack").unwrap();
+    assert_eq!(reader.identity(), Some(identity));
+}
+
+#[test]
+fn nonpositive_full_capacity_does_not_claim_capacity_wear() {
+    for full_wh in [0.0, -1.0] {
+        assert_eq!(
+            Energy {
+                now_wh: 0.0,
+                full_wh,
+                design_wh: 60.0
+            }
+            .health_pct(),
+            None
+        );
+    }
 }

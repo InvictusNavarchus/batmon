@@ -57,13 +57,13 @@ impl TelemetrySource for Scripted {
 fn present(charge_pct: f64, energy_wh: f64) -> Sample {
     Sample {
         ts: crate::formats::now_iso8601_millis(),
-        charge_pct,
+        charge_pct: Some(charge_pct),
         status: "Discharging".to_owned(),
         power_state: PowerState::Discharging,
-        energy_wh,
-        energy_full_wh: 58.0,
-        energy_design_wh: 58.0,
-        health_pct: 99.0,
+        energy_wh: Some(energy_wh),
+        energy_full_wh: Some(58.0),
+        energy_design_wh: Some(58.0),
+        health_pct: Some(99.0),
         is_present: true,
         battery_temp_c: Some(30.0),
         boot_id: Some("boot-1".to_owned()),
@@ -111,7 +111,7 @@ fn history_is_written_on_the_first_tick_and_then_once_a_minute() {
 }
 
 #[test]
-fn an_absent_battery_records_nothing_and_clears_the_alert_state() {
+fn an_absent_battery_preserves_system_recording_and_clears_alerts() {
     let mut daemon = daemon(Scripted::repeating(Sample {
         is_present: false,
         ..present(80.0, 46.0)
@@ -121,8 +121,8 @@ fn an_absent_battery_records_nothing_and_clears_the_alert_state() {
         daemon.run_tick();
     }
 
-    assert_eq!(daemon.debug.latest().unwrap(), None);
-    assert_eq!(daemon.historical.latest().unwrap(), None);
+    assert!(!daemon.debug.latest().unwrap().unwrap().is_present);
+    assert!(!daemon.historical.latest().unwrap().unwrap().is_present);
     assert!(daemon.notifier.delivered().is_empty());
     assert_eq!(daemon.ticks(), 10, "ticks still advance");
 }
@@ -138,10 +138,13 @@ fn a_battery_reappearing_resumes_recording() {
     ]));
 
     daemon.run_tick();
-    assert_eq!(daemon.debug.latest().unwrap(), None);
+    assert!(!daemon.debug.latest().unwrap().unwrap().is_present);
 
     daemon.run_tick();
-    assert_eq!(daemon.debug.latest().unwrap().unwrap().charge_pct, 79.0);
+    assert_eq!(
+        daemon.debug.latest().unwrap().unwrap().charge_pct,
+        Some(79.0)
+    );
 }
 
 #[test]
@@ -163,7 +166,8 @@ fn a_battery_that_comes_back_does_not_have_the_gap_counted_as_discharge() {
 
     let latest = daemon.debug.latest().unwrap().unwrap();
     assert_eq!(
-        latest.estimated_cycle_count, 0.0,
+        latest.estimated_cycle_count.unwrap(),
+        0.0,
         "the absence was integrated as discharge"
     );
 }
@@ -174,7 +178,7 @@ fn a_returning_battery_carries_the_accumulated_count_forward() {
     let debug = Store::open_in_memory(Database::Debug).unwrap();
     debug
         .insert(&Sample {
-            estimated_cycle_count: 12.5,
+            estimated_cycle_count: Some(12.5),
             ..present(100.0, 58.0)
         })
         .unwrap();
@@ -199,7 +203,8 @@ fn a_returning_battery_carries_the_accumulated_count_forward() {
     daemon.run_tick();
     let after_return = daemon.debug.latest().unwrap().unwrap();
     assert_eq!(
-        after_return.estimated_cycle_count, 12.5,
+        after_return.estimated_cycle_count.unwrap(),
+        12.5,
         "count was not carried"
     );
 
@@ -207,9 +212,9 @@ fn a_returning_battery_carries_the_accumulated_count_forward() {
     daemon.run_tick();
     let resumed = daemon.debug.latest().unwrap().unwrap();
     assert!(
-        resumed.estimated_cycle_count > 12.5,
+        resumed.estimated_cycle_count.unwrap() > 12.5,
         "integration did not resume: {}",
-        resumed.estimated_cycle_count
+        resumed.estimated_cycle_count.unwrap()
     );
 }
 
@@ -289,9 +294,9 @@ fn cycles_accumulate_across_ticks_at_flight_recorder_resolution() {
 
     let latest = daemon.debug.latest().unwrap().unwrap();
     assert!(
-        (latest.estimated_cycle_count - 0.02).abs() < 1e-9,
+        (latest.estimated_cycle_count.unwrap() - 0.02).abs() < 1e-9,
         "{}",
-        latest.estimated_cycle_count
+        latest.estimated_cycle_count.unwrap()
     );
 }
 
@@ -302,7 +307,7 @@ fn a_restart_resumes_the_cycle_count_from_the_flight_recorder() {
     let debug = Store::open_in_memory(Database::Debug).unwrap();
     debug
         .insert(&Sample {
-            estimated_cycle_count: 45.5,
+            estimated_cycle_count: Some(45.5),
             ..present(81.0, 58.0)
         })
         .unwrap();
@@ -320,9 +325,9 @@ fn a_restart_resumes_the_cycle_count_from_the_flight_recorder() {
 
     let latest = daemon.debug.latest().unwrap().unwrap();
     assert!(
-        (latest.estimated_cycle_count - 45.51).abs() < 1e-9,
+        (latest.estimated_cycle_count.unwrap() - 45.51).abs() < 1e-9,
         "{}",
-        latest.estimated_cycle_count
+        latest.estimated_cycle_count.unwrap()
     );
 }
 
@@ -331,7 +336,7 @@ fn a_restart_falls_back_to_the_historical_database() {
     let historical = Store::open_in_memory(Database::Historical).unwrap();
     historical
         .insert(&Sample {
-            estimated_cycle_count: 12.0,
+            estimated_cycle_count: Some(12.0),
             ..present(81.0, 58.0)
         })
         .unwrap();
@@ -354,6 +359,7 @@ fn a_restart_falls_back_to_the_historical_database() {
             .unwrap()
             .unwrap()
             .estimated_cycle_count
+            .unwrap()
             > 12.0
     );
 }
@@ -438,8 +444,8 @@ fn the_two_databases_integrate_cycles_independently() {
     let debug = daemon.debug.latest().unwrap().unwrap();
     let historical = daemon.historical.latest().unwrap().unwrap();
 
-    assert!((debug.estimated_cycle_count - 0.01).abs() < 1e-9);
-    assert!((historical.estimated_cycle_count - 0.01).abs() < 1e-9);
+    assert!((debug.estimated_cycle_count.unwrap() - 0.01).abs() < 1e-9);
+    assert!((historical.estimated_cycle_count.unwrap() - 0.01).abs() < 1e-9);
 }
 
 #[test]
@@ -476,4 +482,320 @@ fn a_cleared_flag_prevents_the_loop_running_at_all() {
 fn shutdown_checkpoints_without_complaint() {
     let daemon = daemon(Scripted::repeating(present(80.0, 46.0)));
     daemon.shutdown();
+}
+
+#[test]
+fn partial_samples_preserve_latches_and_break_the_cycle_interval() {
+    let low = present(8.0, 4.0);
+    let mut missing = low.clone();
+    missing.charge_pct = None;
+    missing.energy_wh = None;
+    let mut daemon = daemon(Scripted::new(vec![low, missing, present(7.0, 1.0)]));
+    daemon.schedule.historical_interval_ticks = 1;
+    for _ in 0..3 {
+        daemon.run_tick();
+    }
+    assert_eq!(daemon.debug.row_count().unwrap(), 3);
+    assert_eq!(daemon.notifier.delivered().len(), 1);
+    assert_eq!(
+        daemon
+            .debug
+            .latest()
+            .unwrap()
+            .unwrap()
+            .estimated_cycle_count
+            .unwrap(),
+        0.0
+    );
+    assert_eq!(
+        daemon
+            .historical
+            .latest()
+            .unwrap()
+            .unwrap()
+            .estimated_cycle_count
+            .unwrap(),
+        0.0
+    );
+}
+
+#[test]
+fn pack_totals_survive_replacement_return_pruning_and_restart() {
+    let pack = |id: &str, energy| Sample {
+        battery_id: Some(id.to_owned()),
+        ..present(50.0, energy)
+    };
+    let mut daemon = daemon(Scripted::new(vec![
+        pack("A", 58.0),
+        pack("A", 57.42),
+        pack("B", 30.0),
+        pack("A", 40.0),
+    ]));
+    for _ in 0..2 {
+        daemon.run_tick();
+    }
+    assert!((daemon.debug.cycles_for("A").unwrap() - 0.01).abs() < 1e-9);
+    daemon.run_tick();
+    assert_eq!(
+        daemon
+            .debug
+            .latest()
+            .unwrap()
+            .unwrap()
+            .estimated_cycle_count
+            .unwrap(),
+        0.0
+    );
+    daemon.debug.retain_newest(1).unwrap();
+    daemon.previous = None; // same stores, fresh daemon baseline
+    daemon.run_tick();
+    assert!(
+        (daemon
+            .debug
+            .latest()
+            .unwrap()
+            .unwrap()
+            .estimated_cycle_count
+            .unwrap()
+            - 0.01)
+            .abs()
+            < 1e-9
+    );
+}
+
+#[test]
+fn a_source_gap_does_not_count_unobserved_discharge() {
+    let mut daemon = daemon(WithGaps::new(vec![
+        Some(present(50.0, 30.0)),
+        None,
+        Some(present(40.0, 20.0)),
+    ]));
+    for _ in 0..3 {
+        daemon.run_tick();
+    }
+    assert_eq!(
+        daemon
+            .debug
+            .latest()
+            .unwrap()
+            .unwrap()
+            .estimated_cycle_count
+            .unwrap(),
+        0.0
+    );
+}
+
+#[test]
+fn missing_identity_records_no_attributed_total_and_restores_known_pack() {
+    let known = Sample {
+        battery_id: Some("A".into()),
+        estimated_cycle_count: Some(5.0),
+        ..present(50.0, 30.0)
+    };
+    let mut unknown = known.clone();
+    unknown.battery_id = None;
+    unknown.energy_wh = Some(20.0);
+    let mut daemon = daemon(Scripted::new(vec![unknown.clone(), unknown, known.clone()]));
+    daemon.schedule.historical_interval_ticks = 1;
+    daemon.debug.insert(&known).unwrap();
+    for _ in 0..2 {
+        daemon.run_tick();
+        assert_eq!(
+            daemon
+                .debug
+                .latest()
+                .unwrap()
+                .unwrap()
+                .estimated_cycle_count,
+            None
+        );
+        assert_eq!(
+            daemon
+                .historical
+                .latest()
+                .unwrap()
+                .unwrap()
+                .estimated_cycle_count,
+            None
+        );
+        assert_eq!(daemon.debug.cycles_for("A").unwrap(), 5.0);
+        daemon.previous = None;
+        daemon.last_known_battery_id = None; // restart during uncertainty
+    }
+    daemon.run_tick();
+    assert_eq!(
+        daemon
+            .debug
+            .latest()
+            .unwrap()
+            .unwrap()
+            .estimated_cycle_count,
+        Some(5.0)
+    );
+}
+
+#[test]
+fn an_external_writer_cannot_regress_totals_or_duplicate_an_interval() {
+    let pack = |energy| Sample {
+        battery_id: Some("A".into()),
+        ..present(50.0, energy)
+    };
+    let mut daemon = daemon(Scripted::new(vec![pack(30.0), pack(27.0), pack(26.0)]));
+    daemon
+        .debug
+        .insert(&Sample {
+            estimated_cycle_count: Some(5.0),
+            ..pack(30.0)
+        })
+        .unwrap();
+    daemon.run_tick();
+    // A oneshot advances the durable counter while the daemon still holds 5.
+    daemon
+        .debug
+        .insert(&Sample {
+            estimated_cycle_count: Some(8.0),
+            ..pack(28.0)
+        })
+        .unwrap();
+    daemon.run_tick();
+    assert_eq!(
+        daemon
+            .debug
+            .latest()
+            .unwrap()
+            .unwrap()
+            .estimated_cycle_count,
+        Some(8.0)
+    );
+    daemon.run_tick();
+    assert!(
+        (daemon
+            .debug
+            .latest()
+            .unwrap()
+            .unwrap()
+            .estimated_cycle_count
+            .unwrap()
+            - (8.0 + 1.0 / 58.0))
+            .abs()
+            < 1e-9
+    );
+}
+
+#[test]
+fn history_ledger_can_recover_a_lagging_debug_total() {
+    let pack = Sample {
+        battery_id: Some("A".into()),
+        ..present(50.0, 30.0)
+    };
+    let mut daemon = daemon(Scripted::repeating(pack.clone()));
+    daemon
+        .debug
+        .insert(&Sample {
+            estimated_cycle_count: Some(5.0),
+            ..pack.clone()
+        })
+        .unwrap();
+    daemon
+        .historical
+        .insert(&Sample {
+            estimated_cycle_count: Some(8.0),
+            ..pack
+        })
+        .unwrap();
+    daemon.run_tick();
+    assert_eq!(
+        daemon
+            .debug
+            .latest()
+            .unwrap()
+            .unwrap()
+            .estimated_cycle_count,
+        Some(8.0)
+    );
+}
+
+#[test]
+fn confirmed_absence_rearms_a_previously_fired_charge_alert() {
+    let low = present(8.0, 4.0);
+    let absent = Sample {
+        is_present: false,
+        ..low.clone()
+    };
+    let mut daemon = daemon(Scripted::new(vec![low.clone(), absent, low]));
+    for _ in 0..3 {
+        daemon.run_tick();
+    }
+    assert_eq!(daemon.notifier.delivered().len(), 2);
+}
+
+#[test]
+fn failed_history_reads_and_writes_preserve_flight_samples_and_gap_baselines() {
+    let pack = |id: &str, energy| Sample {
+        battery_id: Some(id.into()),
+        ..present(50.0, energy)
+    };
+    let mut partial = pack("A", 30.0);
+    partial.energy_wh = None;
+    let mut daemon = daemon(Scripted::new(vec![
+        pack("A", 30.0),
+        partial,
+        pack("A", 20.0),
+        pack("B", 40.0),
+    ]));
+    daemon
+        .debug
+        .insert(&Sample {
+            estimated_cycle_count: Some(5.0),
+            ..pack("A", 30.0)
+        })
+        .unwrap();
+    daemon.schedule.historical_interval_ticks = 1;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("history.db");
+    daemon.historical = Store::open(&path, Database::Historical).unwrap();
+    rusqlite::Connection::open(&path)
+        .unwrap()
+        .execute_batch("DROP TABLE battery_cycles")
+        .unwrap();
+    for _ in 0..3 {
+        daemon.run_tick();
+        assert_eq!(
+            daemon
+                .debug
+                .latest()
+                .unwrap()
+                .unwrap()
+                .estimated_cycle_count,
+            Some(5.0)
+        );
+    }
+    daemon.run_tick(); // identity transition also survives a historical read failure
+    assert_eq!(
+        daemon
+            .debug
+            .latest()
+            .unwrap()
+            .unwrap()
+            .battery_id
+            .as_deref(),
+        Some("B")
+    );
+    assert_eq!(daemon.debug.row_count().unwrap(), 5);
+    assert_eq!(daemon.historical.row_count().unwrap(), 0);
+}
+
+#[test]
+fn unavailable_history_cannot_block_an_empty_flight_recorder() {
+    let mut daemon = daemon(Scripted::repeating(present(50.0, 30.0)));
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("history.db");
+    daemon.historical = Store::open(&path, Database::Historical).unwrap();
+    rusqlite::Connection::open(&path)
+        .unwrap()
+        .execute_batch("DROP TABLE samples")
+        .unwrap();
+    daemon.run_tick();
+    assert_eq!(daemon.debug.row_count().unwrap(), 1);
+    assert!(daemon.previous.is_some());
 }

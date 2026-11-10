@@ -10,7 +10,7 @@ use crate::types::{PowerState, Sample};
 /// Cycle count for `curr`, carried forward from `prev`.
 ///
 /// Pure and total: no I/O, no clock, no state. The result is always the previous
-/// count plus a non-negative increment, so the series can only ever rise.
+/// count plus a non-negative increment within one pack history.
 ///
 /// Three guards keep the integral honest, and each exists because of a real way
 /// the number would otherwise drift upward:
@@ -30,20 +30,31 @@ use crate::types::{PowerState, Sample};
 ///
 /// With no previous sample the result is `0.0`, which is what a fresh database
 /// looks like. Every other path returns the carried count or more -- including
-/// zero, when that is what was carried. The series is cumulative wear, so it
-/// must never fall.
+/// zero, when that is what was carried, within the same identity. On identity
+/// transitions the caller supplies the new pack's restored total in `curr`;
+/// that value is returned without integrating the inter-pack energy difference.
+/// Unidentified (None/None) histories remain supported, without claiming that
+/// their physical pack identity can be verified.
 #[must_use]
 pub fn compute_estimated_cycles(curr: &Sample, prev: Option<&Sample>) -> f64 {
     let Some(prev) = prev else {
         return 0.0;
     };
 
-    let carried = prev.estimated_cycle_count;
+    if curr.battery_id != prev.battery_id {
+        return curr.estimated_cycle_count.unwrap_or(0.0);
+    }
+    let carried = prev.estimated_cycle_count.unwrap_or(0.0);
+    let (Some(design), Some(before), Some(now)) =
+        (curr.energy_design_wh, prev.energy_wh, curr.energy_wh)
+    else {
+        return carried;
+    };
 
     // An unreadable design capacity means the increment cannot be computed, not
     // that the wear never happened. Returning zero here would silently reset a
     // number that represents months of accumulated history.
-    if curr.energy_design_wh <= 0.0 {
+    if design <= 0.0 {
         return carried;
     }
 
@@ -55,9 +66,9 @@ pub fn compute_estimated_cycles(curr: &Sample, prev: Option<&Sample>) -> f64 {
         return carried;
     }
 
-    let delta_wh = prev.energy_wh - curr.energy_wh;
-    if delta_wh > 0.0 && delta_wh <= curr.energy_design_wh {
-        return carried + delta_wh / curr.energy_design_wh;
+    let delta_wh = before - now;
+    if delta_wh > 0.0 && delta_wh <= design {
+        return carried + delta_wh / design;
     }
 
     carried

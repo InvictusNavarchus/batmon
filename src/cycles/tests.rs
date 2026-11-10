@@ -5,9 +5,9 @@ use super::*;
 /// A discharging sample with a 50 Wh design capacity and a continuous boot.
 fn discharging(energy_wh: f64, cycles: f64) -> Sample {
     Sample {
-        energy_wh,
-        energy_design_wh: 50.0,
-        estimated_cycle_count: cycles,
+        energy_wh: Some(energy_wh),
+        energy_design_wh: Some(50.0),
+        estimated_cycle_count: Some(cycles),
         status: "Discharging".to_owned(),
         power_state: PowerState::Discharging,
         boot_id: Some("boot-uuid-1".to_owned()),
@@ -27,8 +27,8 @@ fn an_unusable_design_capacity_keeps_the_carried_count() {
 
     for design in [0.0, -10.0] {
         let curr = Sample {
-            energy_wh: 40.0,
-            energy_design_wh: design,
+            energy_wh: Some(40.0),
+            energy_design_wh: Some(design),
             ..discharging(40.0, 0.0)
         };
         // 2.0, not 0.0: the increment is unknown, the history is not.
@@ -39,7 +39,7 @@ fn an_unusable_design_capacity_keeps_the_carried_count() {
 #[test]
 fn charging_never_accrues_wear() {
     let prev = Sample {
-        estimated_cycle_count: 3.5,
+        estimated_cycle_count: Some(3.5),
         ..discharging(40.0, 3.5)
     };
     let curr = Sample {
@@ -119,12 +119,12 @@ fn sub_milliwatt_hour_increments_accumulate_instead_of_rounding_away() {
 
     for _ in 0..100 {
         let prev = Sample {
-            energy_design_wh: design_wh,
+            energy_design_wh: Some(design_wh),
             ..discharging(energy, cycles)
         };
         energy -= delta_per_second;
         let curr = Sample {
-            energy_design_wh: design_wh,
+            energy_design_wh: Some(design_wh),
             ..discharging(energy, 0.0)
         };
         cycles = compute_estimated_cycles(&curr, Some(&prev));
@@ -214,4 +214,17 @@ fn energy_rising_while_discharging_is_ignored_rather_than_subtracted() {
     let curr = discharging(45.0, 0.0);
 
     assert_eq!(compute_estimated_cycles(&curr, Some(&prev)), 5.0);
+}
+
+#[test]
+fn a_different_pack_uses_the_callers_restored_total_without_integrating() {
+    let previous = Sample {
+        battery_id: Some("A".into()),
+        ..discharging(40.0, 5.0)
+    };
+    let current = Sample {
+        battery_id: Some("B".into()),
+        ..discharging(10.0, 2.0)
+    };
+    assert_eq!(compute_estimated_cycles(&current, Some(&previous)), 2.0);
 }

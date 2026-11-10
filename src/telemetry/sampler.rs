@@ -85,6 +85,7 @@ pub struct Sampler {
     /// Whether the current unreadable spell has already been logged, so a
     /// sustained one does not repeat the warning at the sampling rate.
     warned_unreadable: bool,
+    last_battery_id: Option<String>,
 }
 
 impl std::fmt::Debug for Sampler {
@@ -117,6 +118,7 @@ impl Sampler {
             cached_time_to_empty: None,
             cached_time_to_full: None,
             warned_unreadable: false,
+            last_battery_id: None,
         }
     }
 
@@ -168,67 +170,45 @@ impl TelemetrySource for Sampler {
         let power_state = PowerState::from_status(&status);
         let is_charging = power_state.is_charging();
 
-        // A battery that is installed but unreadable produces no sample at all.
-        // Substituting zero here is what made an unreadable `capacity` announce
-        // a critical low battery, and an unreadable `energy_now` accrue most of
-        // a cycle in a single tick.
-        let presence = self.battery.is_present();
-        let (Some(energy), Some(charge_pct)) = (self.battery.energy(), self.battery.charge_pct())
-        else {
-            // Either way the cached runtime estimates describe a battery we can
-            // no longer see. Dropping them forces a fresh poll on recovery
-            // rather than attributing the old pack's time-to-empty to the new
-            // reading.
+        let battery_id = self.battery.identity();
+        if battery_id != self.last_battery_id {
             self.invalidate_estimates();
-
-            // Only a confirmed `present = 0` is absence. An unreadable presence
-            // attribute is unknown, and reporting it as absence would clear
-            // every latch for hardware that never went anywhere.
-            if presence != Some(false) {
-                if !self.warned_unreadable {
-                    self.warned_unreadable = true;
-                    tracing::warn!("battery present but its energy or capacity could not be read");
-                }
-                return None;
+            self.last_battery_id.clone_from(&battery_id);
+        }
+        let presence = self.battery.is_present();
+        let energy = (presence != Some(false))
+            .then(|| self.battery.energy())
+            .flatten();
+        let charge_pct = (presence != Some(false))
+            .then(|| self.battery.charge_pct())
+            .flatten();
+        let readable = energy.is_some() || charge_pct.is_some();
+        if readable {
+            self.refresh_estimates(power_state);
+        } else {
+            self.invalidate_estimates();
+            if !self.warned_unreadable {
+                tracing::warn!("battery unavailable; continuing system recording");
             }
-            self.warned_unreadable = false;
-
-            // Genuinely absent: still a sample, because `is_present` false is
-            // what tells the caller to clear the latches.
-            return Some(Sample {
-                ts: now_iso8601_millis(),
-                status,
-                power_state,
-                is_charging,
-                is_present: false,
-                ..Sample::default()
-            });
-        };
-
-        if std::mem::take(&mut self.warned_unreadable) {
+        }
+        if readable && self.warned_unreadable {
             tracing::info!("battery readable again");
         }
+        self.warned_unreadable = !readable;
         let power_w = self.battery.power_w();
         let thermals = self.thermal.read();
-
-        self.refresh_estimates(power_state);
-
-        // Where UPower says nothing, fall back to dividing remaining energy by
-        // the present rate. That is a far worse estimate — it assumes the
-        // current draw continues unchanged — but it is better than a blank
-        // column in a forensic record.
         let mut time_to_empty_s = self.cached_time_to_empty;
         let mut time_to_full_s = self.cached_time_to_full;
-
-        if time_to_empty_s.is_none()
-            && power_state == PowerState::Discharging
-            && power_w > MIN_RATE_FOR_ESTIMATE_W
+        if let (Some(energy), Some(rate)) =
+            (energy, power_w.filter(|w| *w > MIN_RATE_FOR_ESTIMATE_W))
         {
-            time_to_empty_s = Some(round_half_up(energy.now_wh / power_w * 3_600.0) as i64);
-        }
-        if time_to_full_s.is_none() && is_charging && power_w > MIN_RATE_FOR_ESTIMATE_W {
-            time_to_full_s =
-                Some(round_half_up((energy.full_wh - energy.now_wh) / power_w * 3_600.0) as i64);
+            if time_to_empty_s.is_none() && power_state == PowerState::Discharging {
+                time_to_empty_s = Some(round_half_up(energy.now_wh / rate * 3_600.0) as i64);
+            }
+            if time_to_full_s.is_none() && is_charging {
+                time_to_full_s =
+                    Some(round_half_up((energy.full_wh - energy.now_wh) / rate * 3_600.0) as i64);
+            }
         }
 
         // /proc/stat is read once and its totals shared between the utilisation
@@ -253,27 +233,29 @@ impl TelemetrySource for Sampler {
 
         Some(Sample {
             ts: now_iso8601_millis(),
+            battery_id,
+            battery_health: self.battery.reported_health(),
+            ac_online: crate::telemetry::battery::read_ac_online(&self.paths.power_supply_base),
             charge_pct,
             status,
             power_state,
-            energy_wh: round_to(energy.now_wh, 3),
-            energy_full_wh: round_to(energy.full_wh, 3),
-            energy_design_wh: round_to(energy.design_wh, 3),
-            power_w: round_to(power_w, 3),
+            energy_wh: energy.map(|e| round_to(e.now_wh, 3)),
+            energy_full_wh: energy.map(|e| round_to(e.full_wh, 3)),
+            energy_design_wh: energy
+                .filter(|e| e.design_wh > 0.0)
+                .map(|e| round_to(e.design_wh, 3)),
+            power_w: power_w.map(|w| round_to(w, 3)),
             // Voltages are stored unrounded, unlike energy and power. Preserved
             // from the original rather than normalised, so stored rows match.
             voltage_v: self.battery.voltage_v(),
             voltage_design_v: self.battery.voltage_design_v(),
             cycle_count: self.battery.cycle_count(),
-            estimated_cycle_count: 0.0,
+            estimated_cycle_count: Some(0.0),
             battery_temp_c: thermals.battery_c,
-            health_pct: energy.health_pct(),
+            health_pct: energy.and_then(crate::telemetry::battery::Energy::health_pct),
             is_charging,
-            // Unknown resolves to present: a full reading just came back, so
-            // the pack is demonstrably there. A confirmed `present = 0` is
-            // still obeyed even though the attributes read, because that is
-            // the driver's own answer -- a pack being removed reports absent
-            // before its stale values stop parsing.
+            // Only confirmed absence clears alert latches. Unknown presence
+            // preserves them, while unavailable measurements remain nullable.
             is_present: presence.unwrap_or(true),
             time_to_empty_s,
             time_to_full_s,

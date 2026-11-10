@@ -4,20 +4,23 @@ use super::*;
 
 fn sample(ts: &str, charge_pct: f64) -> Sample {
     Sample {
+        ac_online: None,
+        battery_health: None,
+        battery_id: None,
         ts: ts.to_owned(),
-        charge_pct,
+        charge_pct: Some(charge_pct),
         status: "Discharging".to_owned(),
         power_state: PowerState::Discharging,
-        energy_wh: 45.0,
-        energy_full_wh: 50.0,
-        energy_design_wh: 53.0,
-        power_w: 11.5,
-        voltage_v: 15.4,
-        voltage_design_v: 15.4,
+        energy_wh: Some(45.0),
+        energy_full_wh: Some(50.0),
+        energy_design_wh: Some(53.0),
+        power_w: Some(11.5),
+        voltage_v: Some(15.4),
+        voltage_design_v: Some(15.4),
         cycle_count: Some(120),
-        estimated_cycle_count: 0.0,
+        estimated_cycle_count: Some(0.0),
         battery_temp_c: Some(32.1),
-        health_pct: 94.3,
+        health_pct: Some(94.3),
         is_charging: false,
         is_present: true,
         time_to_empty_s: Some(9_000),
@@ -74,7 +77,7 @@ fn latest_returns_the_most_recently_inserted_row() {
 
     let latest = store.latest().unwrap().unwrap();
     assert_eq!(latest.ts, "2026-09-06T00:00:01.000Z");
-    assert_eq!(latest.charge_pct, 79.0);
+    assert_eq!(latest.charge_pct, Some(79.0));
 }
 
 #[test]
@@ -82,15 +85,19 @@ fn inserting_with_integration_returns_the_previous_row_and_accrues_cycles() {
     let store = Store::open_in_memory(Database::Historical).unwrap();
 
     let mut first = Sample {
-        energy_wh: 50.0,
-        estimated_cycle_count: 2.0,
+        energy_wh: Some(50.0),
+        estimated_cycle_count: Some(2.0),
         ..sample("2026-09-06T00:00:00.000Z", 90.0)
     };
     assert_eq!(store.insert_integrating_cycles(&mut first).unwrap(), None);
-    assert_eq!(first.estimated_cycle_count, 0.0, "no history to carry");
+    assert_eq!(
+        first.estimated_cycle_count.unwrap(),
+        0.0,
+        "no history to carry"
+    );
 
     let mut second = Sample {
-        energy_wh: 44.7, // 5.3 Wh out of a 53 Wh design capacity
+        energy_wh: Some(44.7), // 5.3 Wh out of a 53 Wh design capacity
         ..sample("2026-09-06T00:01:00.000Z", 80.0)
     };
     let previous = store
@@ -99,7 +106,7 @@ fn inserting_with_integration_returns_the_previous_row_and_accrues_cycles() {
         .unwrap();
 
     assert_eq!(previous.ts, "2026-09-06T00:00:00.000Z");
-    assert!((second.estimated_cycle_count - 0.1).abs() < 1e-9);
+    assert!((second.estimated_cycle_count.unwrap() - 0.1).abs() < 1e-9);
 }
 
 #[test]
@@ -109,20 +116,20 @@ fn integration_writes_the_computed_value_back_to_the_caller() {
     let store = Store::open_in_memory(Database::Historical).unwrap();
     store
         .insert(&Sample {
-            energy_wh: 50.0,
+            energy_wh: Some(50.0),
             ..sample("2026-09-06T00:00:00.000Z", 90.0)
         })
         .unwrap();
 
     let mut next = Sample {
-        energy_wh: 44.7,
-        estimated_cycle_count: 999.0,
+        energy_wh: Some(44.7),
+        estimated_cycle_count: Some(999.0),
         ..sample("2026-09-06T00:01:00.000Z", 80.0)
     };
     store.insert_integrating_cycles(&mut next).unwrap();
 
     assert!(
-        next.estimated_cycle_count < 1.0,
+        next.estimated_cycle_count.unwrap() < 1.0,
         "caller's value was not replaced"
     );
 }
@@ -312,7 +319,7 @@ fn a_stored_power_state_wins_over_the_status_string() {
 }
 
 #[test]
-fn null_numerics_read_back_as_zero_rather_than_failing() {
+fn null_measurements_remain_unknown_on_read() {
     let store = Store::open_in_memory(Database::Historical).unwrap();
     store
         .conn
@@ -323,9 +330,9 @@ fn null_numerics_read_back_as_zero_rather_than_failing() {
         .unwrap();
 
     let row = store.latest().unwrap().unwrap();
-    assert_eq!(row.estimated_cycle_count, 0.0);
-    assert_eq!(row.charge_pct, 0.0);
-    assert_eq!(row.energy_design_wh, 0.0);
+    assert_eq!(row.estimated_cycle_count, None);
+    assert_eq!(row.charge_pct, None);
+    assert_eq!(row.energy_design_wh, None);
     assert_eq!(row.cycle_count, None);
     assert_eq!(row.battery_temp_c, None);
 }
@@ -342,8 +349,8 @@ fn the_two_databases_get_their_own_ladders() {
             .unwrap()
     };
 
-    assert_eq!(version(&historical), 9);
-    assert_eq!(version(&debug), 7);
+    assert_eq!(version(&historical), 12);
+    assert_eq!(version(&debug), 10);
 }
 
 #[test]
@@ -374,5 +381,112 @@ fn a_reopened_database_still_holds_its_rows() {
     }
 
     let reopened = Store::open(&path, Database::Historical).unwrap();
-    assert_eq!(reopened.latest().unwrap().unwrap().charge_pct, 50.0);
+    assert_eq!(reopened.latest().unwrap().unwrap().charge_pct, Some(50.0));
+}
+
+#[test]
+fn new_battery_context_and_partial_measurements_round_trip() {
+    for database in [Database::Historical, Database::Debug] {
+        let store = Store::open_in_memory(database).unwrap();
+        let sample = Sample {
+            ts: "2026-11-10T00:00:00.000Z".to_owned(),
+            battery_id: Some("pack-A".to_owned()),
+            battery_health: Some("Overheat".to_owned()),
+            ac_online: Some(true),
+            estimated_cycle_count: Some(2.5),
+            ..Sample::default()
+        };
+        store.insert(&sample).unwrap();
+        assert_eq!(store.latest().unwrap().unwrap(), sample);
+        assert_eq!(store.cycles_for("pack-A").unwrap(), 2.5);
+    }
+}
+
+#[test]
+fn oneshot_keeps_unknown_identity_totals_nullable_until_known_pack_returns() {
+    let store = Store::open_in_memory(Database::Debug).unwrap();
+    let known = Sample {
+        battery_id: Some("A".into()),
+        estimated_cycle_count: Some(5.0),
+        ..sample("known", 50.0)
+    };
+    store.insert(&known).unwrap();
+    let mut unknown = Sample {
+        battery_id: None,
+        ..known.clone()
+    };
+    for _ in 0..2 {
+        store.insert_integrating_cycles(&mut unknown).unwrap();
+        assert_eq!(unknown.estimated_cycle_count, None);
+        assert_eq!(store.latest().unwrap().unwrap().estimated_cycle_count, None);
+    }
+    let mut recovered = known;
+    store.insert_integrating_cycles(&mut recovered).unwrap();
+    assert_eq!(recovered.estimated_cycle_count, Some(5.0));
+}
+
+#[test]
+fn ledger_reconciliation_does_not_add_an_overlapping_delta_twice() {
+    let store = Store::open_in_memory(Database::Debug).unwrap();
+    let known = Sample {
+        battery_id: Some("A".into()),
+        estimated_cycle_count: Some(8.0),
+        ..sample("known", 50.0)
+    };
+    store.insert(&known).unwrap();
+    // A stale writer cannot lower the row below the durable counter.
+    let stale = Sample {
+        estimated_cycle_count: Some(5.0),
+        ..known.clone()
+    };
+    assert_eq!(store.insert(&stale).unwrap(), Some(8.0));
+    let mut next = Sample {
+        energy_wh: Some(known.energy_wh.unwrap() - 1.0),
+        ..known.clone()
+    };
+    store.insert_integrating_cycles(&mut next).unwrap();
+    assert!((next.estimated_cycle_count.unwrap() - (8.0 + 1.0 / 53.0)).abs() < 1e-9);
+    assert_eq!(
+        store.latest().unwrap().unwrap().estimated_cycle_count,
+        next.estimated_cycle_count
+    );
+}
+
+#[test]
+fn legacy_missing_cycle_baselines_resume_after_identity_migration() {
+    for database in [Database::Historical, Database::Debug] {
+        let conn = Connection::open_in_memory().unwrap();
+        let ladder = database.migrations();
+        migrate(&conn, &ladder[..ladder.len() - 1]).unwrap();
+        conn.execute_batch(
+            "INSERT INTO samples (ts, status, energy_wh, energy_design_wh)
+            VALUES ('legacy', 'Discharging', 40.0, 60.0);",
+        )
+        .unwrap();
+        let store = Store::from_connection(conn, database).unwrap();
+        assert_eq!(
+            store.latest().unwrap().unwrap().estimated_cycle_count,
+            Some(0.0)
+        );
+        let mut next = Sample {
+            energy_wh: Some(39.0),
+            energy_design_wh: Some(60.0),
+            ..sample("after-upgrade", 50.0)
+        };
+        store.insert_integrating_cycles(&mut next).unwrap();
+        assert!((next.estimated_cycle_count.unwrap() - 1.0 / 60.0).abs() < 1e-9);
+
+        // A later NULL has the new uncertainty semantics. Startup must not
+        // rewrite it, or a known pack's identity failure could restart at zero.
+        let uncertain = Sample {
+            estimated_cycle_count: None,
+            ..next.clone()
+        };
+        store.insert(&uncertain).unwrap();
+        migrate(&store.conn, database.migrations()).unwrap();
+        assert_eq!(store.latest().unwrap().unwrap().estimated_cycle_count, None);
+        next.energy_wh = Some(38.0);
+        store.insert_integrating_cycles(&mut next).unwrap();
+        assert_eq!(next.estimated_cycle_count, None);
+    }
 }

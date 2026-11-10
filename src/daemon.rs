@@ -34,6 +34,7 @@ pub struct Daemon<S: TelemetrySource, N: Notifier> {
     /// cycle count forward rather than integrating across the absence.
     battery_was_absent: bool,
     tick_count: u64,
+    last_known_battery_id: Option<String>,
 }
 
 impl<S: TelemetrySource, N: Notifier> std::fmt::Debug for Daemon<S, N> {
@@ -68,6 +69,7 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
             previous: None,
             battery_was_absent: false,
             tick_count: 0,
+            last_known_battery_id: None,
         }
     }
 
@@ -92,27 +94,20 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
     }
 
     fn tick(&mut self) -> Result<(), StoreError> {
-        // Safe ahead of the early returns: retention counts rows, so a tick that
-        // records nothing pushes nothing out, and a battery that stays
-        // unreadable -- or absent -- leaves what was recorded before it intact.
-        // That run-up is the evidence; erasing it by age once the outage
-        // outlasted the window was the opposite of what a recorder is for.
+        // Retention counts all recorded system samples, including partial ones.
         self.prune_if_due()?;
 
-        // Unreadable, as opposed to absent: the hardware is still there, so the
-        // latched alerts still describe it. The tick is a no-op -- no row, no
-        // alert evaluation, and deliberately no `engine.reset()`, which would
-        // re-announce a low battery the moment the read recovered.
         let Some(mut sample) = self.source.sample() else {
+            if let Some(previous) = &mut self.previous {
+                previous.energy_wh = None;
+            }
             return Ok(());
         };
 
-        // No battery: nothing to record, and every latched alert describes
-        // hardware that is no longer there.
+        // Confirmed absence clears battery alerts but preserves system recording.
         if !sample.is_present {
             self.engine.reset();
             self.battery_was_absent = true;
-            return Ok(());
         }
 
         // On the first tick after a restart, pick up where the last run left
@@ -122,7 +117,13 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
         if self.previous.is_none() {
             self.previous = match self.debug.latest()? {
                 Some(latest) => Some(latest),
-                None => self.historical.latest()?,
+                None => match self.historical.latest() {
+                    Ok(previous) => previous,
+                    Err(error) => {
+                        tracing::warn!(%error, "could not restore historical baseline; continuing flight recording");
+                        None
+                    }
+                },
             };
         }
 
@@ -133,36 +134,102 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
         //
         // Clearing `previous` instead would not work — the next tick would
         // simply re-adopt the same pre-removal row from the database.
-        sample.estimated_cycle_count = if std::mem::take(&mut self.battery_was_absent) {
-            self.previous
+        if self.last_known_battery_id.is_none() {
+            self.last_known_battery_id = self.previous.as_ref().and_then(|p| p.battery_id.clone());
+        }
+        if let Some(id) = &sample.battery_id {
+            if self
+                .last_known_battery_id
                 .as_ref()
-                .map_or(0.0, |previous| previous.estimated_cycle_count)
-        } else {
-            compute_estimated_cycles(&sample, self.previous.as_ref())
-        };
-
-        // 1. Flight recorder, every tick.
-        self.debug.insert(&sample)?;
-
-        // 2. Alerts.
-        for notification in self.engine.evaluate(&sample, &self.thresholds) {
-            self.notifier.deliver(&notification);
+                .is_some_and(|last| last != id)
+            {
+                self.engine.reset();
+            }
+            self.last_known_battery_id = Some(id.clone());
+        }
+        if self
+            .previous
+            .as_ref()
+            .is_some_and(|p| p.battery_id != sample.battery_id)
+            || (self.previous.is_none() && sample.battery_id.is_some())
+        {
+            let carried = match &sample.battery_id {
+                Some(id) => self
+                    .debug
+                    .cycles_for(id)?
+                    .max(self.historical_cycle_total(id)),
+                None => 0.0,
+            };
+            self.previous = Some(Sample {
+                energy_wh: None,
+                estimated_cycle_count: Some(carried),
+                ..sample.clone()
+            });
         }
 
-        // 3. Downsampled history. This integrates against its own last row, so
-        //    the permanent record accumulates across minute-long gaps while the
-        //    flight recorder accumulates across seconds.
-        if self
+        sample.estimated_cycle_count = Some(
+            if !sample.is_present || std::mem::take(&mut self.battery_was_absent) {
+                self.previous
+                    .as_ref()
+                    .and_then(|previous| previous.estimated_cycle_count)
+                    .unwrap_or(0.0)
+            } else {
+                compute_estimated_cycles(&sample, self.previous.as_ref())
+            },
+        );
+
+        // Never attach an unattributed row to a cached pack. Legacy continuous
+        // unidentified histories remain usable, but a known-to-unknown transition
+        // cannot claim a cycle total until attribution returns.
+        if sample.battery_id.is_none()
+            && (self.last_known_battery_id.is_some()
+                || self
+                    .previous
+                    .as_ref()
+                    .is_some_and(|p| p.estimated_cycle_count.is_none()))
+        {
+            sample.estimated_cycle_count = None;
+        }
+
+        // Reconcile the completed integral, not its baseline: adding the same
+        // interval again after a concurrent oneshot would double-count wear.
+        if let (Some(id), Some(total)) = (&sample.battery_id, sample.estimated_cycle_count) {
+            sample.estimated_cycle_count = Some(total.max(self.historical_cycle_total(id)));
+        }
+        // The debug transaction reconciles its own ledger atomically with insertion.
+        sample.estimated_cycle_count = self.debug.insert(&sample)?;
+
+        // 2. Alerts.
+        if sample.is_present {
+            for notification in self.engine.evaluate(&sample, &self.thresholds) {
+                self.notifier.deliver(&notification);
+            }
+        }
+
+        // Advance the flight baseline even when the independent historical
+        // write fails, so a recorded partial sample still breaks integration.
+        let history_result = if self
             .tick_count
             .is_multiple_of(self.schedule.historical_interval_ticks)
         {
-            let mut downsampled = sample.clone();
-            self.historical
-                .insert_integrating_cycles(&mut downsampled)?;
-        }
-
+            self.historical.insert(&sample).map(|_| ())
+        } else {
+            Ok(())
+        };
         self.previous = Some(sample);
-        Ok(())
+        history_result
+    }
+
+    /// History is a supplementary recovery source. Its errors are visible but
+    /// must not stop a healthy flight recorder from persisting current evidence.
+    fn historical_cycle_total(&self, id: &str) -> f64 {
+        match self.historical.cycles_for(id) {
+            Ok(total) => total,
+            Err(error) => {
+                tracing::warn!(%error, battery_id = id, "could not reconcile historical cycle ledger; using flight recorder total");
+                0.0 // max() leaves the authoritative flight total unchanged.
+            }
+        }
     }
 
     /// Prune the flight recorder on its interval.

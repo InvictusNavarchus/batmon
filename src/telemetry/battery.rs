@@ -24,15 +24,13 @@ pub struct Energy {
 impl Energy {
     /// Present full-charge capacity as a percentage of design capacity.
     ///
-    /// Reports a healthy 100 when design capacity is unknown, rather than a
-    /// division by zero or an alarming zero: an unreadable attribute is not
-    /// evidence of a worn-out battery, and the health alert must not fire on it.
+    /// Unknown design capacity produces no health estimate.
     #[must_use]
-    pub fn health_pct(self) -> f64 {
-        if self.design_wh > 0.0 {
-            crate::formats::round_half_up((self.full_wh / self.design_wh) * 10_000.0) / 100.0
+    pub fn health_pct(self) -> Option<f64> {
+        if self.design_wh > 0.0 && self.full_wh > 0.0 {
+            Some(crate::formats::round_half_up((self.full_wh / self.design_wh) * 10_000.0) / 100.0)
         } else {
-            100.0
+            None
         }
     }
 }
@@ -103,36 +101,48 @@ impl BatteryReader {
         (energy.full_wh > 0.0).then(|| (energy.now_wh / energy.full_wh) * 100.0)
     }
 
+    /// Preserve the driver's fault vocabulary, including values added by newer kernels.
+    #[must_use]
+    pub fn reported_health(&self) -> Option<String> {
+        self.read_str("health")
+    }
+
+    /// Identity requires a usable serial; changing capacity never identifies a pack.
+    #[must_use]
+    pub fn identity(&self) -> Option<String> {
+        let serial = self.read_str("serial_number")?;
+        let normalized = serial.to_ascii_lowercase();
+        if matches!(
+            normalized.as_str(),
+            "unknown" | "none" | "n/a" | "default" | "not specified"
+        ) || serial.chars().all(|c| c == '0' || c.is_whitespace())
+        {
+            return None;
+        }
+        // An incomplete metadata read is uncertainty, not a different pack.
+        let manufacturer = self.read_str("manufacturer")?;
+        let model = self.read_str("model_name")?;
+        Some(serde_json::json!([manufacturer, model, serial]).to_string())
+    }
+
     /// Hardware cycle count, if the management system reports one.
     #[must_use]
     pub fn cycle_count(&self) -> Option<i64> {
         self.read_opt("cycle_count").map(|count| count as i64)
     }
 
-    /// Instantaneous rail voltage, or zero when unreadable.
-    ///
-    /// Zero is safe to fabricate *here specifically* because the only consumer,
-    /// the over-voltage check, treats a non-positive reading as "no information"
-    /// and neither fires nor clears on it. Do not copy this pattern to a field
-    /// whose consumers act on zero.
+    /// Instantaneous battery voltage, when readable.
     #[must_use]
-    pub fn voltage_v(&self) -> f64 {
-        self.read_opt("voltage_now").unwrap_or(0.0) / MICRO
+    pub fn voltage_v(&self) -> Option<f64> {
+        self.read_opt("voltage_now").map(|v| v / MICRO)
     }
 
-    /// Design voltage, falling back to the present reading.
-    ///
-    /// `voltage_min_design` is the nominal figure and the one to prefer, but
-    /// plenty of drivers omit it. The present voltage is a poor substitute — it
-    /// makes the over-voltage check compare a value against itself and so never
-    /// fire — but it is better than zero, which would disable the check by a
-    /// different route while also corrupting charge-based energy conversion.
+    /// Nominal design voltage. Present voltage is not a design rating.
     #[must_use]
-    pub fn voltage_design_v(&self) -> f64 {
+    pub fn voltage_design_v(&self) -> Option<f64> {
         self.read_opt("voltage_min_design")
-            .or_else(|| self.read_opt("voltage_now"))
-            .unwrap_or(0.0)
-            / MICRO
+            .filter(|v| *v > 0.0)
+            .map(|v| v / MICRO)
     }
 
     /// Energy figures, auto-detecting which unit the driver reports.
@@ -148,7 +158,7 @@ impl BatteryReader {
     ///
     /// `design` is separate: plenty of drivers omit it permanently, so it falls
     /// back to zero, which every consumer already reads as "unknown" — health
-    /// reports 100% and the cycle integrator declines to integrate rather than
+    /// remains unknown and the cycle integrator declines to integrate rather than
     /// dividing by it.
     #[must_use]
     pub fn energy(&self) -> Option<Energy> {
@@ -160,7 +170,7 @@ impl BatteryReader {
             });
         }
 
-        let design_volts = self.voltage_design_v();
+        let design_volts = self.voltage_design_v()?;
         Some(Energy {
             now_wh: (self.read_opt("charge_now")? / MICRO) * design_volts,
             full_wh: (self.read_opt("charge_full")? / MICRO) * design_volts,
@@ -172,16 +182,16 @@ impl BatteryReader {
     ///
     /// `power_now` when the driver offers it; otherwise the product of current
     /// and voltage, which is the same quantity the hardware would have computed.
-    /// Zero when neither is available — an unknown rate is not a negative one.
+    /// Unknown when neither source is available.
     #[must_use]
-    pub fn power_w(&self) -> f64 {
+    pub fn power_w(&self) -> Option<f64> {
         if let Some(watts) = self.read_opt("power_now") {
-            return watts / MICRO;
+            return Some(watts / MICRO);
         }
 
         match (self.read_opt("current_now"), self.read_opt("voltage_now")) {
-            (Some(amps), Some(volts)) => (amps * volts) / (MICRO * MICRO),
-            _ => 0.0,
+            (Some(amps), Some(volts)) => Some((amps * volts) / (MICRO * MICRO)),
+            _ => None,
         }
     }
 
@@ -220,3 +230,40 @@ impl BatteryReader {
 
 #[cfg(test)]
 mod tests;
+
+/// Read system mains/USB supplies. An unreadable candidate prevents claiming
+/// offline, while any confirmed online supply establishes external power.
+#[must_use]
+pub fn read_ac_online(base: &Path) -> Option<bool> {
+    let entries = std::fs::read_dir(base).ok()?;
+    let mut found = false;
+    let mut unknown = false;
+    for entry in entries {
+        let Ok(entry) = entry else {
+            unknown = true;
+            continue;
+        };
+        let reader = BatteryReader::new(entry.path());
+        if reader.read_str("scope").as_deref() == Some("Device") {
+            continue;
+        }
+        match reader.read_str("type").as_deref() {
+            Some(
+                "Mains" | "USB" | "USB_C" | "USB_PD" | "USB_PD_DRP" | "USB_DCP" | "USB_CDP"
+                | "USB_ACA" | "Wireless",
+            ) => {}
+            Some(_) => continue,
+            None => {
+                unknown = true;
+                continue;
+            }
+        }
+        found = true;
+        match reader.read_str("online").as_deref() {
+            Some("1" | "2") => return Some(true),
+            Some("0") => {}
+            _ => unknown = true,
+        }
+    }
+    (found && !unknown).then_some(false)
+}

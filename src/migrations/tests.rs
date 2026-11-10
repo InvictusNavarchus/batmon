@@ -30,11 +30,12 @@ fn user_version(conn: &Connection) -> u32 {
 }
 
 #[test]
-fn historical_ladder_reaches_version_nine_with_every_column() {
+fn historical_ladder_reaches_version_twelve_with_every_column() {
     let conn = memory();
     migrate(&conn, HISTORICAL_MIGRATIONS).unwrap();
 
-    assert_eq!(user_version(&conn), 9);
+    assert_eq!(user_version(&conn), 12);
+    assert!(has_table(&conn, "battery_cycles").unwrap());
 
     let cols = columns(&conn, "samples");
     for expected in [
@@ -63,6 +64,9 @@ fn historical_ladder_reaches_version_nine_with_every_column() {
         "psi_io_full",
         "psi_mem_some",
         "psi_mem_full",
+        "ac_online",
+        "battery_health",
+        "battery_id",
     ] {
         assert!(cols.iter().any(|c| c == expected), "missing {expected}");
     }
@@ -70,11 +74,12 @@ fn historical_ladder_reaches_version_nine_with_every_column() {
 }
 
 #[test]
-fn debug_ladder_reaches_version_seven_with_every_column() {
+fn debug_ladder_reaches_version_ten_with_every_column() {
     let conn = memory();
     migrate(&conn, DEBUG_MIGRATIONS).unwrap();
 
-    assert_eq!(user_version(&conn), 7);
+    assert_eq!(user_version(&conn), 10);
+    assert!(has_table(&conn, "battery_cycles").unwrap());
 
     let cols = columns(&conn, "samples");
     for expected in [
@@ -93,6 +98,9 @@ fn debug_ladder_reaches_version_seven_with_every_column() {
         "psi_io_full",
         "psi_mem_some",
         "psi_mem_full",
+        "ac_online",
+        "battery_health",
+        "battery_id",
     ] {
         assert!(cols.iter().any(|c| c == expected), "missing {expected}");
     }
@@ -111,7 +119,8 @@ fn running_the_ladder_twice_changes_nothing() {
 
     migrate(&conn, HISTORICAL_MIGRATIONS).unwrap();
 
-    assert_eq!(user_version(&conn), 9);
+    assert_eq!(user_version(&conn), 12);
+    assert!(has_table(&conn, "battery_cycles").unwrap());
     assert_eq!(columns(&conn, "samples"), after_first);
 }
 
@@ -126,7 +135,8 @@ fn resumes_from_an_intermediate_version() {
 
     migrate(&conn, HISTORICAL_MIGRATIONS).unwrap();
 
-    assert_eq!(user_version(&conn), 9);
+    assert_eq!(user_version(&conn), 12);
+    assert!(has_table(&conn, "battery_cycles").unwrap());
     let cols = columns(&conn, "samples");
     for expected in [
         "cpu_pct",
@@ -135,6 +145,9 @@ fn resumes_from_an_intermediate_version() {
         "iowait_pct",
         "psi_io_full",
         "psi_mem_full",
+        "ac_online",
+        "battery_health",
+        "battery_id",
     ] {
         assert!(cols.iter().any(|c| c == expected), "missing {expected}");
     }
@@ -312,5 +325,28 @@ fn a_database_already_at_the_latest_version_is_left_alone() {
         .query_row("SELECT count(*) FROM samples", [], |row| row.get(0))
         .unwrap();
     assert_eq!(count, 1);
-    assert_eq!(user_version(&conn), 9);
+    assert_eq!(user_version(&conn), 12);
+    assert!(has_table(&conn, "battery_cycles").unwrap());
+}
+
+#[test]
+fn identity_migration_preserves_existing_observed_totals() {
+    for ladder in [HISTORICAL_MIGRATIONS, DEBUG_MIGRATIONS] {
+        let conn = memory();
+        migrate(&conn, &ladder[..ladder.len() - 1]).unwrap();
+        conn.execute_batch(
+            "INSERT INTO samples (ts, estimated_cycle_count) VALUES ('counted', 7.5);
+            INSERT INTO samples (ts) VALUES ('missing');",
+        )
+        .unwrap();
+        migrate(&conn, ladder).unwrap();
+        let totals: Vec<f64> = conn
+            .prepare("SELECT estimated_cycle_count FROM samples ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(totals, vec![7.5, 0.0]);
+    }
 }

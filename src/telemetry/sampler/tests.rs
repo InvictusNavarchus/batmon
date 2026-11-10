@@ -174,7 +174,7 @@ fn assembles_a_complete_sample_from_every_source() {
     assert_eq!(sample.power_state, PowerState::Discharging);
     assert!(!sample.is_charging);
     assert!(sample.is_present);
-    assert_eq!(sample.charge_pct, 80.0);
+    assert_eq!(sample.charge_pct, Some(80.0));
     assert_eq!(sample.cycle_count, Some(0));
 
     assert_eq!(sample.cpu_temp_c, Some(48.5));
@@ -213,13 +213,13 @@ fn energy_and_power_are_rounded_to_three_places_but_voltage_is_not() {
         .sample()
         .expect("a readable battery yields a sample");
 
-    assert_eq!(sample.energy_wh, 46.5);
-    assert_eq!(sample.energy_full_wh, 58.073);
-    assert_eq!(sample.energy_design_wh, 58.328);
-    assert_eq!(sample.power_w, 20.416);
-    assert_eq!(sample.voltage_v, 12.095);
-    assert_eq!(sample.voltage_design_v, 11.55);
-    assert_eq!(sample.health_pct, 99.56);
+    assert_eq!(sample.energy_wh, Some(46.5));
+    assert_eq!(sample.energy_full_wh, Some(58.073));
+    assert_eq!(sample.energy_design_wh, Some(58.328));
+    assert_eq!(sample.power_w, Some(20.416));
+    assert_eq!(sample.voltage_v, Some(12.095));
+    assert_eq!(sample.voltage_design_v, Some(11.55));
+    assert_eq!(sample.health_pct, Some(99.56));
 }
 
 #[test]
@@ -242,7 +242,7 @@ fn the_cycle_count_is_left_for_the_store_to_integrate() {
         .sample()
         .expect("a readable battery yields a sample");
 
-    assert_eq!(sample.estimated_cycle_count, 0.0);
+    assert_eq!(sample.estimated_cycle_count.unwrap(), 0.0);
 }
 
 #[test]
@@ -282,11 +282,11 @@ fn a_missing_battery_produces_a_sample_marked_absent() {
     assert!(!sample.is_present);
     assert_eq!(sample.status, "Unknown");
     assert_eq!(sample.power_state, PowerState::Unknown);
-    assert_eq!(sample.charge_pct, 0.0);
+    assert_eq!(sample.charge_pct, None);
 }
 
 #[test]
-fn an_unreadable_presence_attribute_yields_no_sample_rather_than_an_absent_one() {
+fn unknown_presence_preserves_system_recording() {
     // The difference matters downstream: an absent sample clears every alert
     // latch, so a `present` file that merely failed to read must not be
     // reported as a battery that went away.
@@ -296,11 +296,15 @@ fn an_unreadable_presence_attribute_yields_no_sample_rather_than_an_absent_one()
         }
     };
 
-    // Unknown presence: no sample at all, so no latch is cleared.
+    // Unknown presence yields a present-marked partial sample. Missing inputs
+    // preserve latches while system telemetry continues.
     let unknown = Machine::new();
     std::fs::write(unknown.paths.battery.join("present"), "").unwrap();
     strip(&unknown);
-    assert!(unknown.sampler().sample().is_none());
+    let sample = unknown.sampler().sample().unwrap();
+    assert!(sample.is_present);
+    assert_eq!(sample.charge_pct, None);
+    assert!(sample.mem_pct.is_some());
 
     // The paired case, differing only in `present`. Without it this test
     // would still pass if unknown presence were quietly treated as absence,
@@ -370,11 +374,9 @@ fn an_absent_battery_drops_the_cached_runtime_estimate() {
 }
 
 #[test]
-fn a_present_but_unreadable_battery_yields_no_sample_at_all() {
-    // Distinct from the case above. The hardware is still installed, so its
-    // latched alerts still describe something real; the tick simply has
-    // nothing to say. Reporting zeros instead announced a critical low
-    // battery and accrued most of a cycle in one tick.
+fn a_present_but_unreadable_battery_preserves_system_telemetry() {
+    // The installed battery is unreadable: preserve unknown battery fields
+    // and keep the system telemetry rather than inventing zeros.
     let machine = Machine::new();
     for attribute in [
         "capacity",
@@ -388,7 +390,9 @@ fn a_present_but_unreadable_battery_yields_no_sample_at_all() {
 
     // The directory survives, so the pack still reads as installed.
     assert!(machine.paths.battery.exists());
-    assert!(machine.sampler().sample().is_none());
+    let sample = machine.sampler().sample().unwrap();
+    assert_eq!(sample.energy_wh, None);
+    assert!(sample.mem_pct.is_some());
 }
 
 #[test]
@@ -549,4 +553,31 @@ fn two_samplers_share_no_state() {
         None,
         "a new sampler must start without history"
     );
+}
+
+#[test]
+fn external_estimates_survive_unavailable_energy_conversion() {
+    let machine = Machine::new();
+    for name in [
+        "energy_now",
+        "energy_full",
+        "energy_full_design",
+        "voltage_min_design",
+    ] {
+        let _ = std::fs::remove_file(machine.paths.battery.join(name));
+    }
+    machine.battery(&[("charge_now", "3000000"), ("charge_full", "4000000")]);
+    let mut sampler = Sampler::new(
+        machine.paths.clone(),
+        Box::new(FixedEstimates {
+            empty: Some(1234),
+            full: None,
+        }),
+    );
+    for _ in 0..2 {
+        let sample = sampler.sample().unwrap();
+        assert!(sample.charge_pct.is_some());
+        assert_eq!(sample.energy_wh, None);
+        assert_eq!(sample.time_to_empty_s, Some(1234));
+    }
 }

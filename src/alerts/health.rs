@@ -21,7 +21,10 @@ pub enum HealthState {
 impl HealthState {
     #[must_use]
     pub fn step(self, sample: &Sample, t: &Thresholds) -> (Self, Option<Notification>) {
-        if sample.health_pct < t.cap_warn {
+        let Some(health_pct) = sample.health_pct else {
+            return (self, None);
+        };
+        if health_pct < t.cap_warn {
             if self == Self::Fired {
                 return (self, None);
             }
@@ -32,7 +35,7 @@ impl HealthState {
                     title: "Battery Health Notice".to_owned(),
                     body: format!(
                         "Battery health at {}% of design capacity",
-                        format_decimals(sample.health_pct, 1)
+                        format_decimals(health_pct, 1)
                     ),
                     urgency: Urgency::Normal,
                     icon: "battery-caution",
@@ -40,7 +43,7 @@ impl HealthState {
             );
         }
 
-        if sample.health_pct >= t.cap_warn + t.cap_hysteresis_pct {
+        if health_pct >= t.cap_warn + t.cap_hysteresis_pct {
             return (Self::Normal, None);
         }
 

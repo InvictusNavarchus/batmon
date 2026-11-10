@@ -114,10 +114,10 @@ fn oneshot_creates_both_databases_and_records_one_sample() {
 
     assert_eq!(
         query::<i64>(&historical, "PRAGMA user_version"),
-        9,
+        12,
         "history must be migrated to the shipped schema"
     );
-    assert_eq!(query::<i64>(&debug, "PRAGMA user_version"), 7);
+    assert_eq!(query::<i64>(&debug, "PRAGMA user_version"), 10);
 
     assert_eq!(query::<i64>(&historical, "SELECT count(*) FROM samples"), 1);
     assert_eq!(query::<i64>(&debug, "SELECT count(*) FROM samples"), 1);
@@ -192,7 +192,7 @@ fn oneshot_is_idempotent_and_appends() {
 
     let historical = database_dir(home.path()).join("battery.db");
     assert_eq!(query::<i64>(&historical, "SELECT count(*) FROM samples"), 3);
-    assert_eq!(query::<i64>(&historical, "PRAGMA user_version"), 9);
+    assert_eq!(query::<i64>(&historical, "PRAGMA user_version"), 12);
 }
 
 #[test]
@@ -208,13 +208,13 @@ fn oneshot_never_moves_the_flight_recorder_cycle_count_backwards() {
     // past the last downsampled history row.
     let seed = |count: f64| Sample {
         ts: "2026-09-06T00:00:00.000Z".to_owned(),
-        charge_pct: 72.0,
+        charge_pct: Some(72.0),
         status: "Discharging".to_owned(),
         power_state: PowerState::Discharging,
-        energy_wh: 42.0,
-        energy_full_wh: 58.0,
-        energy_design_wh: 60.0,
-        estimated_cycle_count: count,
+        energy_wh: Some(42.0),
+        energy_full_wh: Some(58.0),
+        energy_design_wh: Some(60.0),
+        estimated_cycle_count: Some(count),
         is_present: true,
         ..Sample::default()
     };

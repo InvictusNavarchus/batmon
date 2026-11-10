@@ -54,7 +54,7 @@ const INSERT_SQL: &str = "INSERT INTO samples (
     cpu_temp_c, gpu_temp_c, nvme_temp_c, cpu_pct, mem_pct, top_processes,
     cpu_freq_mhz, gpu_pct, gpu_power_w, load1, boot_id, uptime_s,
     iowait_pct, procs_blocked, dirty_kb, psi_io_some, psi_io_full,
-    psi_mem_some, psi_mem_full
+    psi_mem_some, psi_mem_full, ac_online, battery_health, battery_id
 ) VALUES (
     :ts, :charge_pct, :status, :power_state, :energy_wh, :energy_full_wh, :energy_design_wh,
     :power_w, :voltage_v, :voltage_design_v, :cycle_count, :estimated_cycle_count,
@@ -62,7 +62,7 @@ const INSERT_SQL: &str = "INSERT INTO samples (
     :cpu_temp_c, :gpu_temp_c, :nvme_temp_c, :cpu_pct, :mem_pct, :top_processes,
     :cpu_freq_mhz, :gpu_pct, :gpu_power_w, :load1, :boot_id, :uptime_s,
     :iowait_pct, :procs_blocked, :dirty_kb, :psi_io_some, :psi_io_full,
-    :psi_mem_some, :psi_mem_full
+    :psi_mem_some, :psi_mem_full, :ac_online, :battery_health, :battery_id
 )";
 
 /// An open, migrated connection to one of the databases.
@@ -122,12 +122,37 @@ impl Store {
         }
     }
 
-    /// Append a sample exactly as given.
-    pub fn insert(&self, sample: &Sample) -> Result<()> {
-        self.conn.execute(
+    /// Durable observed-cycle total, retained even after a pack's debug rows expire.
+    pub fn cycles_for(&self, id: &str) -> Result<f64> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT estimated_cycle_count FROM battery_cycles WHERE battery_id=?1",
+                [id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .unwrap_or(0.0))
+    }
+
+    /// Append a sample, reconciling its total with the durable pack ledger.
+    /// Return the persisted total so the caller keeps the same baseline.
+    pub fn insert(&self, sample: &Sample) -> Result<Option<f64>> {
+        let tx = rusqlite::Transaction::new_unchecked(
+            &self.conn,
+            rusqlite::TransactionBehavior::Immediate,
+        )?;
+        let total = match (&sample.battery_id, sample.estimated_cycle_count) {
+            (Some(id), Some(total)) => Some(total.max(self.cycles_for(id)?)),
+            _ => sample.estimated_cycle_count,
+        };
+        tx.execute(
             INSERT_SQL,
             named_params! {
                 ":ts": sample.ts,
+                ":battery_id": sample.battery_id,
+                ":battery_health": sample.battery_health,
+                ":ac_online": sample.ac_online,
                 ":charge_pct": sample.charge_pct,
                 ":status": sample.status,
                 ":power_state": sample.power_state.as_str(),
@@ -138,7 +163,7 @@ impl Store {
                 ":voltage_v": sample.voltage_v,
                 ":voltage_design_v": sample.voltage_design_v,
                 ":cycle_count": sample.cycle_count,
-                ":estimated_cycle_count": sample.estimated_cycle_count,
+                ":estimated_cycle_count": total,
                 ":battery_temp_c": sample.battery_temp_c,
                 ":health_pct": sample.health_pct,
                 ":is_charging": sample.is_charging,
@@ -166,7 +191,16 @@ impl Store {
                 ":psi_mem_full": sample.psi_mem_full,
             },
         )?;
-        Ok(())
+        if let (Some(id), Some(total)) = (&sample.battery_id, total) {
+            tx.execute(
+                "INSERT INTO battery_cycles (battery_id, estimated_cycle_count) VALUES (?1, ?2)
+                ON CONFLICT(battery_id) DO UPDATE SET estimated_cycle_count =
+                max(battery_cycles.estimated_cycle_count, excluded.estimated_cycle_count)",
+                rusqlite::params![id, total],
+            )?;
+        }
+        tx.commit()?;
+        Ok(total)
     }
 
     /// Integrate the cycle count against this database's own last row, then append.
@@ -181,15 +215,31 @@ impl Store {
     /// Returns the previous row, if there was one.
     pub fn insert_integrating_cycles(&self, sample: &mut Sample) -> Result<Option<Sample>> {
         let previous = self.latest()?;
-        sample.estimated_cycle_count = compute_estimated_cycles(sample, previous.as_ref());
-        self.insert(sample)?;
+        sample.estimated_cycle_count = Some(
+            if previous.as_ref().map(|p| &p.battery_id) == Some(&sample.battery_id) {
+                compute_estimated_cycles(sample, previous.as_ref())
+            } else {
+                match &sample.battery_id {
+                    Some(id) => self.cycles_for(id)?,
+                    None => 0.0,
+                }
+            },
+        );
+        if sample.battery_id.is_none()
+            && previous
+                .as_ref()
+                .is_some_and(|p| p.battery_id.is_some() || p.estimated_cycle_count.is_none())
+        {
+            sample.estimated_cycle_count = None;
+        }
+        sample.estimated_cycle_count = self.insert(sample)?;
         Ok(previous)
     }
 
     /// Keep only the newest `rows` rows, returning how many older ones went.
     ///
     /// Counted in insertion order, never by age. Time in which nothing was
-    /// recorded — the machine off, suspended, or its battery unreadable — adds
+    /// recorded — the machine off or suspended — adds
     /// no rows and so pushes nothing out. Pruning by wall-clock age instead
     /// erased the run before a crash five minutes into the next boot, whenever
     /// the machine had stayed off longer than the window: exactly the rows a
@@ -254,9 +304,7 @@ impl Store {
 /// `status` string that was always recorded alongside it. `is_charging` and
 /// `is_present` are stored as integers and become real booleans here.
 ///
-/// Nullable numerics that the type says are not optional collapse to zero,
-/// which the cycle integrator already treats as "no usable history". Note this
-/// makes a NULL column indistinguishable from a real zero on read.
+/// Nullable measurements and unattributed cycle totals remain optional.
 fn sample_from_row(row: &Row<'_>) -> rusqlite::Result<Sample> {
     let status: String = row.get::<_, Option<String>>("status")?.unwrap_or_default();
 
@@ -268,25 +316,22 @@ fn sample_from_row(row: &Row<'_>) -> rusqlite::Result<Sample> {
 
     Ok(Sample {
         ts: row.get::<_, Option<String>>("ts")?.unwrap_or_default(),
-        charge_pct: row.get::<_, Option<f64>>("charge_pct")?.unwrap_or(0.0),
+        charge_pct: row.get("charge_pct")?,
+        ac_online: row.get("ac_online")?,
+        battery_health: row.get("battery_health")?,
+        battery_id: row.get("battery_id")?,
         status,
         power_state,
-        energy_wh: row.get::<_, Option<f64>>("energy_wh")?.unwrap_or(0.0),
-        energy_full_wh: row.get::<_, Option<f64>>("energy_full_wh")?.unwrap_or(0.0),
-        energy_design_wh: row
-            .get::<_, Option<f64>>("energy_design_wh")?
-            .unwrap_or(0.0),
-        power_w: row.get::<_, Option<f64>>("power_w")?.unwrap_or(0.0),
-        voltage_v: row.get::<_, Option<f64>>("voltage_v")?.unwrap_or(0.0),
-        voltage_design_v: row
-            .get::<_, Option<f64>>("voltage_design_v")?
-            .unwrap_or(0.0),
+        energy_wh: row.get("energy_wh")?,
+        energy_full_wh: row.get("energy_full_wh")?,
+        energy_design_wh: row.get("energy_design_wh")?,
+        power_w: row.get("power_w")?,
+        voltage_v: row.get("voltage_v")?,
+        voltage_design_v: row.get("voltage_design_v")?,
         cycle_count: row.get("cycle_count")?,
-        estimated_cycle_count: row
-            .get::<_, Option<f64>>("estimated_cycle_count")?
-            .unwrap_or(0.0),
+        estimated_cycle_count: row.get("estimated_cycle_count")?,
         battery_temp_c: row.get("battery_temp_c")?,
-        health_pct: row.get::<_, Option<f64>>("health_pct")?.unwrap_or(0.0),
+        health_pct: row.get("health_pct")?,
         is_charging: row.get::<_, Option<i64>>("is_charging")?.unwrap_or(0) != 0,
         is_present: row.get::<_, Option<i64>>("is_present")?.unwrap_or(0) != 0,
         time_to_empty_s: row.get("time_to_empty_s")?,

@@ -30,7 +30,7 @@ fn idle_cpu(celsius: f64, cpu_pct: f64, power_w: f64) -> Sample {
     Sample {
         cpu_temp_c: Some(celsius),
         cpu_pct: Some(cpu_pct),
-        power_w,
+        power_w: Some(power_w),
         battery_temp_c: Some(30.0),
         ..discharging_at(50.0)
     }
@@ -82,7 +82,7 @@ fn heat_soak_never_fires_while_unplugged() {
     let hot_unplugged = Sample {
         cpu_temp_c: Some(95.0),
         cpu_pct: Some(90.0),
-        power_w: 45.0,
+        power_w: Some(45.0),
         battery_temp_c: Some(30.0),
         ..discharging_at(50.0)
     };
@@ -229,4 +229,26 @@ fn resetting_clears_the_debounce_counters_as_well_as_the_latches() {
     // The two-sample streak must not survive; three more are needed.
     assert!(run(&mut engine, &repeat(&charging_cpu(88.0), 2)).is_empty());
     assert_eq!(run(&mut engine, &[charging_cpu(88.0)]).len(), 1);
+}
+
+#[test]
+fn unknown_status_preserves_fired_heat_soak_but_breaks_unfinished_streaks() {
+    let mut unknown = charging_cpu(88.0);
+    unknown.power_state = crate::types::PowerState::Unknown;
+    unknown.is_charging = false;
+    let mut engine = AlertEngine::new();
+    assert_eq!(run(&mut engine, &repeat(&charging_cpu(88.0), 3)).len(), 1);
+    assert!(run(&mut engine, &[unknown.clone(), charging_cpu(88.0)]).is_empty());
+    let mut arming = AlertEngine::new();
+    assert!(run(&mut arming, &repeat(&charging_cpu(88.0), 2)).is_empty());
+    assert!(run(&mut arming, &[unknown, charging_cpu(88.0)]).is_empty());
+}
+
+#[test]
+fn unknown_status_breaks_an_unfinished_anomaly_streak() {
+    let hot = idle_cpu(90.0, 1.0, 3.0);
+    let mut unknown = hot.clone();
+    unknown.power_state = crate::types::PowerState::Unknown;
+    let mut engine = AlertEngine::new();
+    assert!(run(&mut engine, &[hot.clone(), hot.clone(), unknown, hot]).is_empty());
 }
