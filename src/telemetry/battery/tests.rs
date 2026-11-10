@@ -281,8 +281,26 @@ fn identity_requires_a_usable_serial_and_ignores_capacity_changes() {
         let (_tmp, reader) = battery(&[("serial_number", serial)]);
         assert_eq!(reader.identity(), None);
     }
-    let (tmp, reader) = battery(&[("serial_number", "ABC"), ("model_name", "Pack")]);
+    let (tmp, reader) = battery(&[
+        ("serial_number", "ABC"),
+        ("model_name", "Pack"),
+        ("manufacturer", "Vendor"),
+    ]);
     let identity = reader.identity().unwrap();
     std::fs::write(tmp.path().join("energy_full"), "123").unwrap();
     assert_eq!(reader.identity().as_deref(), Some(identity.as_str()));
+}
+
+#[test]
+fn missing_identity_metadata_is_unknown_rather_than_a_new_pack() {
+    let (tmp, reader) = battery(&[
+        ("serial_number", "ABC"),
+        ("model_name", "Pack"),
+        ("manufacturer", "Vendor"),
+    ]);
+    let identity = reader.identity().unwrap();
+    std::fs::remove_file(tmp.path().join("model_name")).unwrap();
+    assert_eq!(reader.identity(), None);
+    std::fs::write(tmp.path().join("model_name"), "Pack").unwrap();
+    assert_eq!(reader.identity(), Some(identity));
 }

@@ -119,14 +119,10 @@ impl BatteryReader {
         {
             return None;
         }
-        Some(
-            serde_json::json!([
-                self.read_str("manufacturer"),
-                self.read_str("model_name"),
-                serial
-            ])
-            .to_string(),
-        )
+        // An incomplete metadata read is uncertainty, not a different pack.
+        let manufacturer = self.read_str("manufacturer")?;
+        let model = self.read_str("model_name")?;
+        Some(serde_json::json!([manufacturer, model, serial]).to_string())
     }
 
     /// Hardware cycle count, if the management system reports one.

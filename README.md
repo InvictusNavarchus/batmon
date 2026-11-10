@@ -289,7 +289,8 @@ or `Overheat`). It is distinct from capacity-based `health_pct`; unsupported
 attributes remain `NULL`. Recording this status does not introduce new alerts.
 
 `battery_id` is a JSON array of manufacturer, model and serial number. Missing,
-empty, zero-only and common placeholder serials leave identity unknown; capacity
+empty, zero-only and common placeholder serials, or unreadable manufacturer/model
+attributes, leave identity unknown; capacity
 changes never imply replacement. Each identifiable pack keeps its own observed
 cycle total in `battery_cycles`, including after debug rows are pruned. These
 are observed cycles since monitoring began, not lifetime BMS cycles. Unknown
