@@ -192,7 +192,7 @@ fn oneshot_is_idempotent_and_appends() {
 
     let historical = database_dir(home.path()).join("battery.db");
     assert_eq!(query::<i64>(&historical, "SELECT count(*) FROM samples"), 3);
-    assert_eq!(query::<i64>(&historical, "PRAGMA user_version"), 10);
+    assert_eq!(query::<i64>(&historical, "PRAGMA user_version"), 12);
 }
 
 #[test]
