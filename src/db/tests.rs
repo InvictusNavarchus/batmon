@@ -424,3 +424,30 @@ fn oneshot_keeps_unknown_identity_totals_nullable_until_known_pack_returns() {
     store.insert_integrating_cycles(&mut recovered).unwrap();
     assert_eq!(recovered.estimated_cycle_count, Some(5.0));
 }
+
+#[test]
+fn ledger_reconciliation_does_not_add_an_overlapping_delta_twice() {
+    let store = Store::open_in_memory(Database::Debug).unwrap();
+    let known = Sample {
+        battery_id: Some("A".into()),
+        estimated_cycle_count: Some(8.0),
+        ..sample("known", 50.0)
+    };
+    store.insert(&known).unwrap();
+    // A stale writer cannot lower the row below the durable counter.
+    let stale = Sample {
+        estimated_cycle_count: Some(5.0),
+        ..known.clone()
+    };
+    assert_eq!(store.insert(&stale).unwrap(), Some(8.0));
+    let mut next = Sample {
+        energy_wh: Some(known.energy_wh.unwrap() - 1.0),
+        ..known.clone()
+    };
+    store.insert_integrating_cycles(&mut next).unwrap();
+    assert!((next.estimated_cycle_count.unwrap() - (8.0 + 1.0 / 53.0)).abs() < 1e-9);
+    assert_eq!(
+        store.latest().unwrap().unwrap().estimated_cycle_count,
+        next.estimated_cycle_count
+    );
+}

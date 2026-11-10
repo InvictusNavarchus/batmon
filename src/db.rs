@@ -135,9 +135,17 @@ impl Store {
             .unwrap_or(0.0))
     }
 
-    /// Append a sample exactly as given.
-    pub fn insert(&self, sample: &Sample) -> Result<()> {
-        let tx = self.conn.unchecked_transaction()?;
+    /// Append a sample, reconciling its total with the durable pack ledger.
+    /// Return the persisted total so the caller keeps the same baseline.
+    pub fn insert(&self, sample: &Sample) -> Result<Option<f64>> {
+        let tx = rusqlite::Transaction::new_unchecked(
+            &self.conn,
+            rusqlite::TransactionBehavior::Immediate,
+        )?;
+        let total = match (&sample.battery_id, sample.estimated_cycle_count) {
+            (Some(id), Some(total)) => Some(total.max(self.cycles_for(id)?)),
+            _ => sample.estimated_cycle_count,
+        };
         tx.execute(
             INSERT_SQL,
             named_params! {
@@ -155,7 +163,7 @@ impl Store {
                 ":voltage_v": sample.voltage_v,
                 ":voltage_design_v": sample.voltage_design_v,
                 ":cycle_count": sample.cycle_count,
-                ":estimated_cycle_count": sample.estimated_cycle_count,
+                ":estimated_cycle_count": total,
                 ":battery_temp_c": sample.battery_temp_c,
                 ":health_pct": sample.health_pct,
                 ":is_charging": sample.is_charging,
@@ -183,7 +191,7 @@ impl Store {
                 ":psi_mem_full": sample.psi_mem_full,
             },
         )?;
-        if let (Some(id), Some(total)) = (&sample.battery_id, sample.estimated_cycle_count) {
+        if let (Some(id), Some(total)) = (&sample.battery_id, total) {
             tx.execute(
                 "INSERT INTO battery_cycles (battery_id, estimated_cycle_count) VALUES (?1, ?2)
                 ON CONFLICT(battery_id) DO UPDATE SET estimated_cycle_count =
@@ -192,7 +200,7 @@ impl Store {
             )?;
         }
         tx.commit()?;
-        Ok(())
+        Ok(total)
     }
 
     /// Integrate the cycle count against this database's own last row, then append.
@@ -224,7 +232,7 @@ impl Store {
         {
             sample.estimated_cycle_count = None;
         }
-        self.insert(sample)?;
+        sample.estimated_cycle_count = self.insert(sample)?;
         Ok(previous)
     }
 

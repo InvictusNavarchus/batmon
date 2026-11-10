@@ -185,8 +185,13 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
             sample.estimated_cycle_count = None;
         }
 
-        // 1. Flight recorder, every tick.
-        self.debug.insert(&sample)?;
+        // Reconcile the completed integral, not its baseline: adding the same
+        // interval again after a concurrent oneshot would double-count wear.
+        if let (Some(id), Some(total)) = (&sample.battery_id, sample.estimated_cycle_count) {
+            sample.estimated_cycle_count = Some(total.max(self.historical.cycles_for(id)?));
+        }
+        // The debug transaction reconciles its own ledger atomically with insertion.
+        sample.estimated_cycle_count = self.debug.insert(&sample)?;
 
         // 2. Alerts.
         if sample.is_present {

@@ -633,3 +633,84 @@ fn missing_identity_records_no_attributed_total_and_restores_known_pack() {
         Some(5.0)
     );
 }
+
+#[test]
+fn an_external_writer_cannot_regress_totals_or_duplicate_an_interval() {
+    let pack = |energy| Sample {
+        battery_id: Some("A".into()),
+        ..present(50.0, energy)
+    };
+    let mut daemon = daemon(Scripted::new(vec![pack(30.0), pack(27.0), pack(26.0)]));
+    daemon
+        .debug
+        .insert(&Sample {
+            estimated_cycle_count: Some(5.0),
+            ..pack(30.0)
+        })
+        .unwrap();
+    daemon.run_tick();
+    // A oneshot advances the durable counter while the daemon still holds 5.
+    daemon
+        .debug
+        .insert(&Sample {
+            estimated_cycle_count: Some(8.0),
+            ..pack(28.0)
+        })
+        .unwrap();
+    daemon.run_tick();
+    assert_eq!(
+        daemon
+            .debug
+            .latest()
+            .unwrap()
+            .unwrap()
+            .estimated_cycle_count,
+        Some(8.0)
+    );
+    daemon.run_tick();
+    assert!(
+        (daemon
+            .debug
+            .latest()
+            .unwrap()
+            .unwrap()
+            .estimated_cycle_count
+            .unwrap()
+            - (8.0 + 1.0 / 58.0))
+            .abs()
+            < 1e-9
+    );
+}
+
+#[test]
+fn history_ledger_can_recover_a_lagging_debug_total() {
+    let pack = Sample {
+        battery_id: Some("A".into()),
+        ..present(50.0, 30.0)
+    };
+    let mut daemon = daemon(Scripted::repeating(pack.clone()));
+    daemon
+        .debug
+        .insert(&Sample {
+            estimated_cycle_count: Some(5.0),
+            ..pack.clone()
+        })
+        .unwrap();
+    daemon
+        .historical
+        .insert(&Sample {
+            estimated_cycle_count: Some(8.0),
+            ..pack
+        })
+        .unwrap();
+    daemon.run_tick();
+    assert_eq!(
+        daemon
+            .debug
+            .latest()
+            .unwrap()
+            .unwrap()
+            .estimated_cycle_count,
+        Some(8.0)
+    );
+}
