@@ -176,28 +176,35 @@ impl TelemetrySource for Sampler {
             self.last_battery_id.clone_from(&battery_id);
         }
         let presence = self.battery.is_present();
-        let energy = (presence != Some(false)).then(|| self.battery.energy()).flatten();
-        let charge_pct = (presence != Some(false)).then(|| self.battery.charge_pct()).flatten();
+        let energy = (presence != Some(false))
+            .then(|| self.battery.energy())
+            .flatten();
+        let charge_pct = (presence != Some(false))
+            .then(|| self.battery.charge_pct())
+            .flatten();
         let readable = energy.is_some() && charge_pct.is_some();
-        if !readable {
+        if readable {
+            self.refresh_estimates(power_state);
+        } else {
             self.invalidate_estimates();
             if !self.warned_unreadable {
                 tracing::warn!("battery unavailable; continuing system recording");
             }
-        } else {
-            self.refresh_estimates(power_state);
         }
         self.warned_unreadable = !readable;
         let power_w = self.battery.power_w();
         let thermals = self.thermal.read();
         let mut time_to_empty_s = self.cached_time_to_empty;
         let mut time_to_full_s = self.cached_time_to_full;
-        if let (Some(energy), Some(rate)) = (energy, power_w.filter(|w| *w > MIN_RATE_FOR_ESTIMATE_W)) {
+        if let (Some(energy), Some(rate)) =
+            (energy, power_w.filter(|w| *w > MIN_RATE_FOR_ESTIMATE_W))
+        {
             if time_to_empty_s.is_none() && power_state == PowerState::Discharging {
                 time_to_empty_s = Some(round_half_up(energy.now_wh / rate * 3_600.0) as i64);
             }
             if time_to_full_s.is_none() && is_charging {
-                time_to_full_s = Some(round_half_up((energy.full_wh - energy.now_wh) / rate * 3_600.0) as i64);
+                time_to_full_s =
+                    Some(round_half_up((energy.full_wh - energy.now_wh) / rate * 3_600.0) as i64);
             }
         }
 
@@ -231,7 +238,9 @@ impl TelemetrySource for Sampler {
             power_state,
             energy_wh: energy.map(|e| round_to(e.now_wh, 3)),
             energy_full_wh: energy.map(|e| round_to(e.full_wh, 3)),
-            energy_design_wh: energy.filter(|e| e.design_wh > 0.0).map(|e| round_to(e.design_wh, 3)),
+            energy_design_wh: energy
+                .filter(|e| e.design_wh > 0.0)
+                .map(|e| round_to(e.design_wh, 3)),
             power_w: power_w.map(|w| round_to(w, 3)),
             // Voltages are stored unrounded, unlike energy and power. Preserved
             // from the original rather than normalised, so stored rows match.

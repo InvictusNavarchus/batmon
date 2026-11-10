@@ -141,7 +141,10 @@ fn a_battery_reappearing_resumes_recording() {
     assert!(!daemon.debug.latest().unwrap().unwrap().is_present);
 
     daemon.run_tick();
-    assert_eq!(daemon.debug.latest().unwrap().unwrap().charge_pct, Some(79.0));
+    assert_eq!(
+        daemon.debug.latest().unwrap().unwrap().charge_pct,
+        Some(79.0)
+    );
 }
 
 #[test]
@@ -486,32 +489,90 @@ fn partial_samples_preserve_latches_and_break_the_cycle_interval() {
     missing.energy_wh = None;
     let mut daemon = daemon(Scripted::new(vec![low, missing, present(7.0, 1.0)]));
     daemon.schedule.historical_interval_ticks = 1;
-    for _ in 0..3 { daemon.run_tick(); }
+    for _ in 0..3 {
+        daemon.run_tick();
+    }
     assert_eq!(daemon.debug.row_count().unwrap(), 3);
     assert_eq!(daemon.notifier.delivered().len(), 1);
-    assert_eq!(daemon.debug.latest().unwrap().unwrap().estimated_cycle_count, 0.0);
-    assert_eq!(daemon.historical.latest().unwrap().unwrap().estimated_cycle_count, 0.0);
+    assert_eq!(
+        daemon
+            .debug
+            .latest()
+            .unwrap()
+            .unwrap()
+            .estimated_cycle_count,
+        0.0
+    );
+    assert_eq!(
+        daemon
+            .historical
+            .latest()
+            .unwrap()
+            .unwrap()
+            .estimated_cycle_count,
+        0.0
+    );
 }
 
 #[test]
 fn pack_totals_survive_replacement_return_pruning_and_restart() {
-    let pack = |id: &str, energy| Sample { battery_id: Some(id.to_owned()), ..present(50.0, energy) };
+    let pack = |id: &str, energy| Sample {
+        battery_id: Some(id.to_owned()),
+        ..present(50.0, energy)
+    };
     let mut daemon = daemon(Scripted::new(vec![
-        pack("A", 58.0), pack("A", 57.42), pack("B", 30.0), pack("A", 40.0),
+        pack("A", 58.0),
+        pack("A", 57.42),
+        pack("B", 30.0),
+        pack("A", 40.0),
     ]));
-    for _ in 0..2 { daemon.run_tick(); }
+    for _ in 0..2 {
+        daemon.run_tick();
+    }
     assert!((daemon.debug.cycles_for("A").unwrap() - 0.01).abs() < 1e-9);
     daemon.run_tick();
-    assert_eq!(daemon.debug.latest().unwrap().unwrap().estimated_cycle_count, 0.0);
+    assert_eq!(
+        daemon
+            .debug
+            .latest()
+            .unwrap()
+            .unwrap()
+            .estimated_cycle_count,
+        0.0
+    );
     daemon.debug.retain_newest(1).unwrap();
     daemon.previous = None; // same stores, fresh daemon baseline
     daemon.run_tick();
-    assert!((daemon.debug.latest().unwrap().unwrap().estimated_cycle_count - 0.01).abs() < 1e-9);
+    assert!(
+        (daemon
+            .debug
+            .latest()
+            .unwrap()
+            .unwrap()
+            .estimated_cycle_count
+            - 0.01)
+            .abs()
+            < 1e-9
+    );
 }
 
 #[test]
 fn a_source_gap_does_not_count_unobserved_discharge() {
-    let mut daemon = daemon(WithGaps::new(vec![Some(present(50.0, 30.0)), None, Some(present(40.0, 20.0))]));
-    for _ in 0..3 { daemon.run_tick(); }
-    assert_eq!(daemon.debug.latest().unwrap().unwrap().estimated_cycle_count, 0.0);
+    let mut daemon = daemon(WithGaps::new(vec![
+        Some(present(50.0, 30.0)),
+        None,
+        Some(present(40.0, 20.0)),
+    ]));
+    for _ in 0..3 {
+        daemon.run_tick();
+    }
+    assert_eq!(
+        daemon
+            .debug
+            .latest()
+            .unwrap()
+            .unwrap()
+            .estimated_cycle_count,
+        0.0
+    );
 }

@@ -21,7 +21,9 @@ pub enum HealthState {
 impl HealthState {
     #[must_use]
     pub fn step(self, sample: &Sample, t: &Thresholds) -> (Self, Option<Notification>) {
-        let Some(health_pct) = sample.health_pct else { return (self, None); };
+        let Some(health_pct) = sample.health_pct else {
+            return (self, None);
+        };
         if health_pct < t.cap_warn {
             if self == Self::Fired {
                 return (self, None);

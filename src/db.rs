@@ -124,8 +124,15 @@ impl Store {
 
     /// Durable observed-cycle total, retained even after a pack's debug rows expire.
     pub fn cycles_for(&self, id: &str) -> Result<f64> {
-        Ok(self.conn.query_row("SELECT estimated_cycle_count FROM battery_cycles WHERE battery_id=?1",
-            [id], |row| row.get(0)).optional()?.unwrap_or(0.0))
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT estimated_cycle_count FROM battery_cycles WHERE battery_id=?1",
+                [id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .unwrap_or(0.0))
     }
 
     /// Append a sample exactly as given.
@@ -177,10 +184,12 @@ impl Store {
             },
         )?;
         if let Some(id) = &sample.battery_id {
-            tx.execute("INSERT INTO battery_cycles VALUES (?1, ?2)
+            tx.execute(
+                "INSERT INTO battery_cycles VALUES (?1, ?2)
                 ON CONFLICT(battery_id) DO UPDATE SET estimated_cycle_count =
                 max(battery_cycles.estimated_cycle_count, excluded.estimated_cycle_count)",
-                rusqlite::params![id, sample.estimated_cycle_count])?;
+                rusqlite::params![id, sample.estimated_cycle_count],
+            )?;
         }
         tx.commit()?;
         Ok(())
@@ -198,11 +207,15 @@ impl Store {
     /// Returns the previous row, if there was one.
     pub fn insert_integrating_cycles(&self, sample: &mut Sample) -> Result<Option<Sample>> {
         let previous = self.latest()?;
-        sample.estimated_cycle_count = if previous.as_ref().map(|p| &p.battery_id) != Some(&sample.battery_id) {
-            match &sample.battery_id { Some(id) => self.cycles_for(id)?, None => 0.0 }
-        } else {
-            compute_estimated_cycles(sample, previous.as_ref())
-        };
+        sample.estimated_cycle_count =
+            if previous.as_ref().map(|p| &p.battery_id) == Some(&sample.battery_id) {
+                compute_estimated_cycles(sample, previous.as_ref())
+            } else {
+                match &sample.battery_id {
+                    Some(id) => self.cycles_for(id)?,
+                    None => 0.0,
+                }
+            };
         self.insert(sample)?;
         Ok(previous)
     }

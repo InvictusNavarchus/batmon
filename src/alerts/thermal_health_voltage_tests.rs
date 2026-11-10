@@ -263,5 +263,8 @@ fn missing_status_does_not_clear_a_voltage_fault() {
     let mut sample = mock();
     sample.power_state = crate::types::PowerState::Unknown;
     sample.is_charging = false;
-    assert_eq!(VoltageState::Fired.step(&sample, &Thresholds::default()).0, VoltageState::Fired);
+    assert_eq!(
+        VoltageState::Fired.step(&sample, &Thresholds::default()).0,
+        VoltageState::Fired
+    );
 }

@@ -30,7 +30,9 @@ impl ChargeState {
     /// Advance one tick, returning the new state and any alert to deliver.
     #[must_use]
     pub fn step(self, sample: &Sample, t: &Thresholds) -> (Self, Option<Notification>) {
-        let Some(charge_pct) = sample.charge_pct else { return (self, None); };
+        let Some(charge_pct) = sample.charge_pct else {
+            return (self, None);
+        };
         // The unplug reminder re-arms on level alone, whatever the rail is
         // doing, so this runs before the power-state dispatch.
         let state = if self == Self::HighFired
@@ -79,10 +81,7 @@ fn charging(
             Some(Notification {
                 family: AlertFamily::Charge,
                 title: "Battery Charge Target Reached".to_owned(),
-                body: format!(
-                    "Level reached {}% – unplug charger to preserve health",
-                    charge_pct
-                ),
+                body: format!("Level reached {charge_pct}% – unplug charger to preserve health"),
                 urgency: Urgency::Normal,
                 icon: "battery-full-charging",
             }),

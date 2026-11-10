@@ -254,7 +254,12 @@ fn charger_presence_distinguishes_online_offline_and_unknown() {
     std::fs::create_dir(&supply).unwrap();
     std::fs::write(supply.join("type"), "Mains").unwrap();
     assert_eq!(read_ac_online(tmp.path()), None);
-    for (raw, expected) in [("0", Some(false)), ("1", Some(true)), ("2", Some(true)), ("bad", None)] {
+    for (raw, expected) in [
+        ("0", Some(false)),
+        ("1", Some(true)),
+        ("2", Some(true)),
+        ("bad", None),
+    ] {
         std::fs::write(supply.join("online"), raw).unwrap();
         assert_eq!(read_ac_online(tmp.path()), expected);
     }

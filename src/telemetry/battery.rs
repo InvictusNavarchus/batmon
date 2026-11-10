@@ -112,11 +112,21 @@ impl BatteryReader {
     pub fn identity(&self) -> Option<String> {
         let serial = self.read_str("serial_number")?;
         let normalized = serial.to_ascii_lowercase();
-        if matches!(normalized.as_str(), "unknown" | "none" | "n/a" | "default" | "not specified")
-            || serial.chars().all(|c| c == '0' || c.is_whitespace()) {
+        if matches!(
+            normalized.as_str(),
+            "unknown" | "none" | "n/a" | "default" | "not specified"
+        ) || serial.chars().all(|c| c == '0' || c.is_whitespace())
+        {
             return None;
         }
-        Some(serde_json::json!([self.read_str("manufacturer"), self.read_str("model_name"), serial]).to_string())
+        Some(
+            serde_json::json!([
+                self.read_str("manufacturer"),
+                self.read_str("model_name"),
+                serial
+            ])
+            .to_string(),
+        )
     }
 
     /// Hardware cycle count, if the management system reports one.
@@ -134,7 +144,9 @@ impl BatteryReader {
     /// Nominal design voltage. Present voltage is not a design rating.
     #[must_use]
     pub fn voltage_design_v(&self) -> Option<f64> {
-        self.read_opt("voltage_min_design").filter(|v| *v > 0.0).map(|v| v / MICRO)
+        self.read_opt("voltage_min_design")
+            .filter(|v| *v > 0.0)
+            .map(|v| v / MICRO)
     }
 
     /// Energy figures, auto-detecting which unit the driver reports.
@@ -231,13 +243,24 @@ pub fn read_ac_online(base: &Path) -> Option<bool> {
     let mut found = false;
     let mut unknown = false;
     for entry in entries {
-        let Ok(entry) = entry else { unknown = true; continue; };
+        let Ok(entry) = entry else {
+            unknown = true;
+            continue;
+        };
         let reader = BatteryReader::new(entry.path());
-        if reader.read_str("scope").as_deref() == Some("Device") { continue; }
+        if reader.read_str("scope").as_deref() == Some("Device") {
+            continue;
+        }
         match reader.read_str("type").as_deref() {
-            Some("Mains" | "USB" | "USB_C" | "USB_PD" | "USB_PD_DRP" | "USB_DCP" | "USB_CDP" | "USB_ACA" | "Wireless") => {}
+            Some(
+                "Mains" | "USB" | "USB_C" | "USB_PD" | "USB_PD_DRP" | "USB_DCP" | "USB_CDP"
+                | "USB_ACA" | "Wireless",
+            ) => {}
             Some(_) => continue,
-            None => { unknown = true; continue; }
+            None => {
+                unknown = true;
+                continue;
+            }
         }
         found = true;
         match reader.read_str("online").as_deref() {

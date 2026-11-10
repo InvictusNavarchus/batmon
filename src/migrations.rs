@@ -244,9 +244,11 @@ pub const HISTORICAL_MIGRATIONS: &[Migration] = &[
         name: "add_battery_id",
         up: |conn| {
             add_column_if_not_exists(conn, "samples", "battery_id", "TEXT")?;
-            conn.execute_batch("CREATE TABLE IF NOT EXISTS battery_cycles (
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS battery_cycles (
                 battery_id TEXT PRIMARY KEY, estimated_cycle_count REAL NOT NULL
-            );")
+            );",
+            )
         },
     },
 ];
@@ -368,9 +370,11 @@ pub const DEBUG_MIGRATIONS: &[Migration] = &[
         name: "add_battery_id",
         up: |conn| {
             add_column_if_not_exists(conn, "samples", "battery_id", "TEXT")?;
-            conn.execute_batch("CREATE TABLE IF NOT EXISTS battery_cycles (
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS battery_cycles (
                 battery_id TEXT PRIMARY KEY, estimated_cycle_count REAL NOT NULL
-            );")
+            );",
+            )
         },
     },
 ];

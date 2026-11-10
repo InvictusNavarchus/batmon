@@ -98,7 +98,9 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
         self.prune_if_due()?;
 
         let Some(mut sample) = self.source.sample() else {
-            if let Some(previous) = &mut self.previous { previous.energy_wh = None; }
+            if let Some(previous) = &mut self.previous {
+                previous.energy_wh = None;
+            }
             return Ok(());
         };
 
@@ -130,26 +132,43 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
             self.last_known_battery_id = self.previous.as_ref().and_then(|p| p.battery_id.clone());
         }
         if let Some(id) = &sample.battery_id {
-            if self.last_known_battery_id.as_ref().is_some_and(|last| last != id) {
+            if self
+                .last_known_battery_id
+                .as_ref()
+                .is_some_and(|last| last != id)
+            {
                 self.engine.reset();
             }
             self.last_known_battery_id = Some(id.clone());
         }
-        if self.previous.as_ref().is_some_and(|p| p.battery_id != sample.battery_id) || (self.previous.is_none() && sample.battery_id.is_some()) {
+        if self
+            .previous
+            .as_ref()
+            .is_some_and(|p| p.battery_id != sample.battery_id)
+            || (self.previous.is_none() && sample.battery_id.is_some())
+        {
             let carried = match &sample.battery_id {
-                Some(id) => self.debug.cycles_for(id)?.max(self.historical.cycles_for(id)?),
+                Some(id) => self
+                    .debug
+                    .cycles_for(id)?
+                    .max(self.historical.cycles_for(id)?),
                 None => 0.0,
             };
-            self.previous = Some(Sample { energy_wh: None, estimated_cycle_count: carried, ..sample.clone() });
+            self.previous = Some(Sample {
+                energy_wh: None,
+                estimated_cycle_count: carried,
+                ..sample.clone()
+            });
         }
 
-        sample.estimated_cycle_count = if !sample.is_present || std::mem::take(&mut self.battery_was_absent) {
-            self.previous
-                .as_ref()
-                .map_or(0.0, |previous| previous.estimated_cycle_count)
-        } else {
-            compute_estimated_cycles(&sample, self.previous.as_ref())
-        };
+        sample.estimated_cycle_count =
+            if !sample.is_present || std::mem::take(&mut self.battery_was_absent) {
+                self.previous
+                    .as_ref()
+                    .map_or(0.0, |previous| previous.estimated_cycle_count)
+            } else {
+                compute_estimated_cycles(&sample, self.previous.as_ref())
+            };
 
         // 1. Flight recorder, every tick.
         self.debug.insert(&sample)?;
