@@ -57,13 +57,13 @@ impl TelemetrySource for Scripted {
 fn present(charge_pct: f64, energy_wh: f64) -> Sample {
     Sample {
         ts: crate::formats::now_iso8601_millis(),
-        charge_pct,
+        charge_pct: Some(charge_pct),
         status: "Discharging".to_owned(),
         power_state: PowerState::Discharging,
-        energy_wh,
-        energy_full_wh: 58.0,
-        energy_design_wh: 58.0,
-        health_pct: 99.0,
+        energy_wh: Some(energy_wh),
+        energy_full_wh: Some(58.0),
+        energy_design_wh: Some(58.0),
+        health_pct: Some(99.0),
         is_present: true,
         battery_temp_c: Some(30.0),
         boot_id: Some("boot-1".to_owned()),
@@ -111,7 +111,7 @@ fn history_is_written_on_the_first_tick_and_then_once_a_minute() {
 }
 
 #[test]
-fn an_absent_battery_records_nothing_and_clears_the_alert_state() {
+fn an_absent_battery_preserves_system_recording_and_clears_alerts() {
     let mut daemon = daemon(Scripted::repeating(Sample {
         is_present: false,
         ..present(80.0, 46.0)
@@ -121,8 +121,8 @@ fn an_absent_battery_records_nothing_and_clears_the_alert_state() {
         daemon.run_tick();
     }
 
-    assert_eq!(daemon.debug.latest().unwrap(), None);
-    assert_eq!(daemon.historical.latest().unwrap(), None);
+    assert!(!daemon.debug.latest().unwrap().unwrap().is_present);
+    assert!(!daemon.historical.latest().unwrap().unwrap().is_present);
     assert!(daemon.notifier.delivered().is_empty());
     assert_eq!(daemon.ticks(), 10, "ticks still advance");
 }
@@ -138,10 +138,10 @@ fn a_battery_reappearing_resumes_recording() {
     ]));
 
     daemon.run_tick();
-    assert_eq!(daemon.debug.latest().unwrap(), None);
+    assert!(!daemon.debug.latest().unwrap().unwrap().is_present);
 
     daemon.run_tick();
-    assert_eq!(daemon.debug.latest().unwrap().unwrap().charge_pct, 79.0);
+    assert_eq!(daemon.debug.latest().unwrap().unwrap().charge_pct, Some(79.0));
 }
 
 #[test]
@@ -476,4 +476,19 @@ fn a_cleared_flag_prevents_the_loop_running_at_all() {
 fn shutdown_checkpoints_without_complaint() {
     let daemon = daemon(Scripted::repeating(present(80.0, 46.0)));
     daemon.shutdown();
+}
+
+#[test]
+fn partial_samples_preserve_latches_and_break_the_cycle_interval() {
+    let low = present(8.0, 4.0);
+    let mut missing = low.clone();
+    missing.charge_pct = None;
+    missing.energy_wh = None;
+    let mut daemon = daemon(Scripted::new(vec![low, missing, present(7.0, 1.0)]));
+    daemon.schedule.historical_interval_ticks = 1;
+    for _ in 0..3 { daemon.run_tick(); }
+    assert_eq!(daemon.debug.row_count().unwrap(), 3);
+    assert_eq!(daemon.notifier.delivered().len(), 1);
+    assert_eq!(daemon.debug.latest().unwrap().unwrap().estimated_cycle_count, 0.0);
+    assert_eq!(daemon.historical.latest().unwrap().unwrap().estimated_cycle_count, 0.0);
 }

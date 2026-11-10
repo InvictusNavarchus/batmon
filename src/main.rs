@@ -206,8 +206,8 @@ fn oneshot(paths: &Paths) -> Result<()> {
     debug.checkpoint()?;
 
     tracing::info!(
-        charge_pct = sample.charge_pct,
-        health_pct = sample.health_pct,
+        charge_pct = ?sample.charge_pct,
+        health_pct = ?sample.health_pct,
         cycles = sample.estimated_cycle_count,
         "sample recorded"
     );

@@ -254,9 +254,8 @@ impl Store {
 /// `status` string that was always recorded alongside it. `is_charging` and
 /// `is_present` are stored as integers and become real booleans here.
 ///
-/// Nullable numerics that the type says are not optional collapse to zero,
-/// which the cycle integrator already treats as "no usable history". Note this
-/// makes a NULL column indistinguishable from a real zero on read.
+/// Nullable measurements remain optional; only the accumulated cycle counter
+/// defaults to zero for legacy rows.
 fn sample_from_row(row: &Row<'_>) -> rusqlite::Result<Sample> {
     let status: String = row.get::<_, Option<String>>("status")?.unwrap_or_default();
 
@@ -268,25 +267,21 @@ fn sample_from_row(row: &Row<'_>) -> rusqlite::Result<Sample> {
 
     Ok(Sample {
         ts: row.get::<_, Option<String>>("ts")?.unwrap_or_default(),
-        charge_pct: row.get::<_, Option<f64>>("charge_pct")?.unwrap_or(0.0),
+        charge_pct: row.get("charge_pct")?,
         status,
         power_state,
-        energy_wh: row.get::<_, Option<f64>>("energy_wh")?.unwrap_or(0.0),
-        energy_full_wh: row.get::<_, Option<f64>>("energy_full_wh")?.unwrap_or(0.0),
-        energy_design_wh: row
-            .get::<_, Option<f64>>("energy_design_wh")?
-            .unwrap_or(0.0),
-        power_w: row.get::<_, Option<f64>>("power_w")?.unwrap_or(0.0),
-        voltage_v: row.get::<_, Option<f64>>("voltage_v")?.unwrap_or(0.0),
-        voltage_design_v: row
-            .get::<_, Option<f64>>("voltage_design_v")?
-            .unwrap_or(0.0),
+        energy_wh: row.get("energy_wh")?,
+        energy_full_wh: row.get("energy_full_wh")?,
+        energy_design_wh: row.get("energy_design_wh")?,
+        power_w: row.get("power_w")?,
+        voltage_v: row.get("voltage_v")?,
+        voltage_design_v: row.get("voltage_design_v")?,
         cycle_count: row.get("cycle_count")?,
         estimated_cycle_count: row
             .get::<_, Option<f64>>("estimated_cycle_count")?
             .unwrap_or(0.0),
         battery_temp_c: row.get("battery_temp_c")?,
-        health_pct: row.get::<_, Option<f64>>("health_pct")?.unwrap_or(0.0),
+        health_pct: row.get("health_pct")?,
         is_charging: row.get::<_, Option<i64>>("is_charging")?.unwrap_or(0) != 0,
         is_present: row.get::<_, Option<i64>>("is_present")?.unwrap_or(0) != 0,
         time_to_empty_s: row.get("time_to_empty_s")?,

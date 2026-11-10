@@ -5,19 +5,19 @@ use super::*;
 fn sample(ts: &str, charge_pct: f64) -> Sample {
     Sample {
         ts: ts.to_owned(),
-        charge_pct,
+        charge_pct: Some(charge_pct),
         status: "Discharging".to_owned(),
         power_state: PowerState::Discharging,
-        energy_wh: 45.0,
-        energy_full_wh: 50.0,
-        energy_design_wh: 53.0,
-        power_w: 11.5,
-        voltage_v: 15.4,
-        voltage_design_v: 15.4,
+        energy_wh: Some(45.0),
+        energy_full_wh: Some(50.0),
+        energy_design_wh: Some(53.0),
+        power_w: Some(11.5),
+        voltage_v: Some(15.4),
+        voltage_design_v: Some(15.4),
         cycle_count: Some(120),
         estimated_cycle_count: 0.0,
         battery_temp_c: Some(32.1),
-        health_pct: 94.3,
+        health_pct: Some(94.3),
         is_charging: false,
         is_present: true,
         time_to_empty_s: Some(9_000),
@@ -74,7 +74,7 @@ fn latest_returns_the_most_recently_inserted_row() {
 
     let latest = store.latest().unwrap().unwrap();
     assert_eq!(latest.ts, "2026-09-06T00:00:01.000Z");
-    assert_eq!(latest.charge_pct, 79.0);
+    assert_eq!(latest.charge_pct, Some(79.0));
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn inserting_with_integration_returns_the_previous_row_and_accrues_cycles() {
     let store = Store::open_in_memory(Database::Historical).unwrap();
 
     let mut first = Sample {
-        energy_wh: 50.0,
+        energy_wh: Some(50.0),
         estimated_cycle_count: 2.0,
         ..sample("2026-09-06T00:00:00.000Z", 90.0)
     };
@@ -90,7 +90,7 @@ fn inserting_with_integration_returns_the_previous_row_and_accrues_cycles() {
     assert_eq!(first.estimated_cycle_count, 0.0, "no history to carry");
 
     let mut second = Sample {
-        energy_wh: 44.7, // 5.3 Wh out of a 53 Wh design capacity
+        energy_wh: Some(44.7), // 5.3 Wh out of a 53 Wh design capacity
         ..sample("2026-09-06T00:01:00.000Z", 80.0)
     };
     let previous = store
@@ -109,13 +109,13 @@ fn integration_writes_the_computed_value_back_to_the_caller() {
     let store = Store::open_in_memory(Database::Historical).unwrap();
     store
         .insert(&Sample {
-            energy_wh: 50.0,
+            energy_wh: Some(50.0),
             ..sample("2026-09-06T00:00:00.000Z", 90.0)
         })
         .unwrap();
 
     let mut next = Sample {
-        energy_wh: 44.7,
+        energy_wh: Some(44.7),
         estimated_cycle_count: 999.0,
         ..sample("2026-09-06T00:01:00.000Z", 80.0)
     };
@@ -312,7 +312,7 @@ fn a_stored_power_state_wins_over_the_status_string() {
 }
 
 #[test]
-fn null_numerics_read_back_as_zero_rather_than_failing() {
+fn null_measurements_remain_unknown_on_read() {
     let store = Store::open_in_memory(Database::Historical).unwrap();
     store
         .conn
@@ -324,8 +324,8 @@ fn null_numerics_read_back_as_zero_rather_than_failing() {
 
     let row = store.latest().unwrap().unwrap();
     assert_eq!(row.estimated_cycle_count, 0.0);
-    assert_eq!(row.charge_pct, 0.0);
-    assert_eq!(row.energy_design_wh, 0.0);
+    assert_eq!(row.charge_pct, None);
+    assert_eq!(row.energy_design_wh, None);
     assert_eq!(row.cycle_count, None);
     assert_eq!(row.battery_temp_c, None);
 }
@@ -374,5 +374,5 @@ fn a_reopened_database_still_holds_its_rows() {
     }
 
     let reopened = Store::open(&path, Database::Historical).unwrap();
-    assert_eq!(reopened.latest().unwrap().unwrap().charge_pct, 50.0);
+    assert_eq!(reopened.latest().unwrap().unwrap().charge_pct, Some(50.0));
 }

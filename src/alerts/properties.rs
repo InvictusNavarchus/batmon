@@ -46,18 +46,18 @@ fn arb_sample() -> impl Strategy<Value = Sample> {
                 cpu_pct,
                 power_w,
             )| Sample {
-                charge_pct,
+                charge_pct: Some(charge_pct),
                 power_state,
                 // Kept consistent with the rail, as the telemetry reader
                 // guarantees; an inconsistent pair is not a reachable state.
                 is_charging: power_state == PowerState::Charging,
                 battery_temp_c,
-                health_pct,
-                voltage_v,
-                voltage_design_v,
+                health_pct: Some(health_pct),
+                voltage_v: Some(voltage_v),
+                voltage_design_v: Some(voltage_design_v),
                 cpu_temp_c,
                 cpu_pct,
-                power_w,
+                power_w: Some(power_w),
                 is_present: true,
                 ..Sample::default()
             },
@@ -92,13 +92,13 @@ fn arb_walk(max_len: usize) -> impl Strategy<Value = Vec<Sample>> {
 
         for (charge, battery, cpu_temp, cpu_pct, power, rail) in steps {
             let mut next = current.clone();
-            next.charge_pct = (next.charge_pct + charge).clamp(0.0, 100.0);
+            next.charge_pct = Some((next.charge_pct.unwrap() + charge).clamp(0.0, 100.0));
             next.battery_temp_c = next
                 .battery_temp_c
                 .map(|t| (t + battery).clamp(-20.0, 90.0));
             next.cpu_temp_c = next.cpu_temp_c.map(|t| (t + cpu_temp).clamp(0.0, 110.0));
             next.cpu_pct = next.cpu_pct.map(|p| (p + cpu_pct).clamp(0.0, 100.0));
-            next.power_w = (next.power_w + power).clamp(0.0, 80.0);
+            next.power_w = Some((next.power_w.unwrap() + power).clamp(0.0, 80.0));
             if let Some(state) = rail {
                 next.power_state = state;
                 next.is_charging = state == PowerState::Charging;
@@ -198,7 +198,7 @@ proptest! {
         for (index, level) in levels.iter().enumerate() {
             let state = if index % 2 == 0 { PowerState::AcIdle } else { PowerState::Unknown };
             let sample = Sample {
-                charge_pct: *level,
+                charge_pct: Some(*level),
                 power_state: state,
                 is_charging: false,
                 is_present: true,
@@ -257,17 +257,17 @@ proptest! {
     #[test]
     fn a_healthy_machine_is_never_interrupted(ticks in 1usize..500) {
         let nominal = Sample {
-            charge_pct: 55.0,
+            charge_pct: Some(55.0),
             power_state: PowerState::Discharging,
             is_charging: false,
             is_present: true,
             battery_temp_c: Some(31.0),
-            health_pct: 96.0,
-            voltage_v: 12.0,
-            voltage_design_v: 11.8,
+            health_pct: Some(96.0),
+            voltage_v: Some(12.0),
+            voltage_design_v: Some(11.8),
             cpu_temp_c: Some(52.0),
             cpu_pct: Some(35.0),
-            power_w: 14.0,
+            power_w: Some(14.0),
             ..Sample::default()
         };
 
@@ -286,14 +286,14 @@ proptest! {
         let mut engine = AlertEngine::new();
         let thresholds = Thresholds::default();
         let sample = Sample {
-            charge_pct: f64::NAN,
+            charge_pct: Some(f64::NAN),
             battery_temp_c: Some(f64::NAN),
             cpu_temp_c: Some(f64::NAN),
             cpu_pct: Some(f64::NAN),
-            power_w: f64::NAN,
-            voltage_v: f64::NAN,
-            voltage_design_v: f64::NAN,
-            health_pct: f64::NAN,
+            power_w: Some(f64::NAN),
+            voltage_v: Some(f64::NAN),
+            voltage_design_v: Some(f64::NAN),
+            health_pct: Some(f64::NAN),
             power_state: PowerState::Discharging,
             is_present: true,
             ..Sample::default()
@@ -320,14 +320,14 @@ proptest! {
         let mut engine = AlertEngine::new();
         let thresholds = Thresholds::default();
         let sample = Sample {
-            charge_pct: charge,
+            charge_pct: Some(charge),
             battery_temp_c: Some(temp),
             cpu_temp_c: Some(cpu),
             cpu_pct: Some(cpu),
-            power_w: power,
-            voltage_v: voltage,
-            voltage_design_v: voltage,
-            health_pct: charge,
+            power_w: Some(power),
+            voltage_v: Some(voltage),
+            voltage_design_v: Some(voltage),
+            health_pct: Some(charge),
             power_state: PowerState::Discharging,
             is_present: true,
             ..Sample::default()

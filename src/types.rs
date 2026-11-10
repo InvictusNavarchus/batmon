@@ -85,16 +85,16 @@ pub struct Sample {
     /// UTC timestamp, `toISOString` shape. See [`crate::formats::iso8601_millis`].
     pub ts: String,
     /// State of charge, percent.
-    pub charge_pct: f64,
+    pub charge_pct: Option<f64>,
     /// Raw kernel `status` string, preserved verbatim alongside `power_state`.
     pub status: String,
     pub power_state: PowerState,
-    pub energy_wh: f64,
-    pub energy_full_wh: f64,
-    pub energy_design_wh: f64,
-    pub power_w: f64,
-    pub voltage_v: f64,
-    pub voltage_design_v: f64,
+    pub energy_wh: Option<f64>,
+    pub energy_full_wh: Option<f64>,
+    pub energy_design_wh: Option<f64>,
+    pub power_w: Option<f64>,
+    pub voltage_v: Option<f64>,
+    pub voltage_design_v: Option<f64>,
     /// Cycle count as reported by the battery management system, if it reports one.
     pub cycle_count: Option<i64>,
     /// Cycle count integrated from observed energy throughput.
@@ -102,7 +102,7 @@ pub struct Sample {
     /// Battery pack temperature. Absent on many laptops.
     pub battery_temp_c: Option<f64>,
     /// Full-charge capacity as a percentage of design capacity.
-    pub health_pct: f64,
+    pub health_pct: Option<f64>,
     pub is_charging: bool,
     /// Whether a battery is physically present. A false value suppresses all
     /// recording and alerting for the tick.

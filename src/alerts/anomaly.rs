@@ -68,7 +68,7 @@ impl AnomalyState {
                     format_decimals(sample.cpu_pct.unwrap_or_default(), 0)
                 )
             }
-            IdleEvidence::Power => format!("{} W", format_decimals(sample.power_w, 1)),
+            IdleEvidence::Power => format!("{} W", format_decimals(sample.power_w.expect("power evidence requires a reading"), 1)),
         };
 
         (
@@ -104,7 +104,7 @@ fn idle_evidence(sample: &Sample, t: &Thresholds) -> Option<IdleEvidence> {
 
     // A zero reading means the sensor is not reporting, not that the machine is
     // drawing no power, so it does not count as evidence of idleness.
-    if sample.power_w > 0.0 && sample.power_w <= t.cpu_anomaly_max_power_w {
+    if sample.power_w.is_some_and(|w| w > 0.0 && w <= t.cpu_anomaly_max_power_w) {
         return Some(IdleEvidence::Power);
     }
 

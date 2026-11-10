@@ -26,15 +26,17 @@ impl VoltageState {
     /// latch that a real fault had set.
     #[must_use]
     pub fn step(self, sample: &Sample, t: &Thresholds) -> (Self, Option<Notification>) {
+        let Some(voltage_v) = sample.voltage_v else { return (self, None); };
+        let Some(voltage_design_v) = sample.voltage_design_v else { return (self, None); };
         if !sample.is_charging {
             return (Self::Normal, None);
         }
 
-        if sample.voltage_design_v <= 0.0 || sample.voltage_v <= 0.0 {
+        if voltage_design_v <= 0.0 || voltage_v <= 0.0 {
             return (self, None);
         }
 
-        if sample.voltage_v > sample.voltage_design_v * t.voltage_over_ratio {
+        if voltage_v > voltage_design_v * t.voltage_over_ratio {
             if self == Self::Fired {
                 return (self, None);
             }
@@ -45,8 +47,8 @@ impl VoltageState {
                     title: "Warning: Over-Voltage Charging".to_owned(),
                     body: format!(
                         "Voltage {} V well above design {} V",
-                        format_decimals(sample.voltage_v, 2),
-                        sample.voltage_design_v
+                        format_decimals(voltage_v, 2),
+                        voltage_design_v
                     ),
                     urgency: Urgency::Normal,
                     icon: "dialog-warning",
@@ -56,7 +58,7 @@ impl VoltageState {
 
         // The clearing point sits below the tripping point, so a rail hovering
         // between the two holds whatever state it already had.
-        if sample.voltage_v <= sample.voltage_design_v * t.voltage_clear_ratio {
+        if voltage_v <= voltage_design_v * t.voltage_clear_ratio {
             return (Self::Normal, None);
         }
 

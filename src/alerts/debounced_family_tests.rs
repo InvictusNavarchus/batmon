@@ -30,7 +30,7 @@ fn idle_cpu(celsius: f64, cpu_pct: f64, power_w: f64) -> Sample {
     Sample {
         cpu_temp_c: Some(celsius),
         cpu_pct: Some(cpu_pct),
-        power_w,
+        power_w: Some(power_w),
         battery_temp_c: Some(30.0),
         ..discharging_at(50.0)
     }
@@ -82,7 +82,7 @@ fn heat_soak_never_fires_while_unplugged() {
     let hot_unplugged = Sample {
         cpu_temp_c: Some(95.0),
         cpu_pct: Some(90.0),
-        power_w: 45.0,
+        power_w: Some(45.0),
         battery_temp_c: Some(30.0),
         ..discharging_at(50.0)
     };

@@ -24,15 +24,13 @@ pub struct Energy {
 impl Energy {
     /// Present full-charge capacity as a percentage of design capacity.
     ///
-    /// Reports a healthy 100 when design capacity is unknown, rather than a
-    /// division by zero or an alarming zero: an unreadable attribute is not
-    /// evidence of a worn-out battery, and the health alert must not fire on it.
+    /// Unknown design capacity produces no health estimate.
     #[must_use]
-    pub fn health_pct(self) -> f64 {
+    pub fn health_pct(self) -> Option<f64> {
         if self.design_wh > 0.0 {
-            crate::formats::round_half_up((self.full_wh / self.design_wh) * 10_000.0) / 100.0
+            Some(crate::formats::round_half_up((self.full_wh / self.design_wh) * 10_000.0) / 100.0)
         } else {
-            100.0
+            None
         }
     }
 }
@@ -109,30 +107,16 @@ impl BatteryReader {
         self.read_opt("cycle_count").map(|count| count as i64)
     }
 
-    /// Instantaneous rail voltage, or zero when unreadable.
-    ///
-    /// Zero is safe to fabricate *here specifically* because the only consumer,
-    /// the over-voltage check, treats a non-positive reading as "no information"
-    /// and neither fires nor clears on it. Do not copy this pattern to a field
-    /// whose consumers act on zero.
+    /// Instantaneous battery voltage, when readable.
     #[must_use]
-    pub fn voltage_v(&self) -> f64 {
-        self.read_opt("voltage_now").unwrap_or(0.0) / MICRO
+    pub fn voltage_v(&self) -> Option<f64> {
+        self.read_opt("voltage_now").map(|v| v / MICRO)
     }
 
-    /// Design voltage, falling back to the present reading.
-    ///
-    /// `voltage_min_design` is the nominal figure and the one to prefer, but
-    /// plenty of drivers omit it. The present voltage is a poor substitute — it
-    /// makes the over-voltage check compare a value against itself and so never
-    /// fire — but it is better than zero, which would disable the check by a
-    /// different route while also corrupting charge-based energy conversion.
+    /// Nominal design voltage. Present voltage is not a design rating.
     #[must_use]
-    pub fn voltage_design_v(&self) -> f64 {
-        self.read_opt("voltage_min_design")
-            .or_else(|| self.read_opt("voltage_now"))
-            .unwrap_or(0.0)
-            / MICRO
+    pub fn voltage_design_v(&self) -> Option<f64> {
+        self.read_opt("voltage_min_design").filter(|v| *v > 0.0).map(|v| v / MICRO)
     }
 
     /// Energy figures, auto-detecting which unit the driver reports.
@@ -148,7 +132,7 @@ impl BatteryReader {
     ///
     /// `design` is separate: plenty of drivers omit it permanently, so it falls
     /// back to zero, which every consumer already reads as "unknown" — health
-    /// reports 100% and the cycle integrator declines to integrate rather than
+    /// remains unknown and the cycle integrator declines to integrate rather than
     /// dividing by it.
     #[must_use]
     pub fn energy(&self) -> Option<Energy> {
@@ -160,7 +144,7 @@ impl BatteryReader {
             });
         }
 
-        let design_volts = self.voltage_design_v();
+        let design_volts = self.voltage_design_v()?;
         Some(Energy {
             now_wh: (self.read_opt("charge_now")? / MICRO) * design_volts,
             full_wh: (self.read_opt("charge_full")? / MICRO) * design_volts,
@@ -172,16 +156,16 @@ impl BatteryReader {
     ///
     /// `power_now` when the driver offers it; otherwise the product of current
     /// and voltage, which is the same quantity the hardware would have computed.
-    /// Zero when neither is available — an unknown rate is not a negative one.
+    /// Unknown when neither source is available.
     #[must_use]
-    pub fn power_w(&self) -> f64 {
+    pub fn power_w(&self) -> Option<f64> {
         if let Some(watts) = self.read_opt("power_now") {
-            return watts / MICRO;
+            return Some(watts / MICRO);
         }
 
         match (self.read_opt("current_now"), self.read_opt("voltage_now")) {
-            (Some(amps), Some(volts)) => (amps * volts) / (MICRO * MICRO),
-            _ => 0.0,
+            (Some(amps), Some(volts)) => Some((amps * volts) / (MICRO * MICRO)),
+            _ => None,
         }
     }
 

@@ -30,10 +30,11 @@ impl ChargeState {
     /// Advance one tick, returning the new state and any alert to deliver.
     #[must_use]
     pub fn step(self, sample: &Sample, t: &Thresholds) -> (Self, Option<Notification>) {
+        let Some(charge_pct) = sample.charge_pct else { return (self, None); };
         // The unplug reminder re-arms on level alone, whatever the rail is
         // doing, so this runs before the power-state dispatch.
         let state = if self == Self::HighFired
-            && sample.charge_pct < t.charge_high_warn - t.charge_hysteresis_pct
+            && charge_pct < t.charge_high_warn - t.charge_hysteresis_pct
         {
             Self::Normal
         } else {
@@ -43,14 +44,14 @@ impl ChargeState {
         // `is_charging` is checked alongside the power state because a driver
         // can report a charging current without a matching status string.
         if sample.is_charging || sample.power_state == PowerState::Charging {
-            return charging(state, sample, t);
+            return charging(state, charge_pct, t);
         }
 
         match sample.power_state {
             // Plugged in but idle: drop the discharge latches without
             // suggesting the user connect a charger they already connected.
             PowerState::AcIdle => (state.without_discharge_latches(), None),
-            PowerState::Discharging => discharging(state, sample, t),
+            PowerState::Discharging => discharging(state, charge_pct, t),
             // Nothing is known about the rail, so nothing is claimed about it —
             // and no latch is disturbed either.
             PowerState::Charging | PowerState::Unknown => (state, None),
@@ -67,12 +68,12 @@ impl ChargeState {
 
 fn charging(
     state: ChargeState,
-    sample: &Sample,
+    charge_pct: f64,
     t: &Thresholds,
 ) -> (ChargeState, Option<Notification>) {
     let state = state.without_discharge_latches();
 
-    if sample.charge_pct >= t.charge_high_warn && state != ChargeState::HighFired {
+    if charge_pct >= t.charge_high_warn && state != ChargeState::HighFired {
         return (
             ChargeState::HighFired,
             Some(Notification {
@@ -80,7 +81,7 @@ fn charging(
                 title: "Battery Charge Target Reached".to_owned(),
                 body: format!(
                     "Level reached {}% – unplug charger to preserve health",
-                    sample.charge_pct
+                    charge_pct
                 ),
                 urgency: Urgency::Normal,
                 icon: "battery-full-charging",
@@ -93,10 +94,10 @@ fn charging(
 
 fn discharging(
     state: ChargeState,
-    sample: &Sample,
+    charge_pct: f64,
     t: &Thresholds,
 ) -> (ChargeState, Option<Notification>) {
-    let charge = sample.charge_pct;
+    let charge = charge_pct;
 
     if charge <= t.charge_crit_warn {
         if state == ChargeState::CriticalFired {

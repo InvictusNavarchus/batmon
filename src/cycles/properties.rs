@@ -49,16 +49,16 @@ fn arb_pair() -> impl Strategy<Value = (Sample, Sample)> {
                 current_boot,
             )| {
                 let previous = Sample {
-                    energy_wh: previous_energy,
-                    energy_design_wh: design,
+                    energy_wh: Some(previous_energy),
+                    energy_design_wh: Some(design),
                     estimated_cycle_count: carried,
                     uptime_s: previous_uptime,
                     boot_id: previous_boot,
                     ..Sample::default()
                 };
                 let current = Sample {
-                    energy_wh: current_energy,
-                    energy_design_wh: design,
+                    energy_wh: Some(current_energy),
+                    energy_design_wh: Some(design),
                     power_state,
                     is_charging: power_state == PowerState::Charging,
                     uptime_s: current_uptime,
@@ -154,7 +154,7 @@ proptest! {
         (previous, current) in arb_pair(),
     ) {
         let current = Sample {
-            energy_design_wh: 0.0,
+            energy_design_wh: Some(0.0),
             ..current
         };
 

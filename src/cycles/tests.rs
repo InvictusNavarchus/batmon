@@ -5,8 +5,8 @@ use super::*;
 /// A discharging sample with a 50 Wh design capacity and a continuous boot.
 fn discharging(energy_wh: f64, cycles: f64) -> Sample {
     Sample {
-        energy_wh,
-        energy_design_wh: 50.0,
+        energy_wh: Some(energy_wh),
+        energy_design_wh: Some(50.0),
         estimated_cycle_count: cycles,
         status: "Discharging".to_owned(),
         power_state: PowerState::Discharging,
@@ -27,8 +27,8 @@ fn an_unusable_design_capacity_keeps_the_carried_count() {
 
     for design in [0.0, -10.0] {
         let curr = Sample {
-            energy_wh: 40.0,
-            energy_design_wh: design,
+            energy_wh: Some(40.0),
+            energy_design_wh: Some(design),
             ..discharging(40.0, 0.0)
         };
         // 2.0, not 0.0: the increment is unknown, the history is not.
@@ -119,12 +119,12 @@ fn sub_milliwatt_hour_increments_accumulate_instead_of_rounding_away() {
 
     for _ in 0..100 {
         let prev = Sample {
-            energy_design_wh: design_wh,
+            energy_design_wh: Some(design_wh),
             ..discharging(energy, cycles)
         };
         energy -= delta_per_second;
         let curr = Sample {
-            energy_design_wh: design_wh,
+            energy_design_wh: Some(design_wh),
             ..discharging(energy, 0.0)
         };
         cycles = compute_estimated_cycles(&curr, Some(&prev));

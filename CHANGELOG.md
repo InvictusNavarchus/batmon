@@ -19,6 +19,10 @@ release notes; v0.3.0 and earlier had none.
 
 ### Fixed
 
+- Battery read failures no longer interrupt system telemetry. Missing battery
+  measurements remain unknown instead of appearing as zero or 100% health.
+  Historical cycle totals preserve gaps observed by the flight recorder.
+
 - Custom binary directories are now used consistently by the service, subsequent
   updates, and the installed `batmon-uninstall` command. Uninstalling no longer
   requires keeping a source checkout, and preserves the databases.

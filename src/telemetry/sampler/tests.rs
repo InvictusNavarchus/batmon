@@ -174,7 +174,7 @@ fn assembles_a_complete_sample_from_every_source() {
     assert_eq!(sample.power_state, PowerState::Discharging);
     assert!(!sample.is_charging);
     assert!(sample.is_present);
-    assert_eq!(sample.charge_pct, 80.0);
+    assert_eq!(sample.charge_pct, Some(80.0));
     assert_eq!(sample.cycle_count, Some(0));
 
     assert_eq!(sample.cpu_temp_c, Some(48.5));
@@ -213,13 +213,13 @@ fn energy_and_power_are_rounded_to_three_places_but_voltage_is_not() {
         .sample()
         .expect("a readable battery yields a sample");
 
-    assert_eq!(sample.energy_wh, 46.5);
-    assert_eq!(sample.energy_full_wh, 58.073);
-    assert_eq!(sample.energy_design_wh, 58.328);
-    assert_eq!(sample.power_w, 20.416);
-    assert_eq!(sample.voltage_v, 12.095);
-    assert_eq!(sample.voltage_design_v, 11.55);
-    assert_eq!(sample.health_pct, 99.56);
+    assert_eq!(sample.energy_wh, Some(46.5));
+    assert_eq!(sample.energy_full_wh, Some(58.073));
+    assert_eq!(sample.energy_design_wh, Some(58.328));
+    assert_eq!(sample.power_w, Some(20.416));
+    assert_eq!(sample.voltage_v, Some(12.095));
+    assert_eq!(sample.voltage_design_v, Some(11.55));
+    assert_eq!(sample.health_pct, Some(99.56));
 }
 
 #[test]
@@ -282,11 +282,11 @@ fn a_missing_battery_produces_a_sample_marked_absent() {
     assert!(!sample.is_present);
     assert_eq!(sample.status, "Unknown");
     assert_eq!(sample.power_state, PowerState::Unknown);
-    assert_eq!(sample.charge_pct, 0.0);
+    assert_eq!(sample.charge_pct, None);
 }
 
 #[test]
-fn an_unreadable_presence_attribute_yields_no_sample_rather_than_an_absent_one() {
+fn unknown_presence_preserves_system_recording() {
     // The difference matters downstream: an absent sample clears every alert
     // latch, so a `present` file that merely failed to read must not be
     // reported as a battery that went away.
@@ -300,7 +300,10 @@ fn an_unreadable_presence_attribute_yields_no_sample_rather_than_an_absent_one()
     let unknown = Machine::new();
     std::fs::write(unknown.paths.battery.join("present"), "").unwrap();
     strip(&unknown);
-    assert!(unknown.sampler().sample().is_none());
+    let sample = unknown.sampler().sample().unwrap();
+    assert!(sample.is_present);
+    assert_eq!(sample.charge_pct, None);
+    assert!(sample.mem_pct.is_some());
 
     // The paired case, differing only in `present`. Without it this test
     // would still pass if unknown presence were quietly treated as absence,
@@ -370,7 +373,7 @@ fn an_absent_battery_drops_the_cached_runtime_estimate() {
 }
 
 #[test]
-fn a_present_but_unreadable_battery_yields_no_sample_at_all() {
+fn a_present_but_unreadable_battery_preserves_system_telemetry() {
     // Distinct from the case above. The hardware is still installed, so its
     // latched alerts still describe something real; the tick simply has
     // nothing to say. Reporting zeros instead announced a critical low
@@ -388,7 +391,9 @@ fn a_present_but_unreadable_battery_yields_no_sample_at_all() {
 
     // The directory survives, so the pack still reads as installed.
     assert!(machine.paths.battery.exists());
-    assert!(machine.sampler().sample().is_none());
+    let sample = machine.sampler().sample().unwrap();
+    assert_eq!(sample.energy_wh, None);
+    assert!(sample.mem_pct.is_some());
 }
 
 #[test]

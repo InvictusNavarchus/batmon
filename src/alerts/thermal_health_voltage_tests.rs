@@ -123,7 +123,7 @@ fn the_temperature_body_renders_one_decimal_rounded_away_from_zero() {
 fn health_warns_once_and_holds_through_its_deadband() {
     let mut engine = AlertEngine::new();
     let degraded = |pct: f64| Sample {
-        health_pct: pct,
+        health_pct: Some(pct),
         ..mock()
     };
 
@@ -149,7 +149,7 @@ fn the_health_body_reports_the_figure_to_one_decimal() {
     let mut engine = AlertEngine::new();
     let alerts = engine.evaluate(
         &Sample {
-            health_pct: 77.99,
+            health_pct: Some(77.99),
             ..mock()
         },
         &Thresholds::default(),
@@ -162,8 +162,8 @@ fn the_health_body_reports_the_figure_to_one_decimal() {
 fn over_voltage_fires_once_while_charging() {
     let mut engine = AlertEngine::new();
     let charging_at_volts = |v: f64, design: f64| Sample {
-        voltage_v: v,
-        voltage_design_v: design,
+        voltage_v: Some(v),
+        voltage_design_v: Some(design),
         ..charging_at(50.0)
     };
 
@@ -184,8 +184,8 @@ fn over_voltage_fires_once_while_charging() {
 fn over_voltage_clears_on_unplugging_and_can_fire_again() {
     let mut engine = AlertEngine::new();
     let over = Sample {
-        voltage_v: 14.0,
-        voltage_design_v: 12.0,
+        voltage_v: Some(14.0),
+        voltage_design_v: Some(12.0),
         ..charging_at(50.0)
     };
 
@@ -200,8 +200,8 @@ fn over_voltage_holds_between_the_trip_and_clear_ratios() {
     // latch must persist, or a rail sitting at 13.5 V would flap.
     let mut engine = AlertEngine::new();
     let at_volts = |v: f64| Sample {
-        voltage_v: v,
-        voltage_design_v: 12.0,
+        voltage_v: Some(v),
+        voltage_design_v: Some(12.0),
         ..charging_at(50.0)
     };
 
@@ -222,8 +222,8 @@ fn the_voltage_body_renders_measured_to_two_decimals_and_design_verbatim() {
     let mut engine = AlertEngine::new();
     let alerts = engine.evaluate(
         &Sample {
-            voltage_v: 15.125,
-            voltage_design_v: 11.55,
+            voltage_v: Some(15.125),
+            voltage_design_v: Some(11.55),
             ..charging_at(50.0)
         },
         &Thresholds::default(),
@@ -244,4 +244,16 @@ fn resetting_drops_the_thermal_health_and_voltage_latches_too() {
     engine.reset();
 
     assert_eq!(run(&mut engine, &[at_temp(Some(46.0))]).len(), 1);
+}
+
+#[test]
+fn unknown_health_and_voltage_preserve_their_latches() {
+    let mut sample = mock();
+    sample.health_pct = None;
+    sample.voltage_v = None;
+    sample.voltage_design_v = None;
+    sample.is_charging = true;
+    let t = Thresholds::default();
+    assert_eq!(HealthState::Fired.step(&sample, &t).0, HealthState::Fired);
+    assert_eq!(VoltageState::Fired.step(&sample, &t).0, VoltageState::Fired);
 }

@@ -39,11 +39,14 @@ pub fn compute_estimated_cycles(curr: &Sample, prev: Option<&Sample>) -> f64 {
     };
 
     let carried = prev.estimated_cycle_count;
+    let (Some(design), Some(before), Some(now)) = (curr.energy_design_wh, prev.energy_wh, curr.energy_wh) else { return carried; };
+
+
 
     // An unreadable design capacity means the increment cannot be computed, not
     // that the wear never happened. Returning zero here would silently reset a
     // number that represents months of accumulated history.
-    if curr.energy_design_wh <= 0.0 {
+    if design <= 0.0 {
         return carried;
     }
 
@@ -55,9 +58,9 @@ pub fn compute_estimated_cycles(curr: &Sample, prev: Option<&Sample>) -> f64 {
         return carried;
     }
 
-    let delta_wh = prev.energy_wh - curr.energy_wh;
-    if delta_wh > 0.0 && delta_wh <= curr.energy_design_wh {
-        return carried + delta_wh / curr.energy_design_wh;
+    let delta_wh = before - now;
+    if delta_wh > 0.0 && delta_wh <= design {
+        return carried + delta_wh / design;
     }
 
     carried

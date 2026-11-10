@@ -92,27 +92,17 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
     }
 
     fn tick(&mut self) -> Result<(), StoreError> {
-        // Safe ahead of the early returns: retention counts rows, so a tick that
-        // records nothing pushes nothing out, and a battery that stays
-        // unreadable -- or absent -- leaves what was recorded before it intact.
-        // That run-up is the evidence; erasing it by age once the outage
-        // outlasted the window was the opposite of what a recorder is for.
+        // Retention counts all recorded system samples, including partial ones.
         self.prune_if_due()?;
 
-        // Unreadable, as opposed to absent: the hardware is still there, so the
-        // latched alerts still describe it. The tick is a no-op -- no row, no
-        // alert evaluation, and deliberately no `engine.reset()`, which would
-        // re-announce a low battery the moment the read recovered.
         let Some(mut sample) = self.source.sample() else {
             return Ok(());
         };
 
-        // No battery: nothing to record, and every latched alert describes
-        // hardware that is no longer there.
+        // Confirmed absence clears battery alerts but preserves system recording.
         if !sample.is_present {
             self.engine.reset();
             self.battery_was_absent = true;
-            return Ok(());
         }
 
         // On the first tick after a restart, pick up where the last run left
@@ -133,7 +123,7 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
         //
         // Clearing `previous` instead would not work — the next tick would
         // simply re-adopt the same pre-removal row from the database.
-        sample.estimated_cycle_count = if std::mem::take(&mut self.battery_was_absent) {
+        sample.estimated_cycle_count = if !sample.is_present || std::mem::take(&mut self.battery_was_absent) {
             self.previous
                 .as_ref()
                 .map_or(0.0, |previous| previous.estimated_cycle_count)
@@ -145,20 +135,19 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
         self.debug.insert(&sample)?;
 
         // 2. Alerts.
-        for notification in self.engine.evaluate(&sample, &self.thresholds) {
-            self.notifier.deliver(&notification);
+        if sample.is_present {
+            for notification in self.engine.evaluate(&sample, &self.thresholds) {
+                self.notifier.deliver(&notification);
+            }
         }
 
-        // 3. Downsampled history. This integrates against its own last row, so
-        //    the permanent record accumulates across minute-long gaps while the
-        //    flight recorder accumulates across seconds.
+        // Snapshot the high-resolution cycle integral; never bridge a read gap
+        // by recomputing against the previous minute.
         if self
             .tick_count
             .is_multiple_of(self.schedule.historical_interval_ticks)
         {
-            let mut downsampled = sample.clone();
-            self.historical
-                .insert_integrating_cycles(&mut downsampled)?;
+            self.historical.insert(&sample)?;
         }
 
         self.previous = Some(sample);

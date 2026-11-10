@@ -55,7 +55,7 @@ updates can use the normal installation command without repeating `BIN_DIR`.
 ```
 
 1. **High-Frequency Flight Recorder (`debug.db`):**  
-   Records every 1 second directly to SQLite using WAL mode (`PRAGMA synchronous = NORMAL`). Commits are written to the Linux kernel page cache via `write()` without invoking an `fsync()` on each tick, consuming negligible disk I/O and power (<15 mW). Data is immediately queryable across processes. Disk durability operates on a best-effort basis via SQLite's automatic WAL checkpoints (`wal_autocheckpoint = 100` pages) and standard Linux dirty page writeback—preventing database corruption during crashes while trading immediate per-second fsync persistence for drive longevity. Keeps the most recent 6 hours of *recording* (21,600 rows at 1 Hz), pruning by row count rather than wall-clock age: time spent powered off, suspended, or with the battery unreadable does not count against the window, so the run-up to a crash is still there however long the machine stays off afterwards.
+   Records every 1 second directly to SQLite using WAL mode (`PRAGMA synchronous = NORMAL`). Commits are written to the Linux kernel page cache via `write()` without invoking an `fsync()` on each tick, consuming negligible disk I/O and power (<15 mW). Data is immediately queryable across processes. Disk durability operates on a best-effort basis via SQLite's automatic WAL checkpoints (`wal_autocheckpoint = 100` pages) and standard Linux dirty page writeback—preventing database corruption during crashes while trading immediate per-second fsync persistence for drive longevity. Keeps the most recent 6 hours of *recording* (21,600 rows at 1 Hz), pruning by row count rather than wall-clock age: time spent powered off, suspended,  does not count against the window, so the run-up to a crash is still there however long the machine stays off afterwards.
 
 2. **Long-Term Historical Telemetry (`battery.db`):**  
    Records downsampled samples every 60 seconds. Tracks long-term battery degradation, design wear capacity, and software-integrated cycle count over months and years.
@@ -275,3 +275,8 @@ a source checkout; supply `BIN_DIR` if it used a custom location.
 - VRM rail voltages and transient events below ~1 s are not exposed by the kernel on most laptop hardware. The 1-second flight recorder can catch sustained voltage sag but not microsecond-scale transients.
 - The `battery_temp_c` sensor is absent on many laptops. When unavailable, battery thermal protection relies on ambient correlation with CPU/GPU temperatures.
 - `mem_pct` and `load1` are recorded for forensic completeness but are rarely primary indicators of hardware failure.
+Battery read failures do not interrupt system recording. Unavailable battery
+measurements are stored as SQL `NULL`; alerts preserve their latches on missing
+readings, and estimated cycles do not integrate across missing energy readings.
+Historical cycle totals snapshot the per-second integral. Older stored zeros
+and health defaults cannot be retroactively distinguished from measurements.
