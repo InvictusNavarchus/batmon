@@ -244,13 +244,17 @@ pub const HISTORICAL_MIGRATIONS: &[Migration] = &[
         name: "add_battery_id",
         up: |conn| {
             add_column_if_not_exists(conn, "samples", "battery_id", "TEXT")?;
+            // Normalize legacy baselines only at identity introduction. Some
+            // legacy schema fixtures omit the counter entirely.
+            if has_column(conn, "samples", "estimated_cycle_count")? {
+                conn.execute(
+                    "UPDATE samples SET estimated_cycle_count = 0.0
+                    WHERE battery_id IS NULL AND estimated_cycle_count IS NULL",
+                    [],
+                )?;
+            }
             conn.execute_batch(
-                // At identity introduction, existing NULL totals are legacy
-                // missing baselines, not identity uncertainty. Normalize only
-                // during this migration; new uncertain rows must remain NULL.
-                "UPDATE samples SET estimated_cycle_count = 0.0
-                 WHERE battery_id IS NULL AND estimated_cycle_count IS NULL;
-                 CREATE TABLE IF NOT EXISTS battery_cycles (
+                "CREATE TABLE IF NOT EXISTS battery_cycles (
                 battery_id TEXT PRIMARY KEY, estimated_cycle_count REAL NOT NULL
             );",
             )
@@ -375,13 +379,17 @@ pub const DEBUG_MIGRATIONS: &[Migration] = &[
         name: "add_battery_id",
         up: |conn| {
             add_column_if_not_exists(conn, "samples", "battery_id", "TEXT")?;
+            // Normalize legacy baselines only at identity introduction. Some
+            // legacy schema fixtures omit the counter entirely.
+            if has_column(conn, "samples", "estimated_cycle_count")? {
+                conn.execute(
+                    "UPDATE samples SET estimated_cycle_count = 0.0
+                    WHERE battery_id IS NULL AND estimated_cycle_count IS NULL",
+                    [],
+                )?;
+            }
             conn.execute_batch(
-                // At identity introduction, existing NULL totals are legacy
-                // missing baselines, not identity uncertainty. Normalize only
-                // during this migration; new uncertain rows must remain NULL.
-                "UPDATE samples SET estimated_cycle_count = 0.0
-                 WHERE battery_id IS NULL AND estimated_cycle_count IS NULL;
-                 CREATE TABLE IF NOT EXISTS battery_cycles (
+                "CREATE TABLE IF NOT EXISTS battery_cycles (
                 battery_id TEXT PRIMARY KEY, estimated_cycle_count REAL NOT NULL
             );",
             )
