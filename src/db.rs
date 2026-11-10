@@ -54,7 +54,7 @@ const INSERT_SQL: &str = "INSERT INTO samples (
     cpu_temp_c, gpu_temp_c, nvme_temp_c, cpu_pct, mem_pct, top_processes,
     cpu_freq_mhz, gpu_pct, gpu_power_w, load1, boot_id, uptime_s,
     iowait_pct, procs_blocked, dirty_kb, psi_io_some, psi_io_full,
-    psi_mem_some, psi_mem_full, ac_online
+    psi_mem_some, psi_mem_full, ac_online, battery_health
 ) VALUES (
     :ts, :charge_pct, :status, :power_state, :energy_wh, :energy_full_wh, :energy_design_wh,
     :power_w, :voltage_v, :voltage_design_v, :cycle_count, :estimated_cycle_count,
@@ -62,7 +62,7 @@ const INSERT_SQL: &str = "INSERT INTO samples (
     :cpu_temp_c, :gpu_temp_c, :nvme_temp_c, :cpu_pct, :mem_pct, :top_processes,
     :cpu_freq_mhz, :gpu_pct, :gpu_power_w, :load1, :boot_id, :uptime_s,
     :iowait_pct, :procs_blocked, :dirty_kb, :psi_io_some, :psi_io_full,
-    :psi_mem_some, :psi_mem_full, :ac_online
+    :psi_mem_some, :psi_mem_full, :ac_online, :battery_health
 )";
 
 /// An open, migrated connection to one of the databases.
@@ -128,6 +128,7 @@ impl Store {
             INSERT_SQL,
             named_params! {
                 ":ts": sample.ts,
+                ":battery_health": sample.battery_health,
                 ":ac_online": sample.ac_online,
                 ":charge_pct": sample.charge_pct,
                 ":status": sample.status,
@@ -270,6 +271,7 @@ fn sample_from_row(row: &Row<'_>) -> rusqlite::Result<Sample> {
         ts: row.get::<_, Option<String>>("ts")?.unwrap_or_default(),
         charge_pct: row.get("charge_pct")?,
         ac_online: row.get("ac_online")?,
+        battery_health: row.get("battery_health")?,
         status,
         power_state,
         energy_wh: row.get("energy_wh")?,

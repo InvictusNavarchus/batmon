@@ -84,6 +84,8 @@ impl PowerState {
 pub struct Sample {
     /// UTC timestamp, `toISOString` shape. See [`crate::formats::iso8601_millis`].
     pub ts: String,
+    /// Raw driver health/fault status; independent of capacity wear.
+    pub battery_health: Option<String>,
     /// External power connection, independently of battery charging status.
     pub ac_online: Option<bool>,
     /// State of charge, percent.

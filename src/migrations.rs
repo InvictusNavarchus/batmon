@@ -234,6 +234,11 @@ pub const HISTORICAL_MIGRATIONS: &[Migration] = &[
         name: "add_ac_online",
         up: |conn| add_column_if_not_exists(conn, "samples", "ac_online", "INTEGER"),
     },
+    Migration {
+        version: 11,
+        name: "add_battery_health",
+        up: |conn| add_column_if_not_exists(conn, "samples", "battery_health", "TEXT"),
+    },
 ];
 
 // ── debug flight recorder (debug.db) ─────────────────────────────────
@@ -342,6 +347,11 @@ pub const DEBUG_MIGRATIONS: &[Migration] = &[
         version: 8,
         name: "add_ac_online",
         up: |conn| add_column_if_not_exists(conn, "samples", "ac_online", "INTEGER"),
+    },
+    Migration {
+        version: 9,
+        name: "add_battery_health",
+        up: |conn| add_column_if_not_exists(conn, "samples", "battery_health", "TEXT"),
     },
 ];
 

@@ -283,3 +283,7 @@ and health defaults cannot be retroactively distinguished from measurements.
 
 `ac_online` records external power independently of battery charging status;
 missing adapter attributes remain `NULL`. A plugged-in battery may discharge.
+
+`battery_health` preserves the kernel battery fault status (for example `Good`
+or `Overheat`). It is distinct from capacity-based `health_pct`; unsupported
+attributes remain `NULL`. Recording this status does not introduce new alerts.

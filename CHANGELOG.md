@@ -13,6 +13,8 @@ release notes; v0.3.0 and earlier had none.
 
 ### Added
 
+- Raw battery fault status (`battery_health`), separate from capacity wear.
+
 - External power connection (`ac_online`) is recorded independently of the
   battery charging state, where the kernel exposes adapter status.
 

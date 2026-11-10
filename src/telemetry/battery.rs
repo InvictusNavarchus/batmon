@@ -101,6 +101,12 @@ impl BatteryReader {
         (energy.full_wh > 0.0).then(|| (energy.now_wh / energy.full_wh) * 100.0)
     }
 
+    /// Preserve the driver's fault vocabulary, including values added by newer kernels.
+    #[must_use]
+    pub fn reported_health(&self) -> Option<String> {
+        self.read_str("health")
+    }
+
     /// Hardware cycle count, if the management system reports one.
     #[must_use]
     pub fn cycle_count(&self) -> Option<i64> {

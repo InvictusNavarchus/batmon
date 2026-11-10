@@ -259,3 +259,13 @@ fn charger_presence_distinguishes_online_offline_and_unknown() {
         assert_eq!(read_ac_online(tmp.path()), expected);
     }
 }
+
+#[test]
+fn driver_health_is_preserved_without_guessing_or_restricting_fault_names() {
+    for value in ["Good", "Overheat", "Future fault"] {
+        let (_tmp, reader) = battery(&[("health", value)]);
+        assert_eq!(reader.reported_health().as_deref(), Some(value));
+    }
+    let (_tmp, reader) = battery(&[("health", " ")]);
+    assert_eq!(reader.reported_health(), None);
+}
