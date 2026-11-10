@@ -54,7 +54,7 @@ const INSERT_SQL: &str = "INSERT INTO samples (
     cpu_temp_c, gpu_temp_c, nvme_temp_c, cpu_pct, mem_pct, top_processes,
     cpu_freq_mhz, gpu_pct, gpu_power_w, load1, boot_id, uptime_s,
     iowait_pct, procs_blocked, dirty_kb, psi_io_some, psi_io_full,
-    psi_mem_some, psi_mem_full, ac_online, battery_health
+    psi_mem_some, psi_mem_full, ac_online, battery_health, battery_id
 ) VALUES (
     :ts, :charge_pct, :status, :power_state, :energy_wh, :energy_full_wh, :energy_design_wh,
     :power_w, :voltage_v, :voltage_design_v, :cycle_count, :estimated_cycle_count,
@@ -62,7 +62,7 @@ const INSERT_SQL: &str = "INSERT INTO samples (
     :cpu_temp_c, :gpu_temp_c, :nvme_temp_c, :cpu_pct, :mem_pct, :top_processes,
     :cpu_freq_mhz, :gpu_pct, :gpu_power_w, :load1, :boot_id, :uptime_s,
     :iowait_pct, :procs_blocked, :dirty_kb, :psi_io_some, :psi_io_full,
-    :psi_mem_some, :psi_mem_full, :ac_online, :battery_health
+    :psi_mem_some, :psi_mem_full, :ac_online, :battery_health, :battery_id
 )";
 
 /// An open, migrated connection to one of the databases.
@@ -122,12 +122,20 @@ impl Store {
         }
     }
 
+    /// Durable observed-cycle total, retained even after a pack's debug rows expire.
+    pub fn cycles_for(&self, id: &str) -> Result<f64> {
+        Ok(self.conn.query_row("SELECT estimated_cycle_count FROM battery_cycles WHERE battery_id=?1",
+            [id], |row| row.get(0)).optional()?.unwrap_or(0.0))
+    }
+
     /// Append a sample exactly as given.
     pub fn insert(&self, sample: &Sample) -> Result<()> {
-        self.conn.execute(
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
             INSERT_SQL,
             named_params! {
                 ":ts": sample.ts,
+                ":battery_id": sample.battery_id,
                 ":battery_health": sample.battery_health,
                 ":ac_online": sample.ac_online,
                 ":charge_pct": sample.charge_pct,
@@ -168,6 +176,13 @@ impl Store {
                 ":psi_mem_full": sample.psi_mem_full,
             },
         )?;
+        if let Some(id) = &sample.battery_id {
+            tx.execute("INSERT INTO battery_cycles VALUES (?1, ?2)
+                ON CONFLICT(battery_id) DO UPDATE SET estimated_cycle_count =
+                max(battery_cycles.estimated_cycle_count, excluded.estimated_cycle_count)",
+                rusqlite::params![id, sample.estimated_cycle_count])?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -183,7 +198,11 @@ impl Store {
     /// Returns the previous row, if there was one.
     pub fn insert_integrating_cycles(&self, sample: &mut Sample) -> Result<Option<Sample>> {
         let previous = self.latest()?;
-        sample.estimated_cycle_count = compute_estimated_cycles(sample, previous.as_ref());
+        sample.estimated_cycle_count = if previous.as_ref().map(|p| &p.battery_id) != Some(&sample.battery_id) {
+            match &sample.battery_id { Some(id) => self.cycles_for(id)?, None => 0.0 }
+        } else {
+            compute_estimated_cycles(sample, previous.as_ref())
+        };
         self.insert(sample)?;
         Ok(previous)
     }
@@ -272,6 +291,7 @@ fn sample_from_row(row: &Row<'_>) -> rusqlite::Result<Sample> {
         charge_pct: row.get("charge_pct")?,
         ac_online: row.get("ac_online")?,
         battery_health: row.get("battery_health")?,
+        battery_id: row.get("battery_id")?,
         status,
         power_state,
         energy_wh: row.get("energy_wh")?,

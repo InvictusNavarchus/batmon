@@ -34,6 +34,7 @@ pub struct Daemon<S: TelemetrySource, N: Notifier> {
     /// cycle count forward rather than integrating across the absence.
     battery_was_absent: bool,
     tick_count: u64,
+    last_known_battery_id: Option<String>,
 }
 
 impl<S: TelemetrySource, N: Notifier> std::fmt::Debug for Daemon<S, N> {
@@ -68,6 +69,7 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
             previous: None,
             battery_was_absent: false,
             tick_count: 0,
+            last_known_battery_id: None,
         }
     }
 
@@ -123,6 +125,23 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
         //
         // Clearing `previous` instead would not work — the next tick would
         // simply re-adopt the same pre-removal row from the database.
+        if self.last_known_battery_id.is_none() {
+            self.last_known_battery_id = self.previous.as_ref().and_then(|p| p.battery_id.clone());
+        }
+        if let Some(id) = &sample.battery_id {
+            if self.last_known_battery_id.as_ref().is_some_and(|last| last != id) {
+                self.engine.reset();
+            }
+            self.last_known_battery_id = Some(id.clone());
+        }
+        if self.previous.as_ref().is_some_and(|p| p.battery_id != sample.battery_id) || (self.previous.is_none() && sample.battery_id.is_some()) {
+            let carried = match &sample.battery_id {
+                Some(id) => self.debug.cycles_for(id)?.max(self.historical.cycles_for(id)?),
+                None => 0.0,
+            };
+            self.previous = Some(Sample { energy_wh: None, estimated_cycle_count: carried, ..sample.clone() });
+        }
+
         sample.estimated_cycle_count = if !sample.is_present || std::mem::take(&mut self.battery_was_absent) {
             self.previous
                 .as_ref()

@@ -6,6 +6,7 @@ fn sample(ts: &str, charge_pct: f64) -> Sample {
     Sample {
         ac_online: None,
         battery_health: None,
+        battery_id: None,
         ts: ts.to_owned(),
         charge_pct: Some(charge_pct),
         status: "Discharging".to_owned(),
@@ -344,8 +345,8 @@ fn the_two_databases_get_their_own_ladders() {
             .unwrap()
     };
 
-    assert_eq!(version(&historical), 11);
-    assert_eq!(version(&debug), 9);
+    assert_eq!(version(&historical), 12);
+    assert_eq!(version(&debug), 10);
 }
 
 #[test]
@@ -377,4 +378,22 @@ fn a_reopened_database_still_holds_its_rows() {
 
     let reopened = Store::open(&path, Database::Historical).unwrap();
     assert_eq!(reopened.latest().unwrap().unwrap().charge_pct, Some(50.0));
+}
+
+#[test]
+fn new_battery_context_and_partial_measurements_round_trip() {
+    for database in [Database::Historical, Database::Debug] {
+        let store = Store::open_in_memory(database).unwrap();
+        let sample = Sample {
+            ts: "2026-11-10T00:00:00.000Z".to_owned(),
+            battery_id: Some("pack-A".to_owned()),
+            battery_health: Some("Overheat".to_owned()),
+            ac_online: Some(true),
+            estimated_cycle_count: 2.5,
+            ..Sample::default()
+        };
+        store.insert(&sample).unwrap();
+        assert_eq!(store.latest().unwrap().unwrap(), sample);
+        assert_eq!(store.cycles_for("pack-A").unwrap(), 2.5);
+    }
 }

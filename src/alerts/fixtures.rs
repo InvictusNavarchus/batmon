@@ -10,6 +10,7 @@ pub(crate) fn mock() -> Sample {
     Sample {
         ac_online: None,
         battery_health: None,
+        battery_id: None,
         ts: "2026-08-28T00:00:00.000Z".to_owned(),
         charge_pct: Some(50.0),
         status: "Discharging".to_owned(),

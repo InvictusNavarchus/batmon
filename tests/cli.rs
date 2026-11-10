@@ -114,10 +114,10 @@ fn oneshot_creates_both_databases_and_records_one_sample() {
 
     assert_eq!(
         query::<i64>(&historical, "PRAGMA user_version"),
-        11,
+        12,
         "history must be migrated to the shipped schema"
     );
-    assert_eq!(query::<i64>(&debug, "PRAGMA user_version"), 9);
+    assert_eq!(query::<i64>(&debug, "PRAGMA user_version"), 10);
 
     assert_eq!(query::<i64>(&historical, "SELECT count(*) FROM samples"), 1);
     assert_eq!(query::<i64>(&debug, "SELECT count(*) FROM samples"), 1);
@@ -192,7 +192,7 @@ fn oneshot_is_idempotent_and_appends() {
 
     let historical = database_dir(home.path()).join("battery.db");
     assert_eq!(query::<i64>(&historical, "SELECT count(*) FROM samples"), 3);
-    assert_eq!(query::<i64>(&historical, "PRAGMA user_version"), 9);
+    assert_eq!(query::<i64>(&historical, "PRAGMA user_version"), 10);
 }
 
 #[test]

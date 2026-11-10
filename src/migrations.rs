@@ -239,6 +239,16 @@ pub const HISTORICAL_MIGRATIONS: &[Migration] = &[
         name: "add_battery_health",
         up: |conn| add_column_if_not_exists(conn, "samples", "battery_health", "TEXT"),
     },
+    Migration {
+        version: 12,
+        name: "add_battery_id",
+        up: |conn| {
+            add_column_if_not_exists(conn, "samples", "battery_id", "TEXT")?;
+            conn.execute_batch("CREATE TABLE IF NOT EXISTS battery_cycles (
+                battery_id TEXT PRIMARY KEY, estimated_cycle_count REAL NOT NULL
+            );")
+        },
+    },
 ];
 
 // ── debug flight recorder (debug.db) ─────────────────────────────────
@@ -352,6 +362,16 @@ pub const DEBUG_MIGRATIONS: &[Migration] = &[
         version: 9,
         name: "add_battery_health",
         up: |conn| add_column_if_not_exists(conn, "samples", "battery_health", "TEXT"),
+    },
+    Migration {
+        version: 10,
+        name: "add_battery_id",
+        up: |conn| {
+            add_column_if_not_exists(conn, "samples", "battery_id", "TEXT")?;
+            conn.execute_batch("CREATE TABLE IF NOT EXISTS battery_cycles (
+                battery_id TEXT PRIMARY KEY, estimated_cycle_count REAL NOT NULL
+            );")
+        },
     },
 ];
 

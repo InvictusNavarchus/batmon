@@ -13,6 +13,10 @@ release notes; v0.3.0 and earlier had none.
 
 ### Added
 
+- Battery identity and persistent observed cycle totals per identifiable pack.
+  Replacements start their own totals; returning packs resume their totals
+  without counting energy differences across the replacement.
+
 - Raw battery fault status (`battery_health`), separate from capacity wear.
 
 - External power connection (`ac_online`) is recorded independently of the

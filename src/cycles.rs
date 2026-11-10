@@ -38,6 +38,7 @@ pub fn compute_estimated_cycles(curr: &Sample, prev: Option<&Sample>) -> f64 {
         return 0.0;
     };
 
+    if curr.battery_id != prev.battery_id { return curr.estimated_cycle_count; }
     let carried = prev.estimated_cycle_count;
     let (Some(design), Some(before), Some(now)) = (curr.energy_design_wh, prev.energy_wh, curr.energy_wh) else { return carried; };
 

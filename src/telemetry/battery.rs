@@ -107,6 +107,18 @@ impl BatteryReader {
         self.read_str("health")
     }
 
+    /// Identity requires a usable serial; changing capacity never identifies a pack.
+    #[must_use]
+    pub fn identity(&self) -> Option<String> {
+        let serial = self.read_str("serial_number")?;
+        let normalized = serial.to_ascii_lowercase();
+        if matches!(normalized.as_str(), "unknown" | "none" | "n/a" | "default" | "not specified")
+            || serial.chars().all(|c| c == '0' || c.is_whitespace()) {
+            return None;
+        }
+        Some(serde_json::json!([self.read_str("manufacturer"), self.read_str("model_name"), serial]).to_string())
+    }
+
     /// Hardware cycle count, if the management system reports one.
     #[must_use]
     pub fn cycle_count(&self) -> Option<i64> {

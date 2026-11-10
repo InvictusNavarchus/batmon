@@ -269,3 +269,15 @@ fn driver_health_is_preserved_without_guessing_or_restricting_fault_names() {
     let (_tmp, reader) = battery(&[("health", " ")]);
     assert_eq!(reader.reported_health(), None);
 }
+
+#[test]
+fn identity_requires_a_usable_serial_and_ignores_capacity_changes() {
+    for serial in ["", "0000", "Unknown", "N/A"] {
+        let (_tmp, reader) = battery(&[("serial_number", serial)]);
+        assert_eq!(reader.identity(), None);
+    }
+    let (tmp, reader) = battery(&[("serial_number", "ABC"), ("model_name", "Pack")]);
+    let identity = reader.identity().unwrap();
+    std::fs::write(tmp.path().join("energy_full"), "123").unwrap();
+    assert_eq!(reader.identity().as_deref(), Some(identity.as_str()));
+}

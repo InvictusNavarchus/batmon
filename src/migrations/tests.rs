@@ -34,7 +34,7 @@ fn historical_ladder_reaches_version_nine_with_every_column() {
     let conn = memory();
     migrate(&conn, HISTORICAL_MIGRATIONS).unwrap();
 
-    assert_eq!(user_version(&conn), 11);
+    assert_eq!(user_version(&conn), 12);
 
     let cols = columns(&conn, "samples");
     for expected in [
@@ -74,7 +74,7 @@ fn debug_ladder_reaches_version_seven_with_every_column() {
     let conn = memory();
     migrate(&conn, DEBUG_MIGRATIONS).unwrap();
 
-    assert_eq!(user_version(&conn), 9);
+    assert_eq!(user_version(&conn), 10);
 
     let cols = columns(&conn, "samples");
     for expected in [
@@ -111,7 +111,7 @@ fn running_the_ladder_twice_changes_nothing() {
 
     migrate(&conn, HISTORICAL_MIGRATIONS).unwrap();
 
-    assert_eq!(user_version(&conn), 11);
+    assert_eq!(user_version(&conn), 12);
     assert_eq!(columns(&conn, "samples"), after_first);
 }
 
@@ -126,7 +126,7 @@ fn resumes_from_an_intermediate_version() {
 
     migrate(&conn, HISTORICAL_MIGRATIONS).unwrap();
 
-    assert_eq!(user_version(&conn), 11);
+    assert_eq!(user_version(&conn), 12);
     let cols = columns(&conn, "samples");
     for expected in [
         "cpu_pct",
@@ -312,5 +312,5 @@ fn a_database_already_at_the_latest_version_is_left_alone() {
         .query_row("SELECT count(*) FROM samples", [], |row| row.get(0))
         .unwrap();
     assert_eq!(count, 1);
-    assert_eq!(user_version(&conn), 11);
+    assert_eq!(user_version(&conn), 12);
 }

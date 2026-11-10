@@ -492,3 +492,19 @@ fn partial_samples_preserve_latches_and_break_the_cycle_interval() {
     assert_eq!(daemon.debug.latest().unwrap().unwrap().estimated_cycle_count, 0.0);
     assert_eq!(daemon.historical.latest().unwrap().unwrap().estimated_cycle_count, 0.0);
 }
+
+#[test]
+fn pack_totals_survive_replacement_return_pruning_and_restart() {
+    let pack = |id: &str, energy| Sample { battery_id: Some(id.to_owned()), ..present(50.0, energy) };
+    let mut daemon = daemon(Scripted::new(vec![
+        pack("A", 58.0), pack("A", 57.42), pack("B", 30.0), pack("A", 40.0),
+    ]));
+    for _ in 0..2 { daemon.run_tick(); }
+    assert!((daemon.debug.cycles_for("A").unwrap() - 0.01).abs() < 1e-9);
+    daemon.run_tick();
+    assert_eq!(daemon.debug.latest().unwrap().unwrap().estimated_cycle_count, 0.0);
+    daemon.debug.retain_newest(1).unwrap();
+    daemon.previous = None; // same stores, fresh daemon baseline
+    daemon.run_tick();
+    assert!((daemon.debug.latest().unwrap().unwrap().estimated_cycle_count - 0.01).abs() < 1e-9);
+}

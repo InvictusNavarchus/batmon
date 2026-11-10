@@ -85,6 +85,7 @@ pub struct Sampler {
     /// Whether the current unreadable spell has already been logged, so a
     /// sustained one does not repeat the warning at the sampling rate.
     warned_unreadable: bool,
+    last_battery_id: Option<String>,
 }
 
 impl std::fmt::Debug for Sampler {
@@ -117,6 +118,7 @@ impl Sampler {
             cached_time_to_empty: None,
             cached_time_to_full: None,
             warned_unreadable: false,
+            last_battery_id: None,
         }
     }
 
@@ -168,6 +170,11 @@ impl TelemetrySource for Sampler {
         let power_state = PowerState::from_status(&status);
         let is_charging = power_state.is_charging();
 
+        let battery_id = self.battery.identity();
+        if battery_id != self.last_battery_id {
+            self.invalidate_estimates();
+            self.last_battery_id.clone_from(&battery_id);
+        }
         let presence = self.battery.is_present();
         let energy = (presence != Some(false)).then(|| self.battery.energy()).flatten();
         let charge_pct = (presence != Some(false)).then(|| self.battery.charge_pct()).flatten();
@@ -216,6 +223,7 @@ impl TelemetrySource for Sampler {
 
         Some(Sample {
             ts: now_iso8601_millis(),
+            battery_id,
             battery_health: self.battery.reported_health(),
             ac_online: crate::telemetry::battery::read_ac_online(&self.paths.power_supply_base),
             charge_pct,
