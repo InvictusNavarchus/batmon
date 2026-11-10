@@ -508,3 +508,10 @@ fn pack_totals_survive_replacement_return_pruning_and_restart() {
     daemon.run_tick();
     assert!((daemon.debug.latest().unwrap().unwrap().estimated_cycle_count - 0.01).abs() < 1e-9);
 }
+
+#[test]
+fn a_source_gap_does_not_count_unobserved_discharge() {
+    let mut daemon = daemon(WithGaps::new(vec![Some(present(50.0, 30.0)), None, Some(present(40.0, 20.0))]));
+    for _ in 0..3 { daemon.run_tick(); }
+    assert_eq!(daemon.debug.latest().unwrap().unwrap().estimated_cycle_count, 0.0);
+}

@@ -98,6 +98,7 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
         self.prune_if_due()?;
 
         let Some(mut sample) = self.source.sample() else {
+            if let Some(previous) = &mut self.previous { previous.energy_wh = None; }
             return Ok(());
         };
 

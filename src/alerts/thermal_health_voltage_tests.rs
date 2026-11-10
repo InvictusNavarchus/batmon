@@ -257,3 +257,11 @@ fn unknown_health_and_voltage_preserve_their_latches() {
     assert_eq!(HealthState::Fired.step(&sample, &t).0, HealthState::Fired);
     assert_eq!(VoltageState::Fired.step(&sample, &t).0, VoltageState::Fired);
 }
+
+#[test]
+fn missing_status_does_not_clear_a_voltage_fault() {
+    let mut sample = mock();
+    sample.power_state = crate::types::PowerState::Unknown;
+    sample.is_charging = false;
+    assert_eq!(VoltageState::Fired.step(&sample, &Thresholds::default()).0, VoltageState::Fired);
+}
