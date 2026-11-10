@@ -268,3 +268,21 @@ fn missing_status_does_not_clear_a_voltage_fault() {
         VoltageState::Fired
     );
 }
+
+#[test]
+fn confirmed_non_charging_clears_voltage_fault_without_voltage_readings() {
+    let mut sample = mock();
+    sample.voltage_v = None;
+    sample.voltage_design_v = None;
+    sample.is_charging = false;
+    for state in [
+        crate::types::PowerState::Discharging,
+        crate::types::PowerState::AcIdle,
+    ] {
+        sample.power_state = state;
+        assert_eq!(
+            VoltageState::Fired.step(&sample, &Thresholds::default()).0,
+            VoltageState::Normal
+        );
+    }
+}

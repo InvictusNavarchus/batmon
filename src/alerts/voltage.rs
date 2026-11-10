@@ -26,18 +26,18 @@ impl VoltageState {
     /// latch that a real fault had set.
     #[must_use]
     pub fn step(self, sample: &Sample, t: &Thresholds) -> (Self, Option<Notification>) {
-        let Some(voltage_v) = sample.voltage_v else {
-            return (self, None);
-        };
-        let Some(voltage_design_v) = sample.voltage_design_v else {
-            return (self, None);
-        };
         if sample.power_state == crate::types::PowerState::Unknown && !sample.is_charging {
             return (self, None);
         }
         if !sample.is_charging {
             return (Self::Normal, None);
         }
+        let Some(voltage_v) = sample.voltage_v else {
+            return (self, None);
+        };
+        let Some(voltage_design_v) = sample.voltage_design_v else {
+            return (self, None);
+        };
 
         if voltage_design_v <= 0.0 || voltage_v <= 0.0 {
             return (self, None);
