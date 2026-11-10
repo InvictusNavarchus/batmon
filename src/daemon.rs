@@ -117,7 +117,13 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
         if self.previous.is_none() {
             self.previous = match self.debug.latest()? {
                 Some(latest) => Some(latest),
-                None => self.historical.latest()?,
+                None => match self.historical.latest() {
+                    Ok(previous) => previous,
+                    Err(error) => {
+                        tracing::warn!(%error, "could not restore historical baseline; continuing flight recording");
+                        None
+                    }
+                },
             };
         }
 
@@ -151,7 +157,7 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
                 Some(id) => self
                     .debug
                     .cycles_for(id)?
-                    .max(self.historical.cycles_for(id)?),
+                    .max(self.historical_cycle_total(id)),
                 None => 0.0,
             };
             self.previous = Some(Sample {
@@ -188,7 +194,7 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
         // Reconcile the completed integral, not its baseline: adding the same
         // interval again after a concurrent oneshot would double-count wear.
         if let (Some(id), Some(total)) = (&sample.battery_id, sample.estimated_cycle_count) {
-            sample.estimated_cycle_count = Some(total.max(self.historical.cycles_for(id)?));
+            sample.estimated_cycle_count = Some(total.max(self.historical_cycle_total(id)));
         }
         // The debug transaction reconciles its own ledger atomically with insertion.
         sample.estimated_cycle_count = self.debug.insert(&sample)?;
@@ -200,17 +206,30 @@ impl<S: TelemetrySource, N: Notifier> Daemon<S, N> {
             }
         }
 
-        // Snapshot the high-resolution cycle integral; never bridge a read gap
-        // by recomputing against the previous minute.
-        if self
+        // Advance the flight baseline even when the independent historical
+        // write fails, so a recorded partial sample still breaks integration.
+        let history_result = if self
             .tick_count
             .is_multiple_of(self.schedule.historical_interval_ticks)
         {
-            self.historical.insert(&sample)?;
-        }
-
+            self.historical.insert(&sample).map(|_| ())
+        } else {
+            Ok(())
+        };
         self.previous = Some(sample);
-        Ok(())
+        history_result
+    }
+
+    /// History is a supplementary recovery source. Its errors are visible but
+    /// must not stop a healthy flight recorder from persisting current evidence.
+    fn historical_cycle_total(&self, id: &str) -> f64 {
+        match self.historical.cycles_for(id) {
+            Ok(total) => total,
+            Err(error) => {
+                tracing::warn!(%error, battery_id = id, "could not reconcile historical cycle ledger; using flight recorder total");
+                0.0 // max() leaves the authoritative flight total unchanged.
+            }
+        }
     }
 
     /// Prune the flight recorder on its interval.

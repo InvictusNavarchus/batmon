@@ -111,6 +111,8 @@ updates can use the normal installation command without repeating `BIN_DIR`.
 Battery read failures do not interrupt system recording. Unavailable battery
 measurements are stored as SQL `NULL`; alerts preserve their latches on missing
 readings, and estimated cycles do not integrate across missing energy readings.
+Historical-store read/write failures are logged without interrupting a healthy
+flight recorder; its cycle baseline still advances after each persisted sample.
 Historical cycle totals snapshot the per-second integral, so minute-sampled
 rows cannot bridge read failures. Older stored zeros
 and health defaults cannot be retroactively distinguished from measurements.

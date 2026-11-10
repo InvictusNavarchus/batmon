@@ -32,6 +32,9 @@ release notes; v0.3.0 and earlier had none.
 
 ### Fixed
 
+- Historical-store read/write failures no longer interrupt a healthy flight
+  recorder or make it forget a recorded gap in battery energy readings.
+
 - Legacy missing observed-cycle baselines initialize to zero during the identity
   schema upgrade so unidentified packs can resume estimation. Later identity
   uncertainty remains unknown across restarts.

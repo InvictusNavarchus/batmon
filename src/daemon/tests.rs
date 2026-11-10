@@ -728,3 +728,74 @@ fn confirmed_absence_rearms_a_previously_fired_charge_alert() {
     }
     assert_eq!(daemon.notifier.delivered().len(), 2);
 }
+
+#[test]
+fn failed_history_reads_and_writes_preserve_flight_samples_and_gap_baselines() {
+    let pack = |id: &str, energy| Sample {
+        battery_id: Some(id.into()),
+        ..present(50.0, energy)
+    };
+    let mut partial = pack("A", 30.0);
+    partial.energy_wh = None;
+    let mut daemon = daemon(Scripted::new(vec![
+        pack("A", 30.0),
+        partial,
+        pack("A", 20.0),
+        pack("B", 40.0),
+    ]));
+    daemon
+        .debug
+        .insert(&Sample {
+            estimated_cycle_count: Some(5.0),
+            ..pack("A", 30.0)
+        })
+        .unwrap();
+    daemon.schedule.historical_interval_ticks = 1;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("history.db");
+    daemon.historical = Store::open(&path, Database::Historical).unwrap();
+    rusqlite::Connection::open(&path)
+        .unwrap()
+        .execute_batch("DROP TABLE battery_cycles")
+        .unwrap();
+    for _ in 0..3 {
+        daemon.run_tick();
+        assert_eq!(
+            daemon
+                .debug
+                .latest()
+                .unwrap()
+                .unwrap()
+                .estimated_cycle_count,
+            Some(5.0)
+        );
+    }
+    daemon.run_tick(); // identity transition also survives a historical read failure
+    assert_eq!(
+        daemon
+            .debug
+            .latest()
+            .unwrap()
+            .unwrap()
+            .battery_id
+            .as_deref(),
+        Some("B")
+    );
+    assert_eq!(daemon.debug.row_count().unwrap(), 5);
+    assert_eq!(daemon.historical.row_count().unwrap(), 0);
+}
+
+#[test]
+fn unavailable_history_cannot_block_an_empty_flight_recorder() {
+    let mut daemon = daemon(Scripted::repeating(present(50.0, 30.0)));
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("history.db");
+    daemon.historical = Store::open(&path, Database::Historical).unwrap();
+    rusqlite::Connection::open(&path)
+        .unwrap()
+        .execute_batch("DROP TABLE samples")
+        .unwrap();
+    daemon.run_tick();
+    assert_eq!(daemon.debug.row_count().unwrap(), 1);
+    assert!(daemon.previous.is_some());
+}
