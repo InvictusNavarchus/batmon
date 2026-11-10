@@ -55,7 +55,7 @@ updates can use the normal installation command without repeating `BIN_DIR`.
 ```
 
 1. **High-Frequency Flight Recorder (`debug.db`):**  
-   Records every 1 second directly to SQLite using WAL mode (`PRAGMA synchronous = NORMAL`). Commits are written to the Linux kernel page cache via `write()` without invoking an `fsync()` on each tick, consuming negligible disk I/O and power (<15 mW). Data is immediately queryable across processes. Disk durability operates on a best-effort basis via SQLite's automatic WAL checkpoints (`wal_autocheckpoint = 100` pages) and standard Linux dirty page writeback—preventing database corruption during crashes while trading immediate per-second fsync persistence for drive longevity. Keeps the most recent 6 hours of *recording* (21,600 rows at 1 Hz), pruning by row count rather than wall-clock age: time spent powered off, suspended,  does not count against the window, so the run-up to a crash is still there however long the machine stays off afterwards.
+   Records every 1 second directly to SQLite using WAL mode (`PRAGMA synchronous = NORMAL`). Commits are written to the Linux kernel page cache via `write()` without invoking an `fsync()` on each tick, consuming negligible disk I/O and power (<15 mW). Data is immediately queryable across processes. Disk durability operates on a best-effort basis via SQLite's automatic WAL checkpoints (`wal_autocheckpoint = 100` pages) and standard Linux dirty page writeback—preventing database corruption during crashes while trading immediate per-second fsync persistence for drive longevity. Keeps the most recent 6 hours of *recording* (21,600 rows at 1 Hz), pruning by row count rather than wall-clock age: time spent powered off or suspended does not count against the window, so the run-up to a crash is still there however long the machine stays off afterwards.
 
 2. **Long-Term Historical Telemetry (`battery.db`):**  
    Records downsampled samples every 60 seconds. Tracks long-term battery degradation, design wear capacity, and software-integrated cycle count over months and years.
@@ -67,6 +67,7 @@ updates can use the normal installation command without repeating `BIN_DIR`.
 | Category | Metric | Source | Description |
 | :--- | :--- | :--- | :--- |
 | **Electrical & Power** | `power_state` | sysfs / state machine | Rail power status (`charging`, `discharging`, `ac_idle`, `unknown`) |
+| | `ac_online` | sysfs (external supplies) | External power connection, independent of charging; nullable |
 | | `voltage_v` | sysfs (battery) | Instantaneous battery rail voltage (V) |
 | | `power_w` | sysfs (battery) | Discharge / charge rate (Watts) |
 | | `charge_pct` | sysfs (battery) | Current state of charge (%) |
@@ -96,6 +97,8 @@ updates can use the normal installation command without repeating `BIN_DIR`.
 | | `uptime_s` | `/proc/uptime` | Monotonic system uptime (seconds) |
 | | `top_processes` | `/proc/[pid]/stat` | Top 5 aggregated process groups by 1s CPU delta (JSON) |
 | **Health & Wear** | `health_pct` | sysfs | Full charge capacity vs design capacity (%) |
+| | `battery_health` | sysfs (battery) | Raw driver fault status; nullable |
+| | `battery_id` | sysfs (battery) | Manufacturer/model/serial identity as JSON; nullable |
 | | `cycle_count` | sysfs | Hardware cycle count (if reported by BMS) |
 | | `estimated_cycle_count` | Integrator | Calculated cycle count via energy throughput ($\Delta\text{Wh} / \text{Design}$) |
 | **Runtime Estimates** | `time_to_empty_s` | UPower D-Bus | Smoothed discharge runtime estimate (seconds) |
@@ -104,6 +107,27 @@ updates can use the normal installation command without repeating `BIN_DIR`.
 * Auto-detects `energy_*` (µWh) vs `charge_*` (µAh) battery drivers.
 * **Low-Overhead Native Reads:** All CPU, memory, clock, GPU, thermal, and process metrics are gathered directly via Linux kernel VFS interfaces (`/proc` and `/sys`) and standard POSIX process accounting (~12 ms per sample cycle) with **zero child processes**. UPower and desktop notifications are spoken to over D-Bus directly rather than by spawning `busctl` and `notify-send`. Resident memory is ~6.6 MB (median over a 12-hour dual-daemon run spanning a reboot). See empirical evaluations on [Kernel VFS vs. Glances](docs/empirical-glances-vs-native-comparison.md), [Sysfs Hwmon vs. lm-sensors](docs/empirical-lm-sensors-vs-native-hwmon.md), and [TypeScript vs. Rust parity](docs/empirical-typescript-vs-rust-parity.md) for detailed benchmark results.
 * **Automatic Migrations:** Database schema updates and column additions are handled seamlessly and automatically on startup using SQLite's native `user_version` tracking with zero manual migration steps required.
+
+Battery read failures do not interrupt system recording. Unavailable battery
+measurements are stored as SQL `NULL`; alerts preserve their latches on missing
+readings, and estimated cycles do not integrate across missing energy readings.
+Historical cycle totals snapshot the per-second integral. Older stored zeros
+and health defaults cannot be retroactively distinguished from measurements.
+
+`ac_online` records external power independently of battery charging status;
+missing adapter attributes remain `NULL`. A plugged-in battery may discharge.
+
+`battery_health` preserves the kernel battery fault status (for example `Good`
+or `Overheat`). It is distinct from capacity-based `health_pct`; unsupported
+attributes remain `NULL`. Recording this status does not introduce new alerts.
+
+`battery_id` is a JSON array of manufacturer, model and serial number. Missing,
+empty, zero-only and common placeholder serials, or unreadable manufacturer/model
+attributes, leave identity unknown; capacity changes never imply replacement. Each identifiable pack keeps its own observed
+cycle total in `battery_cycles`, including after debug rows are pruned. These
+are observed cycles since monitoring began, not lifetime BMS cycles. Unknown
+packs cannot be distinguished reliably; identity transitions break integration.
+The first identifiable pack starts a separate total from legacy unidentified data.
 
 ---
 
@@ -275,24 +299,3 @@ a source checkout; supply `BIN_DIR` if it used a custom location.
 - VRM rail voltages and transient events below ~1 s are not exposed by the kernel on most laptop hardware. The 1-second flight recorder can catch sustained voltage sag but not microsecond-scale transients.
 - The `battery_temp_c` sensor is absent on many laptops. When unavailable, battery thermal protection relies on ambient correlation with CPU/GPU temperatures.
 - `mem_pct` and `load1` are recorded for forensic completeness but are rarely primary indicators of hardware failure.
-Battery read failures do not interrupt system recording. Unavailable battery
-measurements are stored as SQL `NULL`; alerts preserve their latches on missing
-readings, and estimated cycles do not integrate across missing energy readings.
-Historical cycle totals snapshot the per-second integral. Older stored zeros
-and health defaults cannot be retroactively distinguished from measurements.
-
-`ac_online` records external power independently of battery charging status;
-missing adapter attributes remain `NULL`. A plugged-in battery may discharge.
-
-`battery_health` preserves the kernel battery fault status (for example `Good`
-or `Overheat`). It is distinct from capacity-based `health_pct`; unsupported
-attributes remain `NULL`. Recording this status does not introduce new alerts.
-
-`battery_id` is a JSON array of manufacturer, model and serial number. Missing,
-empty, zero-only and common placeholder serials, or unreadable manufacturer/model
-attributes, leave identity unknown; capacity
-changes never imply replacement. Each identifiable pack keeps its own observed
-cycle total in `battery_cycles`, including after debug rows are pruned. These
-are observed cycles since monitoring began, not lifetime BMS cycles. Unknown
-packs cannot be distinguished reliably; identity transitions break integration.
-The first identifiable pack starts a separate total from legacy unidentified data.

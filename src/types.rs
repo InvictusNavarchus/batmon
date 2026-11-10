@@ -77,7 +77,7 @@ impl PowerState {
 /// layer nobody asked for. `Option` marks exactly the columns that are nullable
 /// because the hardware may not expose them.
 ///
-/// [`Default`] exists to serve as the test fixture: `Sample { charge_pct: 80.0,
+/// [`Default`] exists to serve as the test fixture: `Sample { charge_pct: Some(80.0),
 /// ..Default::default() }` gives a test the one field it cares about without a
 /// fixture module that production code could reach.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -110,8 +110,8 @@ pub struct Sample {
     /// Full-charge capacity as a percentage of design capacity.
     pub health_pct: Option<f64>,
     pub is_charging: bool,
-    /// Whether a battery is physically present. A false value suppresses all
-    /// recording and alerting for the tick.
+    /// Whether a battery is physically present. Confirmed absence suppresses
+    /// battery alerting while system recording continues.
     pub is_present: bool,
     pub time_to_empty_s: Option<i64>,
     pub time_to_full_s: Option<i64>,

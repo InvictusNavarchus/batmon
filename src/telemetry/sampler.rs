@@ -251,11 +251,8 @@ impl TelemetrySource for Sampler {
             battery_temp_c: thermals.battery_c,
             health_pct: energy.and_then(crate::telemetry::battery::Energy::health_pct),
             is_charging,
-            // Unknown resolves to present: a full reading just came back, so
-            // the pack is demonstrably there. A confirmed `present = 0` is
-            // still obeyed even though the attributes read, because that is
-            // the driver's own answer -- a pack being removed reports absent
-            // before its stale values stop parsing.
+            // Only confirmed absence clears alert latches. Unknown presence
+            // preserves them, while unavailable measurements remain nullable.
             is_present: presence.unwrap_or(true),
             time_to_empty_s,
             time_to_full_s,

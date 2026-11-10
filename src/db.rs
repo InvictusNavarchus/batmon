@@ -223,7 +223,7 @@ impl Store {
     /// Keep only the newest `rows` rows, returning how many older ones went.
     ///
     /// Counted in insertion order, never by age. Time in which nothing was
-    /// recorded — the machine off, suspended, or its battery unreadable — adds
+    /// recorded — the machine off or suspended — adds
     /// no rows and so pushes nothing out. Pruning by wall-clock age instead
     /// erased the run before a crash five minutes into the next boot, whenever
     /// the machine had stayed off longer than the window: exactly the rows a
