@@ -555,3 +555,30 @@ fn two_samplers_share_no_state() {
         "a new sampler must start without history"
     );
 }
+
+#[test]
+fn external_estimates_survive_unavailable_energy_conversion() {
+    let machine = Machine::new();
+    for name in [
+        "energy_now",
+        "energy_full",
+        "energy_full_design",
+        "voltage_min_design",
+    ] {
+        let _ = std::fs::remove_file(machine.paths.battery.join(name));
+    }
+    machine.battery(&[("charge_now", "3000000"), ("charge_full", "4000000")]);
+    let mut sampler = Sampler::new(
+        machine.paths.clone(),
+        Box::new(FixedEstimates {
+            empty: Some(1234),
+            full: None,
+        }),
+    );
+    for _ in 0..2 {
+        let sample = sampler.sample().unwrap();
+        assert!(sample.charge_pct.is_some());
+        assert_eq!(sample.energy_wh, None);
+        assert_eq!(sample.time_to_empty_s, Some(1234));
+    }
+}

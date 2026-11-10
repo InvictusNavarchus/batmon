@@ -182,7 +182,7 @@ impl TelemetrySource for Sampler {
         let charge_pct = (presence != Some(false))
             .then(|| self.battery.charge_pct())
             .flatten();
-        let readable = energy.is_some() && charge_pct.is_some();
+        let readable = energy.is_some() || charge_pct.is_some();
         if readable {
             self.refresh_estimates(power_state);
         } else {
@@ -190,6 +190,9 @@ impl TelemetrySource for Sampler {
             if !self.warned_unreadable {
                 tracing::warn!("battery unavailable; continuing system recording");
             }
+        }
+        if readable && self.warned_unreadable {
+            tracing::info!("battery readable again");
         }
         self.warned_unreadable = !readable;
         let power_w = self.battery.power_w();
