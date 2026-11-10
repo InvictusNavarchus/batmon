@@ -10,7 +10,7 @@ use crate::types::{PowerState, Sample};
 /// Cycle count for `curr`, carried forward from `prev`.
 ///
 /// Pure and total: no I/O, no clock, no state. The result is always the previous
-/// count plus a non-negative increment, so the series can only ever rise.
+/// count plus a non-negative increment within one pack history.
 ///
 /// Three guards keep the integral honest, and each exists because of a real way
 /// the number would otherwise drift upward:
@@ -30,8 +30,11 @@ use crate::types::{PowerState, Sample};
 ///
 /// With no previous sample the result is `0.0`, which is what a fresh database
 /// looks like. Every other path returns the carried count or more -- including
-/// zero, when that is what was carried. The series is cumulative wear, so it
-/// must never fall.
+/// zero, when that is what was carried, within the same identity. On identity
+/// transitions the caller supplies the new pack's restored total in `curr`;
+/// that value is returned without integrating the inter-pack energy difference.
+/// Unidentified (None/None) histories remain supported, without claiming that
+/// their physical pack identity can be verified.
 #[must_use]
 pub fn compute_estimated_cycles(curr: &Sample, prev: Option<&Sample>) -> f64 {
     let Some(prev) = prev else {

@@ -714,3 +714,17 @@ fn history_ledger_can_recover_a_lagging_debug_total() {
         Some(8.0)
     );
 }
+
+#[test]
+fn confirmed_absence_rearms_a_previously_fired_charge_alert() {
+    let low = present(8.0, 4.0);
+    let absent = Sample {
+        is_present: false,
+        ..low.clone()
+    };
+    let mut daemon = daemon(Scripted::new(vec![low.clone(), absent, low]));
+    for _ in 0..3 {
+        daemon.run_tick();
+    }
+    assert_eq!(daemon.notifier.delivered().len(), 2);
+}

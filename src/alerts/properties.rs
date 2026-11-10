@@ -372,3 +372,38 @@ mod coverage {
         );
     }
 }
+
+proptest! {
+    #[test]
+    fn missing_inputs_preserve_charge_health_and_charging_voltage_latches(
+        sample in arb_sample(),
+        charge_state in prop::sample::select(vec![super::ChargeState::Normal, super::ChargeState::HighFired, super::ChargeState::LowFired, super::ChargeState::CriticalFired]),
+        fired in any::<bool>(),
+    ) {
+        let mut sample = sample;
+        sample.charge_pct = None;
+        sample.health_pct = None;
+        sample.voltage_v = None;
+        sample.voltage_design_v = None;
+        sample.power_w = None;
+        sample.cpu_pct = None;
+        sample.cpu_temp_c = None;
+        sample.is_charging = true;
+        sample.power_state = PowerState::Charging;
+        let t = Thresholds::default();
+        let health = if fired { super::HealthState::Fired } else { super::HealthState::Normal };
+        let voltage = if fired { super::VoltageState::Fired } else { super::VoltageState::Normal };
+        prop_assert_eq!(charge_state.step(&sample, &t).0, charge_state);
+        prop_assert_eq!(health.step(&sample, &t).0, health);
+        prop_assert_eq!(voltage.step(&sample, &t).0, voltage);
+        sample.is_charging = false;
+        sample.power_state = PowerState::Discharging;
+        sample.cpu_temp_c = Some(90.0);
+        let mut anomaly = super::AnomalyState::default();
+        for _ in 0..=t.cpu_anomaly_debounce_samples {
+            let (next, alert) = anomaly.step(&sample, &t);
+            anomaly = next;
+            prop_assert!(alert.is_none(), "missing power and CPU load cannot establish idleness");
+        }
+    }
+}

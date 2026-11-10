@@ -215,3 +215,16 @@ fn energy_rising_while_discharging_is_ignored_rather_than_subtracted() {
 
     assert_eq!(compute_estimated_cycles(&curr, Some(&prev)), 5.0);
 }
+
+#[test]
+fn a_different_pack_uses_the_callers_restored_total_without_integrating() {
+    let previous = Sample {
+        battery_id: Some("A".into()),
+        ..discharging(40.0, 5.0)
+    };
+    let current = Sample {
+        battery_id: Some("B".into()),
+        ..discharging(10.0, 2.0)
+    };
+    assert_eq!(compute_estimated_cycles(&current, Some(&previous)), 2.0);
+}

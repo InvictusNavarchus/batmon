@@ -23,13 +23,13 @@ fn arb_power_state() -> impl Strategy<Value = PowerState> {
     ]
 }
 
-/// A pair of consecutive samples with a usable design capacity.
+/// A pair of consecutive samples including unavailable energy/design readings.
 fn arb_pair() -> impl Strategy<Value = (Sample, Sample)> {
     (
-        0.1f64..200.0,   // design capacity
-        0.0f64..200.0,   // previous energy
-        0.0f64..200.0,   // current energy
-        0.0f64..1_000.0, // cycles carried in
+        prop::option::of(0.1f64..200.0), // design capacity
+        prop::option::of(0.0f64..200.0), // previous energy
+        prop::option::of(0.0f64..200.0), // current energy
+        0.0f64..1_000.0,                 // cycles carried in
         arb_power_state(),
         prop::option::of(0.0f64..1_000_000.0), // previous uptime
         prop::option::of(0.0f64..1_000_000.0), // current uptime
@@ -49,16 +49,16 @@ fn arb_pair() -> impl Strategy<Value = (Sample, Sample)> {
                 current_boot,
             )| {
                 let previous = Sample {
-                    energy_wh: Some(previous_energy),
-                    energy_design_wh: Some(design),
+                    energy_wh: previous_energy,
+                    energy_design_wh: design,
                     estimated_cycle_count: Some(carried),
                     uptime_s: previous_uptime,
                     boot_id: previous_boot,
                     ..Sample::default()
                 };
                 let current = Sample {
-                    energy_wh: Some(current_energy),
-                    energy_design_wh: Some(design),
+                    energy_wh: current_energy,
+                    energy_design_wh: design,
                     power_state,
                     is_charging: power_state == PowerState::Charging,
                     uptime_s: current_uptime,
@@ -71,6 +71,12 @@ fn arb_pair() -> impl Strategy<Value = (Sample, Sample)> {
 }
 
 proptest! {
+    #[test]
+    fn missing_energy_or_design_pauses_integration((previous, current) in arb_pair()) {
+        prop_assume!(previous.energy_wh.is_none() || current.energy_wh.is_none() || current.energy_design_wh.is_none());
+        prop_assert_eq!(compute_estimated_cycles(&current, Some(&previous)), previous.estimated_cycle_count.unwrap());
+    }
+
     /// The series only ever rises. A count that can fall is not a count.
     #[test]
     fn the_cycle_count_never_decreases((previous, current) in arb_pair()) {
@@ -154,7 +160,7 @@ proptest! {
         (previous, current) in arb_pair(),
     ) {
         let current = Sample {
-            energy_design_wh: Some(0.0),
+            energy_design_wh: None,
             ..current
         };
 
