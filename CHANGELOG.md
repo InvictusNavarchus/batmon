@@ -17,7 +17,9 @@ release notes; v0.3.0 and earlier had none.
   Replacements start their own totals; returning packs resume their totals
   without counting energy differences across the replacement. These totals
   reflect observed cycles since monitoring began, not lifetime BMS cycles.
-  Legacy unidentified cycle history stays separate.
+  Per-pack attribution requires readable manufacturer/model data and a usable
+  serial number. Packs without complete identity are not attributed. Legacy
+  unidentified cycle history stays separate.
 
 - Raw battery fault status (`battery_health`), separate from capacity wear.
 
