@@ -132,6 +132,8 @@ The first identifiable pack starts a separate total from legacy unidentified dat
 During a known pack’s identity read failure, `battery_id` and
 `estimated_cycle_count` are `NULL`; the durable pack total remains intact.
 Continuous legacy unidentified histories still estimate observed discharge.
+On upgrade to the identity schema, legacy missing cycle baselines start at zero;
+subsequent uncertain totals remain `NULL` across restarts.
 
 ---
 

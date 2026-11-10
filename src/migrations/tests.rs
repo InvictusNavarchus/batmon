@@ -328,3 +328,25 @@ fn a_database_already_at_the_latest_version_is_left_alone() {
     assert_eq!(user_version(&conn), 12);
     assert!(has_table(&conn, "battery_cycles").unwrap());
 }
+
+#[test]
+fn identity_migration_preserves_existing_observed_totals() {
+    for ladder in [HISTORICAL_MIGRATIONS, DEBUG_MIGRATIONS] {
+        let conn = memory();
+        migrate(&conn, &ladder[..ladder.len() - 1]).unwrap();
+        conn.execute_batch(
+            "INSERT INTO samples (ts, estimated_cycle_count) VALUES ('counted', 7.5);
+            INSERT INTO samples (ts) VALUES ('missing');",
+        )
+        .unwrap();
+        migrate(&conn, ladder).unwrap();
+        let totals: Vec<f64> = conn
+            .prepare("SELECT estimated_cycle_count FROM samples ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(totals, vec![7.5, 0.0]);
+    }
+}

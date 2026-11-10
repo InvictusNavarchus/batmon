@@ -245,7 +245,12 @@ pub const HISTORICAL_MIGRATIONS: &[Migration] = &[
         up: |conn| {
             add_column_if_not_exists(conn, "samples", "battery_id", "TEXT")?;
             conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS battery_cycles (
+                // At identity introduction, existing NULL totals are legacy
+                // missing baselines, not identity uncertainty. Normalize only
+                // during this migration; new uncertain rows must remain NULL.
+                "UPDATE samples SET estimated_cycle_count = 0.0
+                 WHERE battery_id IS NULL AND estimated_cycle_count IS NULL;
+                 CREATE TABLE IF NOT EXISTS battery_cycles (
                 battery_id TEXT PRIMARY KEY, estimated_cycle_count REAL NOT NULL
             );",
             )
@@ -371,7 +376,12 @@ pub const DEBUG_MIGRATIONS: &[Migration] = &[
         up: |conn| {
             add_column_if_not_exists(conn, "samples", "battery_id", "TEXT")?;
             conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS battery_cycles (
+                // At identity introduction, existing NULL totals are legacy
+                // missing baselines, not identity uncertainty. Normalize only
+                // during this migration; new uncertain rows must remain NULL.
+                "UPDATE samples SET estimated_cycle_count = 0.0
+                 WHERE battery_id IS NULL AND estimated_cycle_count IS NULL;
+                 CREATE TABLE IF NOT EXISTS battery_cycles (
                 battery_id TEXT PRIMARY KEY, estimated_cycle_count REAL NOT NULL
             );",
             )

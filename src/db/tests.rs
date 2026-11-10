@@ -451,3 +451,42 @@ fn ledger_reconciliation_does_not_add_an_overlapping_delta_twice() {
         next.estimated_cycle_count
     );
 }
+
+#[test]
+fn legacy_missing_cycle_baselines_resume_after_identity_migration() {
+    for database in [Database::Historical, Database::Debug] {
+        let conn = Connection::open_in_memory().unwrap();
+        let ladder = database.migrations();
+        migrate(&conn, &ladder[..ladder.len() - 1]).unwrap();
+        conn.execute_batch(
+            "INSERT INTO samples (ts, status, energy_wh, energy_design_wh)
+            VALUES ('legacy', 'Discharging', 40.0, 60.0);",
+        )
+        .unwrap();
+        let store = Store::from_connection(conn, database).unwrap();
+        assert_eq!(
+            store.latest().unwrap().unwrap().estimated_cycle_count,
+            Some(0.0)
+        );
+        let mut next = Sample {
+            energy_wh: Some(39.0),
+            energy_design_wh: Some(60.0),
+            ..sample("after-upgrade", 50.0)
+        };
+        store.insert_integrating_cycles(&mut next).unwrap();
+        assert!((next.estimated_cycle_count.unwrap() - 1.0 / 60.0).abs() < 1e-9);
+
+        // A later NULL has the new uncertainty semantics. Startup must not
+        // rewrite it, or a known pack's identity failure could restart at zero.
+        let uncertain = Sample {
+            estimated_cycle_count: None,
+            ..next.clone()
+        };
+        store.insert(&uncertain).unwrap();
+        migrate(&store.conn, database.migrations()).unwrap();
+        assert_eq!(store.latest().unwrap().unwrap().estimated_cycle_count, None);
+        next.energy_wh = Some(38.0);
+        store.insert_integrating_cycles(&mut next).unwrap();
+        assert_eq!(next.estimated_cycle_count, None);
+    }
+}

@@ -32,6 +32,10 @@ release notes; v0.3.0 and earlier had none.
 
 ### Fixed
 
+- Legacy missing observed-cycle baselines initialize to zero during the identity
+  schema upgrade so unidentified packs can resume estimation. Later identity
+  uncertainty remains unknown across restarts.
+
 - Battery read failures no longer interrupt system telemetry. Missing battery
   measurements remain unknown instead of appearing as zero or 100% health.
   Cycle integration pauses across missing energy or source readings. Existing
