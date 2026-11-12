@@ -112,7 +112,8 @@ class Plotting(unittest.TestCase):
         self.database_with([(-300, (55, 0, 10)), (-240, (91, 12, 80)),
                             (-180, (None, None, None)), (-120, (0, 0, 0))])
         samples = plot.read_samples(self.database, self.start, self.end)
-        figure = plot.create_figure(samples, self.start, self.end, "history", self.database)
+        figure = plot.create_figure(samples, self.start, self.end, "history", self.database,
+                                    timezone_name="UTC")
         import matplotlib.pyplot as plt
 
         self.addCleanup(plt.close, figure)
@@ -122,6 +123,75 @@ class Plotting(unittest.TestCase):
         self.assertEqual(temperatures[3], 0)
         self.assertEqual(list(figure.axes[1].lines[0].get_ydata())[:2], [0, 12])
         self.assertEqual(figure.axes[-1].get_xlabel(), "Time (UTC)")
+
+    def test_display_timezone_changes_labels_without_changing_recorded_times(self):
+        import matplotlib.dates as dates
+        import matplotlib.pyplot as plt
+
+        fall = datetime(2026, 11, 1, 5, 30, tzinfo=timezone.utc)
+        spring = datetime(2026, 3, 8, 6, 30, tzinfo=timezone.utc)
+        cases = (
+            ("UTC", fall, "2026-11-01 05:30 +0000", "2026-11-01 06:30 +0000"),
+            ("Asia/Jakarta", fall, "2026-11-01 12:30 +0700", "2026-11-01 13:30 +0700"),
+            ("America/New_York", fall, "2026-11-01 01:30 -0400", "2026-11-01 01:30 -0500"),
+            ("America/New_York", spring, "2026-03-08 01:30 -0500", "2026-03-08 03:30 -0400"),
+        )
+        for name, start, expected_start, expected_end in cases:
+            with self.subTest(timezone=name, start=start):
+                end = start + timedelta(hours=1)
+                samples = [{"ts": start, "cpu_temp_c": 55}, {"ts": end, "cpu_temp_c": 60}]
+                figure = plot.create_figure(samples, start, end, "history", self.database,
+                                            timezone_name=name)
+                self.addCleanup(plt.close, figure)
+                axis = figure.axes[-1]
+                self.assertEqual(axis.get_xlabel(), f"Time ({name})")
+                self.assertIn(expected_start + " → " + expected_end, figure.texts[1].get_text())
+                # Exercise the actual tick formatter, including the repeated DST hour.
+                formatter = axis.xaxis.get_major_formatter()
+                formatter.formats = ["%Y-%m-%d %H:%M %z"] * 6
+                formatter.zero_formats = formatter.formats
+                labels = formatter.format_ticks(dates.date2num([start, end]))
+                self.assertEqual(labels, [expected_start, expected_end])
+                self.assertAlmostEqual(axis.get_xlim()[1] - axis.get_xlim()[0], 1 / 24)
+                line = figure.axes[0].lines[0]
+                recorded_times = [timestamp for timestamp, value in zip(line.get_xdata(), line.get_ydata())
+                                  if math.isfinite(value)]
+                self.assertEqual(recorded_times, [start, end])
+                self.assertEqual([s["ts"].tzinfo for s in samples], [timezone.utc, timezone.utc])
+
+    def test_local_timezone_uses_tz_override_and_retains_dst_rules(self):
+        import matplotlib.dates as dates
+        import matplotlib.pyplot as plt
+
+        start = datetime(2026, 11, 1, 5, 30, tzinfo=timezone.utc)
+        end = start + timedelta(hours=1)
+        with patch.dict(os.environ, TZ="America/New_York"):
+            figure = plot.create_figure([], start, end, "history", self.database)
+        self.addCleanup(plt.close, figure)
+        axis = figure.axes[-1]
+        self.assertEqual(axis.get_xlabel(), "Time (local)")
+        self.assertIn("2026-11-01 01:30 -0400 → 2026-11-01 01:30 -0500",
+                      figure.texts[1].get_text())
+        formatter = axis.xaxis.get_major_formatter()
+        formatter.formats = ["%H:%M %z"] * 6
+        formatter.zero_formats = formatter.formats
+        self.assertEqual(formatter.format_ticks(dates.date2num([start, end])),
+                         ["01:30 -0400", "01:30 -0500"])
+
+    def test_cli_accepts_local_utc_named_zones_and_rejects_unknown_zone(self):
+        self.database_with([(-60, (55, 2, 10))])
+        for name in ("local", "UTC", "Asia/Jakarta"):
+            with self.subTest(timezone=name):
+                output = self.root / (name.replace("/", "-") + ".png")
+                result = self.command("--database", str(self.database), "--timezone", name,
+                                      "--output", str(output))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(output.is_file())
+        result = self.command("--database", str(self.database), "--timezone", "Invalid/Timezone")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unknown timezone", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertFalse((self.root / "report.png").exists())
 
     def test_line_breaks_at_downtime_reboot_and_clock_changes(self):
         def sample(seconds, boot="a", uptime=None):

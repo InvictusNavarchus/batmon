@@ -159,6 +159,10 @@ batmon-plot --source debug --since 2h --output recent.png
 
 # Explicit path, useful for a disposable database backup
 batmon-plot --database /path/to/battery.db --since 12h --output backup.png
+
+# Override the default system-local display timezone
+batmon-plot --since 7d --timezone UTC --output utc.png
+batmon-plot --since 7d --timezone Asia/Jakarta --output jakarta.png
 ```
 
 If the binary directory is not on your PATH, run
@@ -166,7 +170,8 @@ If the binary directory is not on your PATH, run
 For a custom installation directory, substitute its path. From a checkout, use
 `uv run --script scripts/batmon-plot.py --since 7d --output report.png`.
 
-The script declares Python ≥3.11, Seaborn, and Matplotlib dependencies inline.
+The script declares Python ≥3.11, Seaborn, Matplotlib, and python-dateutil
+dependencies inline (Matplotlib also requires python-dateutil).
 uv manages an isolated environment and downloads Python if a suitable version
 is unavailable. The first run needs network access; later runs reuse cached
 dependencies. The installer does not install uv, Python, or plotting packages.
@@ -180,7 +185,14 @@ days, including `1.5h`. Output is PNG and replaces an existing output file.
 `--show` also opens a plot window when a graphical Matplotlib backend is
 available; saving a report works without a desktop session.
 
-Windows end at the current time and use **wall-clock time**, with UTC labels.
+Windows end at the current time and use **wall-clock time**. Charts default to
+`--timezone local`, detecting the system timezone and respecting a `TZ`
+environment override. Use `--timezone UTC` or an IANA name such as
+`Asia/Jakarta` to choose another display zone. Labels use that zone's
+daylight-saving rules; each endpoint in the report header includes its UTC
+offset. Stored timestamps, query boundaries, elapsed durations, and gap
+detection stay in UTC, so a clock change does not change the selected samples.
+
 The helper opens SQLite in read-only mode, closes its query before rendering,
 and does not migrate databases or control the service. It plots recorded values
 without smoothing or averaging, preserving zeros and missing readings. Lines

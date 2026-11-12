@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["matplotlib>=3.10,<4", "seaborn>=0.13.2,<0.14"]
+# dependencies = ["matplotlib>=3.10,<4", "seaborn>=0.13.2,<0.14", "python-dateutil>=2.9,<5"]
 # ///
 """Plot recorded telemetry without changing batmon's databases or service."""
 
@@ -98,9 +98,13 @@ def series(samples, column, interval):
     return times, values
 
 
-def create_figure(samples, start, end, source, database, show=False):
+def create_figure(samples, start, end, source, database, show=False, timezone_name="local"):
+    from dateutil.tz import gettz
     import matplotlib
 
+    display_timezone = gettz() if timezone_name == "local" else gettz(timezone_name)
+    if not timezone_name or display_timezone is None:
+        raise ValueError(f"unknown timezone {timezone_name!r}; use local, UTC, or an IANA name such as Asia/Jakarta")
     if not show:
         matplotlib.use("Agg")
     import matplotlib.dates as dates
@@ -130,14 +134,16 @@ def create_figure(samples, start, end, source, database, show=False):
                       transform=axis.transAxes, color="0.45")
         if unit == "%":
             axis.set_ylim(0, 100)
-    locator = dates.AutoDateLocator(minticks=4, maxticks=9, tz=timezone.utc)
+    locator = dates.AutoDateLocator(minticks=4, maxticks=9, tz=display_timezone)
     axes[-1].xaxis.set_major_locator(locator)
-    axes[-1].xaxis.set_major_formatter(dates.ConciseDateFormatter(locator, tz=timezone.utc))
+    axes[-1].xaxis.set_major_formatter(dates.ConciseDateFormatter(locator, tz=display_timezone))
     axes[-1].set_xlim(start, end)
-    axes[-1].set_xlabel("Time (UTC)")
+    axes[-1].set_xlabel(f"Time ({timezone_name})")
     figure.suptitle("batmon · recorded telemetry", x=0.09, ha="left", fontsize=18, weight="bold")
+    local_start = start.astimezone(display_timezone)
+    local_end = end.astimezone(display_timezone)
     figure.text(0.09, 0.935,
-                f"{start:%Y-%m-%d %H:%M} → {end:%Y-%m-%d %H:%M} UTC  ·  "
+                f"{local_start:%Y-%m-%d %H:%M %z} → {local_end:%Y-%m-%d %H:%M %z}  ·  "
                 f"{len(samples):,} samples  ·  {database.name}", fontsize=10, color="0.4")
     resolution = "1-second flight recorder" if source == "debug" else "1-minute historical snapshots"
     figure.text(0.09, 0.025,
@@ -158,6 +164,8 @@ def main(argv=None):
     parser.add_argument("--output", type=Path, default=Path("report.png"),
                         help="PNG output path (default: report.png)")
     parser.add_argument("--show", action="store_true", help="also open an interactive plot window")
+    parser.add_argument("--timezone", default="local", metavar="ZONE",
+                        help="display timezone: local, UTC, or an IANA name (default: local)")
     args = parser.parse_args(argv)
     if args.output.suffix.lower() != ".png":
         parser.error("--output must end in .png")
@@ -172,7 +180,8 @@ def main(argv=None):
             raise ValueError("no samples in the requested window; try a longer --since or another --source")
         if not any(sample.get(column) is not None for sample in samples for column in METRICS):
             raise ValueError("no temperature, power, or utilization readings in the requested window")
-        figure = create_figure(samples, start, end, args.source, database, args.show)
+        figure = create_figure(samples, start, end, args.source, database,
+                               show=args.show, timezone_name=args.timezone)
         import matplotlib.pyplot as plt
 
         try:

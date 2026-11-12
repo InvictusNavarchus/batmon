@@ -34,6 +34,10 @@ release notes; v0.3.0 and earlier had none.
 
 ### Changed
 
+- `batmon-plot` now displays system-local time by default, respecting `TZ` and
+  daylight-saving transitions. `--timezone UTC` or a named zone such as
+  `Asia/Jakarta` overrides the display; queries and stored timestamps stay UTC.
+
 - Re-running the installer updates to the latest stable release, including when
   run from a source checkout. Local compilation now requires `--build` and uses
   the committed dependency lockfile.
