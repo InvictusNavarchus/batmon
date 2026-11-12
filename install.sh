@@ -15,7 +15,7 @@ uninstall() {
   systemctl --user disable --now batmon.timer 2>/dev/null || true
   rm -f "$SYSTEMD_DIR/batmon.service" "$SYSTEMD_DIR/batmon.timer"
   systemctl --user daemon-reload
-  rm -f "$BIN_DIR/batmon" "$BIN_DIR/batmon-uninstall"
+  rm -f "$BIN_DIR/batmon" "$BIN_DIR/batmon-plot" "$BIN_DIR/batmon-uninstall"
   rm -f "$DATA_DIR/bin-dir" "$DATA_DIR/uninstall.sh"
   echo "batmon removed. Databases preserved in $DATA_DIR."
 }
@@ -92,6 +92,7 @@ main() {
 
   # ── binary acquisition (local build vs. release download) ───────────
   local binary=""
+  local plot_script=""
 
   # A checkout does not change the default: source builds are always explicit.
   if [ "$force_build" -eq 1 ]; then
@@ -113,6 +114,11 @@ main() {
     fi
     if [ ! -x "$binary" ]; then
       echo "ERROR: The source build did not produce an executable at $binary." >&2
+      exit 1
+    fi
+    plot_script="$SCRIPT_DIR/scripts/batmon-plot.py"
+    if [ ! -f "$plot_script" ]; then
+      echo "ERROR: Plotting helper missing from source checkout: $plot_script." >&2
       exit 1
     fi
   fi
@@ -150,6 +156,10 @@ main() {
 
     tar -xzf "$archive" -C "$TMP_DIR"
     binary="$TMP_DIR/batmon"
+    # Pinned releases from before the helper was introduced remain installable.
+    if [ -f "$TMP_DIR/batmon-plot" ]; then
+      plot_script="$TMP_DIR/batmon-plot"
+    fi
   fi
 
   if [ ! -x "$binary" ]; then
@@ -168,6 +178,12 @@ main() {
   BIN_DIR=$(cd "$BIN_DIR" && pwd -P)
   install -m 755 "$binary" "$BIN_DIR/batmon"
   echo "    binary → $BIN_DIR/batmon"
+  if [ -n "$plot_script" ]; then
+    install -m 755 "$plot_script" "$BIN_DIR/batmon-plot"
+    echo "    plotting helper → $BIN_DIR/batmon-plot (optional; requires uv)"
+  else
+    rm -f "$BIN_DIR/batmon-plot"
+  fi
 
   case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
@@ -239,7 +255,7 @@ EOF
   # ── enable & start service ──────────────────────────────────────────
   systemctl --user enable --now batmon.service
   if [ -n "$previous_bin_dir" ] && [ "$previous_bin_dir" != "$BIN_DIR" ]; then
-    rm -f "$previous_bin_dir/batmon" "$previous_bin_dir/batmon-uninstall"
+    rm -f "$previous_bin_dir/batmon" "$previous_bin_dir/batmon-plot" "$previous_bin_dir/batmon-uninstall"
   fi
   echo "    service → enabled & started (1s flight recorder + 60s history)"
   echo ""

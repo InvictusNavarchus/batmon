@@ -13,6 +13,12 @@ release notes; v0.3.0 and earlier had none.
 
 ### Added
 
+- Optional `batmon-plot` helper, bundled with releases and installed beside the
+  daemon. Uses uv-managed Seaborn and Matplotlib to create PNG reports of
+  temperature, power, and utilization over hours or days from read-only SQLite
+  queries. Preserves missing readings and recording gaps; Python and plotting
+  packages are needed only when using the helper.
+
 - Battery identity and persistent observed cycle totals per identifiable pack.
   Replacements start their own totals; returning packs resume their totals
   without counting energy differences across the replacement. These totals

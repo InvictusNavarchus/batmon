@@ -45,6 +45,12 @@ jobs:
       - name: Test installation
         run: python3 tests/install.py
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - name: Test plotting helper
+        run: uv run --with 'matplotlib>=3.10,<4' --with 'seaborn>=0.13.2,<0.14' python -B tests/plot.py
+
   build-release:
     needs: validate
     name: Build (${{ matrix.target }})
@@ -89,7 +95,10 @@ jobs:
         run: |
           BIN="target/${{ matrix.target }}/release/batmon"
           ARCHIVE="batmon-${{ matrix.target }}.tar.gz"
-          tar -czf "$ARCHIVE" -C "$(dirname "$BIN")" batmon
+          PACKAGE_DIR=$(mktemp -d)
+          install -m 755 "$BIN" "$PACKAGE_DIR/batmon"
+          install -m 755 scripts/batmon-plot.py "$PACKAGE_DIR/batmon-plot"
+          tar -czf "$ARCHIVE" -C "$PACKAGE_DIR" batmon batmon-plot
           sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
 
       # Hand the archive to the publish job rather than attaching it here, so

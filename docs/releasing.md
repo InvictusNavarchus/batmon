@@ -69,9 +69,11 @@ fixing it means deleting and re-pushing the tag.
 
 On a pushed `v*` tag, the workflow:
 
-1. verifies the tag matches the Cargo version and runs `cargo test --locked`;
+1. verifies the tag matches the Cargo version and runs `cargo test --locked`,
+   isolated installer tests, and headless plotting tests using uv;
 2. builds `x86_64` and `aarch64` musl binaries with `--locked`, packaging each
-   with a `.sha256`;
+   together with the standalone `batmon-plot` script. Each archive has a
+   `.sha256` covering both files;
 3. extracts that version's section from `CHANGELOG.md` as the notes, failing if
    it is empty;
 4. creates the release **as a draft** with every archive attached;

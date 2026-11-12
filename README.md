@@ -16,6 +16,10 @@ curl -fsSL https://raw.githubusercontent.com/InvictusNavarchus/batmon/master/ins
 
 The installer automatically detects your architecture (`x86_64` or `aarch64`), downloads the pre-compiled static binary to `~/.local/bin/batmon`, configures and starts the `systemd` user service, and verifies the installation.
 
+Releases also include the optional `batmon-plot` helper, installed beside the
+binary. Plotting requires [uv](https://docs.astral.sh/uv/getting-started/installation/);
+the daemon itself needs no Python or plotting dependencies.
+
 Downloads require `curl`, `tar`, and `sha256sum`. The installer resolves one
 release tag and verifies its archive against that release's checksum before
 changing an existing installation. Missing or invalid checksums stop the update.
@@ -141,6 +145,61 @@ subsequent uncertain totals remain `NULL` across restarts.
 
 ---
 
+## 📈 Plot Recorded Telemetry
+
+With [uv installed](https://docs.astral.sh/uv/getting-started/installation/), use
+the helper included with the release; no repository checkout is needed:
+
+```bash
+# Past seven days from the permanent, minute-sampled history
+batmon-plot --since 7d --output report.png
+
+# Recent second-resolution detail from the flight recorder
+batmon-plot --source debug --since 2h --output recent.png
+
+# Explicit path, useful for a disposable database backup
+batmon-plot --database /path/to/battery.db --since 12h --output backup.png
+```
+
+If the binary directory is not on your PATH, run
+`uv run --script ~/.local/bin/batmon-plot --since 7d --output report.png`.
+For a custom installation directory, substitute its path. From a checkout, use
+`uv run --script scripts/batmon-plot.py --since 7d --output report.png`.
+
+The script declares Python ≥3.11, Seaborn, and Matplotlib dependencies inline.
+uv manages an isolated environment and downloads Python if a suitable version
+is unavailable. The first run needs network access; later runs reuse cached
+dependencies. The installer does not install uv, Python, or plotting packages.
+Pinned releases predating this helper install only the daemon.
+
+Each report has temperature (CPU, GPU, NVMe, battery), power (battery, GPU), and
+utilization (CPU, GPU, memory) panels. Missing sensors are omitted from the
+legend; panels without readings are labeled. The defaults are `--since 24h`,
+`--source history`, and `--output report.png`. Durations accept positive hours or
+days, including `1.5h`. Output is PNG and replaces an existing output file.
+`--show` also opens a plot window when a graphical Matplotlib backend is
+available; saving a report works without a desktop session.
+
+Windows end at the current time and use **wall-clock time**, with UTC labels.
+The helper opens SQLite in read-only mode, closes its query before rendering,
+and does not migrate databases or control the service. It plots recorded values
+without smoothing or averaging, preserving zeros and missing readings. Lines
+break on boot changes, non-increasing timestamps, clock discontinuities detected
+from uptime, or gaps longer than three expected sample intervals (3 seconds for
+debug, 3 minutes for history). Such breaks indicate discontinuities, not a
+diagnosis of their cause.
+When overriding `--database`, also set `--source debug` for a flight-recorder
+database so gap detection uses its expected cadence.
+
+Historical rows are periodic snapshots, **not minute averages or maxima**; short
+spikes between samples cannot be recovered. Flight-recorder retention keeps
+21,600 rows by default, so a requested window may be only partially covered.
+The full requested time range remains on the x-axis, leaving uncovered time
+blank. If the window contains no samples or none of the plotted measurements,
+the helper exits with an error without producing a report.
+
+---
+
 ## 🔍 Post-Mortem Forensics & SQL Recipes
 
 ### 1. Inspect the last 30 seconds before a crash
@@ -203,6 +262,7 @@ Re-fired alerts **replace** their previous notification rather than stacking bes
 - **UPower** (optional) — supplies smoothed runtime estimates. Without it, `batmon` falls back to dividing remaining energy by present draw.
 - **A notification server** (optional) — any desktop provides one. Without it, alerts are still written to the journal.
 - **`sqlite3` CLI** (optional, for querying databases): `sudo dnf install sqlite`
+- **[uv](https://docs.astral.sh/uv/getting-started/installation/)** (optional, for `batmon-plot`) — manages the helper's Python and plotting dependencies.
 
 ---
 
@@ -244,6 +304,12 @@ BATMON_LOG=batmon=debug batmon
 ```bash
 # Run the full test suite (unit, property, and end-to-end binary tests)
 cargo test
+
+# Installer tests with temporary paths and mocked network/systemd
+python3 tests/install.py
+
+# Plotting tests with temporary databases and headless rendering
+uv run --with 'matplotlib>=3.10,<4' --with 'seaborn>=0.13.2,<0.14' python -B tests/plot.py
 
 # Lints, denied in the pre-commit hook
 cargo clippy --all-targets -- -D warnings

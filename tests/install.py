@@ -51,6 +51,8 @@ class Installation(unittest.TestCase):
             # Redirect the user's home in script copies, without overriding HOME.
             text = (REPO / name).read_text().replace("$HOME", "${TEST_USER_HOME}")
             (self.source / name).write_text(text)
+        (self.source / "scripts").mkdir()
+        shutil.copyfile(REPO / "scripts/batmon-plot.py", self.source / "scripts/batmon-plot.py")
         self.home = self.root / "user"
         self.home.mkdir()
         self.bin = self.root / "bin"
@@ -69,6 +71,10 @@ class Installation(unittest.TestCase):
                 info = tarfile.TarInfo("batmon")
                 info.size, info.mode = len(binary), 0o755
                 bundle.addfile(info, io.BytesIO(binary))
+                plot = (REPO / "scripts/batmon-plot.py").read_bytes()
+                info = tarfile.TarInfo("batmon-plot")
+                info.size, info.mode = len(plot), 0o755
+                bundle.addfile(info, io.BytesIO(plot))
             checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
             archive.with_name(archive.name + ".sha256").write_text(f"{checksum}  {archive.name}\n")
         self.env = dict(os.environ, PATH=str(self.bin) + ":" + os.environ["PATH"],
@@ -90,6 +96,9 @@ class Installation(unittest.TestCase):
         for arch in ("x86_64", "aarch64"):
             self.run_script(env=dict(self.env, MOCK_ARCH=arch))
             self.assertTrue((self.home / ".local/bin/batmon").is_file())
+            plot = self.home / ".local/bin/batmon-plot"
+            self.assertEqual(plot.read_bytes(), (REPO / "scripts/batmon-plot.py").read_bytes())
+            self.assertTrue(os.access(plot, os.X_OK))
         downloads = [arg for c in self.commands() if c[0] == "curl" for arg in c if arg.startswith("https://") and "/download/" in arg]
         self.assertTrue(downloads)
         self.assertTrue(all("/download/v0.8.5/" in url for url in downloads))
@@ -102,10 +111,13 @@ class Installation(unittest.TestCase):
         binary = self.home / ".local/bin/batmon"
         binary.parent.mkdir(parents=True)
         binary.write_text("old binary")
+        helper = binary.with_name("batmon-plot")
+        helper.write_text("old helper")
         archive = self.releases / "batmon-x86_64-unknown-linux-musl.tar.gz"
         archive.write_bytes(archive.read_bytes() + b"corruption")
         self.run_script(ok=False)
         self.assertEqual(binary.read_text(), "old binary")
+        self.assertEqual(helper.read_text(), "old helper")
         self.assertFalse(any(c[0] == "systemctl" for c in self.commands()))
 
     def test_missing_checksum_leaves_installation_untouched(self):
@@ -129,6 +141,8 @@ class Installation(unittest.TestCase):
         self.run_script("--build")
         self.assertTrue(any(c[:2] == ["cargo", "build"] and "--locked" in c for c in self.commands()))
         self.assertFalse(any(c[0] == "curl" for c in self.commands()))
+        self.assertEqual((self.home / ".local/bin/batmon-plot").read_bytes(),
+                         (REPO / "scripts/batmon-plot.py").read_bytes())
 
     def test_unknown_options_and_build_without_checkout_fail_before_changes(self):
         self.run_script("--unknown", ok=False)
@@ -148,6 +162,7 @@ class Installation(unittest.TestCase):
         self.assertIn('ExecStart=:"' + escaped + '"', unit)
         self.run_script()
         self.assertTrue((custom / "batmon").exists())
+        self.assertTrue((custom / "batmon-plot").exists())
         self.assertFalse((self.home / ".local/bin/batmon").exists())
         self.assertEqual((self.home / ".local/share/batmon/bin-dir").read_text().strip(), str(custom))
 
@@ -159,6 +174,7 @@ class Installation(unittest.TestCase):
         shutil.rmtree(self.source)
         self.run_script(script=str(custom / "batmon-uninstall"))
         self.assertFalse((custom / "batmon").exists())
+        self.assertFalse((custom / "batmon-plot").exists())
         self.assertFalse((custom / "batmon-uninstall").exists())
         self.assertFalse((data / "bin-dir").exists())
         self.assertFalse((self.home / ".config/systemd/user/batmon.service").exists())
@@ -169,8 +185,43 @@ class Installation(unittest.TestCase):
         self.run_script(env=dict(self.env, BIN_DIR=str(first)))
         self.run_script(env=dict(self.env, BIN_DIR=str(second)))
         self.assertFalse((first / "batmon").exists())
+        self.assertFalse((first / "batmon-plot").exists())
         self.assertFalse((first / "batmon-uninstall").exists())
         self.assertTrue((second / "batmon").exists())
+        self.assertTrue((second / "batmon-plot").exists())
+
+    def test_older_release_without_helper_removes_stale_helper(self):
+        self.run_script()
+        archive = self.releases / "batmon-x86_64-unknown-linux-musl.tar.gz"
+        binary = b"#!/bin/sh\nexit 0\n"
+        with tarfile.open(archive, "w:gz") as bundle:
+            info = tarfile.TarInfo("batmon")
+            info.size, info.mode = len(binary), 0o755
+            bundle.addfile(info, io.BytesIO(binary))
+        checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
+        archive.with_name(archive.name + ".sha256").write_text(f"{checksum}  {archive.name}\n")
+        self.run_script(env=dict(self.env, BATMON_VERSION="v0.8.4"))
+        self.assertTrue((self.home / ".local/bin/batmon").exists())
+        self.assertFalse((self.home / ".local/bin/batmon-plot").exists())
+
+    def test_source_build_without_helper_fails_before_live_changes(self):
+        (self.source / "Cargo.toml").write_text((REPO / "Cargo.toml").read_text())
+        (self.source / "scripts/batmon-plot.py").unlink()
+        self.run_script("--build", ok=False)
+        self.assertFalse(any(c[0] == "systemctl" for c in self.commands()))
+
+    def test_fallback_uninstaller_removes_helper_and_preserves_databases(self):
+        custom = self.root / "legacy bin"
+        custom.mkdir()
+        for name in ("batmon", "batmon-plot"):
+            (custom / name).write_text("installed")
+        data = self.home / ".local/share/batmon"
+        data.mkdir(parents=True)
+        (data / "battery.db").write_text("history")
+        self.run_script(env=dict(self.env, BIN_DIR=str(custom)), script="uninstall.sh")
+        self.assertFalse((custom / "batmon-plot").exists())
+        self.assertFalse((custom / "batmon").exists())
+        self.assertEqual((data / "battery.db").read_text(), "history")
 
     def test_control_characters_in_binary_directory_are_rejected(self):
         self.run_script(env=dict(self.env, BIN_DIR="bad\npath"), ok=False)

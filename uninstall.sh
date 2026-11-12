@@ -19,7 +19,7 @@ systemctl --user daemon-reload
 
 echo "    service and timer stopped and removed."
 
-rm -f "$BIN_DIR/batmon"
+rm -f "$BIN_DIR/batmon" "$BIN_DIR/batmon-plot"
 echo "    binary removed from $BIN_DIR/batmon"
 
 echo ""
