@@ -185,16 +185,16 @@ fn oneshot(paths: &Paths) -> Result<()> {
 
     let (debug, historical) = stores(paths)?;
 
-    // Each database integrates against its own last row, exactly as the daemon
-    // does. Sharing one integration between them — mutating a single sample and
-    // inserting it twice — makes the flight recorder adopt the history's
-    // coarser baseline. Where the daemon has been running since the
-    // last downsampled write, that baseline is behind, and the debug count goes
-    // *backwards*: a cycle total that decreases, which the integrator's own
-    // property tests forbid.
-    let mut downsampled = sample.clone();
-    historical.insert_integrating_cycles(&mut downsampled)?;
-    debug.insert_integrating_cycles(&mut sample)?;
+    // Integrate once against the densest evidence: history may still have an
+    // older energy reading from before a recorded gap or identity failure.
+    // Fall back to history only when the flight recorder has no samples.
+    if debug.latest()?.is_none() {
+        historical.insert_integrating_cycles(&mut sample)?;
+        sample.estimated_cycle_count = debug.insert(&sample)?;
+    } else {
+        debug.insert_integrating_cycles(&mut sample)?;
+        historical.insert(&sample)?;
+    }
 
     let mut engine = AlertEngine::new();
     let mut notifier = DesktopNotifier::connect();

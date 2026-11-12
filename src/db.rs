@@ -210,8 +210,8 @@ impl Store {
     /// writes the same sample to both databases, and the value stored in the
     /// flight recorder is the one integrated here.
     ///
-    /// Each database integrates against its own history, so `battery.db`
-    /// accumulates across 60-second gaps and `debug.db` across one-second gaps.
+    /// Callers choose the authoritative store, then copy the integrated sample
+    /// to the other tier without integrating across its older baseline.
     /// Returns the previous row, if there was one.
     pub fn insert_integrating_cycles(&self, sample: &mut Sample) -> Result<Option<Sample>> {
         let previous = self.latest()?;

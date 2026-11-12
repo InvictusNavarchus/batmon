@@ -34,6 +34,11 @@ release notes; v0.3.0 and earlier had none.
 
 ### Fixed
 
+- One-shot recording no longer counts unobserved discharge across a battery
+  reading gap recorded by the daemon. Historical totals use the flight
+  recorder's cycle result, preserving gaps and identity uncertainty across
+  restarts.
+
 - Historical-store read/write failures no longer interrupt a healthy flight
   recorder or make it forget a recorded gap in battery energy readings.
 

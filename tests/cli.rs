@@ -19,6 +19,9 @@ use std::process::Command;
 use rusqlite::Connection;
 use tempfile::TempDir;
 
+#[path = "cli/cycles.rs"]
+mod cycles;
+
 /// The binary under test, as built by cargo for this integration test.
 const BATMON: &str = env!("CARGO_BIN_EXE_batmon");
 
