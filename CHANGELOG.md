@@ -11,6 +11,8 @@ release notes; v0.3.0 and earlier had none.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-14
+
 ### Added
 
 - Optional `batmon-plot` helper, bundled with releases and installed beside the
@@ -300,7 +302,8 @@ install steps from your setup.
   repeated every 60 s while the condition held; they now fire once, when the
   threshold is crossed.
 
-[Unreleased]: https://github.com/InvictusNavarchus/batmon/compare/v0.8.4...HEAD
+[Unreleased]: https://github.com/InvictusNavarchus/batmon/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/InvictusNavarchus/batmon/compare/v0.8.4...v0.9.0
 [0.8.4]: https://github.com/InvictusNavarchus/batmon/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/InvictusNavarchus/batmon/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/InvictusNavarchus/batmon/compare/v0.8.1...v0.8.2
