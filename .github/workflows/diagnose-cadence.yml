@@ -1,0 +1,93 @@
+name: Diagnose sampling cadence
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Source tag or commit to investigate
+        required: true
+        default: v0.9.0
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install tracing tool
+        run: sudo apt-get update && sudo apt-get install -y strace
+
+      - name: Build the executable tests once
+        run: |
+          mkdir -p diagnostics
+          git rev-parse HEAD > diagnostics/source.txt
+          uname -a > diagnostics/kernel.txt
+          lscpu > diagnostics/cpu.txt
+          rustc -Vv > diagnostics/rust.txt
+          env | sort | grep -E '^(ImageOS|ImageVersion|RUNNER_ARCH|RUNNER_OS)=' > diagnostics/runner.txt
+          cargo test --locked --test cli --no-run --message-format=json > diagnostics/build.jsonl
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          artifacts = [json.loads(line) for line in Path('diagnostics/build.jsonl').read_text().splitlines()]
+          binaries = [a['executable'] for a in artifacts
+                      if a.get('reason') == 'compiler-artifact'
+                      and a['target']['name'] == 'cli'
+                      and a.get('executable')]
+          assert len(binaries) == 1, binaries
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'CADENCE_TEST_BINARY={binaries[0]}\n')
+          PY
+
+      - name: Compare host and simulated sensors on the same runner
+        shell: bash
+        run: |
+          fixtures=$(mktemp -d)
+          trap 'rm -rf "$fixtures"' EXIT
+          mkdir -p "$fixtures/hwmon/hwmon0" "$fixtures/supplies"
+          printf 'k10temp\n' > "$fixtures/hwmon/hwmon0/name"
+          printf '48500\n' > "$fixtures/hwmon/hwmon0/temp1_input"
+          # Disable desktop/system buses in BOTH cases to isolate filesystem reads.
+          export DBUS_SYSTEM_BUS_ADDRESS="unix:path=$fixtures/no-system-bus"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$fixtures/no-session-bus"
+          printf 'case\texit_status\n' > diagnostics/results.tsv
+          failed=0
+          # Reverse order on the second pass to reduce warm-cache/order bias.
+          for case in host-1 simulated-1 simulated-2 host-2 host-traced simulated-traced; do
+            unset BATMON_HWMON_BASE BATMON_POWER_SUPPLY_BASE
+            if [[ "$case" == simulated-* ]]; then
+              export BATMON_HWMON_BASE="$fixtures/hwmon"
+              export BATMON_POWER_SUPPLY_BASE="$fixtures/supplies"
+            fi
+            command=("$CADENCE_TEST_BINARY")
+            if [[ "$case" == *-traced ]]; then
+              command=(strace -f -tt -T -yy -s 80 -o "diagnostics/$case.strace" "${command[@]}")
+            fi
+            # timeout signals the whole test process group, including child daemons.
+            status=0
+            timeout --kill-after=5s 45s "${command[@]}" > "diagnostics/$case.log" 2>&1 || status=$?
+            printf '%s\t%s\n' "$case" "$status" >> diagnostics/results.tsv
+            if [[ "$status" != 0 ]]; then failed=1; fi
+          done
+          cat diagnostics/results.tsv >> "$GITHUB_STEP_SUMMARY"
+          exit "$failed"
+
+      - name: Preserve diagnostics even when tests fail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cadence-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: diagnostics/
+          retention-days: 7
+          if-no-files-found: warn

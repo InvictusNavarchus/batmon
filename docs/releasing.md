@@ -183,6 +183,37 @@ implementation. Existing databases carry over unchanged.
 
 ## 4. Gotchas and recovery
 
+### Investigating sampling timing failures
+
+The manual **Diagnose sampling cadence** workflow (`diagnose-cadence.yml`)
+accepts a source tag or commit, defaulting to `v0.9.0`. Once the workflow is
+available on the default branch, run it from Actions or with:
+
+```bash
+gh workflow run diagnose-cadence.yml -f source_ref=v0.9.0
+```
+
+It builds the CLI tests once, then compares host sensors with a simulated hwmon
+sensor and empty power-supply tree on the same runner. Both cases disable D-Bus;
+the existing tests provide temporary batteries and database homes. CPU, DRM,
+and procfs reads still use the runner. Each case runs twice without tracing,
+in reversed order, then once under `strace`. All cases run even after failures,
+with bounded execution and process-group termination on timeout.
+
+Download the `cadence-diagnostics-*` artifact for exit statuses, test logs,
+system-call durations and paths, source SHA, toolchain, and runner details.
+Tracing adds overhead: use untraced runs to judge cadence and traces to locate
+slow operations. A simulated-only success narrows the cause to the replaced
+inputs; it does not prove which sensor blocked. Neither case reproduces D-Bus
+behavior from the original release run. Different manual runs may land on
+different cloud providers; retain their runner setup logs when comparing them.
+
+This temporary investigation workflow has read-only repository permissions and
+cannot publish a release. It does not replace release validation or relax test
+assertions. Remove it after the investigation is resolved.
+
+### Other recovery cases
+
 - **Keep exactly one `## [Unreleased]` heading and `[Unreleased]: ...` link.**
   The rollover matches those complete lines and refuses missing or duplicate
   matches. Mentions of `Unreleased` or `ReleaseDate` in prose are safe.
