@@ -29,7 +29,7 @@ const ONESHOT_WARMUP: Duration = Duration::from_millis(500);
 #[command(
     name = "batmon",
     about = "Battery health monitor and hardware flight recorder",
-    version
+    version = env!("BATMON_BUILD_VERSION")
 )]
 struct Cli {
     /// Record a single sample and exit, instead of running as a daemon.

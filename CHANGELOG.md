@@ -11,6 +11,12 @@ release notes; v0.3.0 and earlier had none.
 
 ## [Unreleased]
 
+### Added
+
+- `batmon --version` includes the build's Git commit and marks builds with
+  changes to tracked files as dirty, distinguishing local development builds
+  that share a package version. Builds without Git metadata report `unknown`.
+
 ## [0.9.0] - 2026-11-14
 
 ### Added

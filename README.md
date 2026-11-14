@@ -32,6 +32,12 @@ verified binary, and starts the updated service. No checkout or Rust compiler is
 needed. From a checkout, `./install.sh` also downloads a release; only
 `./install.sh --build` compiles local source.
 
+`batmon --version` reports the package version and the build's Git commit, for
+example `batmon 0.9.0 (abc1234)`. Local builds append `, dirty` when tracked files
+have staged or unstaged changes. Untracked files are excluded. Builds without
+Git or checkout metadata report `batmon 0.9.0 (unknown)`. This information is
+embedded at compile time; Git is not required to run the installed binary.
+
 Set `BIN_DIR` on the installer command to choose another binary directory. That
 location is recorded for future updates, the service, and uninstalling; subsequent
 updates can use the normal installation command without repeating `BIN_DIR`.
