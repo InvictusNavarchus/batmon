@@ -32,6 +32,14 @@ fn git_identifier(root: &Path) -> Option<String> {
 
 fn git(root: &Path, args: &[&str]) -> Option<String> {
     let output = Command::new("git")
+        // -C changes directories but does not override repository context
+        // inherited from hooks or a caller operating on another checkout.
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .env_remove("GIT_COMMON_DIR")
+        .env_remove("GIT_OBJECT_DIRECTORY")
+        .env_remove("GIT_ALTERNATE_OBJECT_DIRECTORIES")
         // Status must not refresh the index or acquire locks during a build.
         .arg("--no-optional-locks")
         .arg("-C")

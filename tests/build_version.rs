@@ -75,6 +75,21 @@ fn build(root: &Path) -> String {
     run(&mut Command::new(root.join("target/debug/version-fixture")))
 }
 
+fn build_script(root: &Path) -> Command {
+    let script = root.join("build-script");
+    run(Command::new("rustc")
+        .arg("--edition=2024")
+        .arg(root.join("build.rs"))
+        .arg("-o")
+        .arg(&script));
+    let mut command = Command::new(script);
+    command
+        .env("OUT_DIR", root)
+        .env("CARGO_MANIFEST_DIR", root)
+        .env("CARGO_PKG_VERSION", "1.2.3");
+    command
+}
+
 #[test]
 fn rebuilds_follow_commits_and_tracked_changes() {
     let fixture = TempDir::new().unwrap();
@@ -168,16 +183,68 @@ fn missing_git_executable_falls_back_without_failing_the_build_script() {
         root,
         &["Cargo.toml", "build.rs", "src/main.rs", ".gitignore"],
     );
-    let script = root.join("build-script");
-    run(Command::new("rustc")
-        .arg("--edition=2024")
-        .arg(root.join("build.rs"))
-        .arg("-o")
-        .arg(&script));
-    let output = run(Command::new(script)
-        .env("PATH", "")
-        .env("OUT_DIR", root)
-        .env("CARGO_MANIFEST_DIR", root)
-        .env("CARGO_PKG_VERSION", "1.2.3"));
+    let output = run(build_script(root).env("PATH", ""));
     assert!(output.contains("cargo::rustc-env=BATMON_BUILD_VERSION=1.2.3 (unknown)"));
+}
+
+#[test]
+fn foreign_git_context_cannot_change_the_builds_commit_or_dirty_status() {
+    let fixture = TempDir::new().unwrap();
+    let root = fixture.path().join("source");
+    let foreign = fixture.path().join("foreign");
+    for directory in [&root, &foreign] {
+        package(directory);
+        git(directory, &["init", "-q"]);
+    }
+    std::fs::write(
+        foreign.join(".gitignore"),
+        "/target\n# foreign repository\n",
+    )
+    .unwrap();
+    for directory in [&root, &foreign] {
+        commit(
+            directory,
+            &["Cargo.toml", "build.rs", "src/main.rs", ".gitignore"],
+        );
+    }
+    let hash = git(&root, &["rev-parse", "--short=7", "HEAD"]);
+    assert_ne!(hash, git(&foreign, &["rev-parse", "--short=7", "HEAD"]));
+    std::fs::write(
+        foreign.join(".gitignore"),
+        "/target\n# dirty foreign repository\n",
+    )
+    .unwrap();
+
+    let foreign_git = foreign.join(".git");
+    let mut command = build_script(&root);
+    for (variable, path) in [
+        ("GIT_DIR", foreign_git.clone()),
+        ("GIT_WORK_TREE", foreign.clone()),
+        ("GIT_INDEX_FILE", foreign_git.join("index")),
+        ("GIT_COMMON_DIR", foreign_git.clone()),
+        ("GIT_OBJECT_DIRECTORY", foreign_git.join("objects")),
+        (
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            foreign_git.join("objects"),
+        ),
+    ] {
+        command.env(variable, path);
+    }
+    for dirty in [false, true] {
+        if dirty {
+            git(&foreign, &["restore", "--", ".gitignore"]);
+            std::fs::write(root.join(".gitignore"), "/target\n# dirty source\n").unwrap();
+        }
+        // Bypass run(): it would remove the injected context under Git hooks.
+        let output = command.output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        let suffix = if dirty { ", dirty" } else { "" };
+        assert!(
+            stdout.contains(&format!(
+                "cargo::rustc-env=BATMON_BUILD_VERSION=1.2.3 ({hash}{suffix})"
+            )),
+            "{stdout}"
+        );
+    }
 }
