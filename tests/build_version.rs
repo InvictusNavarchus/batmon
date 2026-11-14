@@ -71,8 +71,30 @@ fn build(root: &Path) -> String {
     run(Command::new(env!("CARGO"))
         .current_dir(root)
         .env("CARGO_TARGET_DIR", root.join("target"))
+        // This fixture is executed locally at the host's default output path.
+        .env_remove("CARGO_BUILD_TARGET")
         .args(["build", "--offline", "--quiet"]));
     run(&mut Command::new(root.join("target/debug/version-fixture")))
+}
+
+#[test]
+fn fixture_builds_ignore_inherited_cargo_targets() {
+    let rustc = run(Command::new("rustc").arg("-vV"));
+    let host = rustc
+        .lines()
+        .find_map(|line| line.strip_prefix("host: "))
+        .unwrap();
+    for target in [host, "batmon-fixture-invalid-target"] {
+        // Invoke a single existing fixture test in a child process so the
+        // target setting is inherited without changing global environment.
+        let output = run(Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "source_without_git_metadata_does_not_inherit_a_parent_repository",
+            ])
+            .env("CARGO_BUILD_TARGET", target));
+        assert!(output.contains("1 passed"), "{output}");
+    }
 }
 
 fn build_script(root: &Path) -> Command {
