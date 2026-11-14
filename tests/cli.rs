@@ -79,11 +79,24 @@ fn help_describes_the_available_modes() {
 
 #[test]
 fn version_is_reported() {
-    let output = Command::new(BATMON).arg("--version").output().unwrap();
+    let (home, battery) = environment();
+    for flag in ["--version", "-V"] {
+        let output = batmon(home.path(), battery.path())
+            // Version reporting must not require Git or read a runtime checkout.
+            .env("PATH", "")
+            .current_dir(home.path())
+            .arg(flag)
+            .output()
+            .unwrap();
 
-    assert!(output.status.success());
-    let version = String::from_utf8_lossy(&output.stdout);
-    assert!(version.starts_with("batmon "), "{version}");
+        assert!(output.status.success());
+        assert!(output.stderr.is_empty());
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            format!("batmon {}\n", env!("BATMON_BUILD_VERSION"))
+        );
+        assert!(!database_dir(home.path()).exists());
+    }
 }
 
 #[test]
