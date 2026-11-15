@@ -15,7 +15,7 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,21 +64,27 @@ jobs:
           printf 'case\texit_status\n' > diagnostics/results.tsv
           failed=0
           # Reverse order on the second pass to reduce warm-cache/order bias.
-          for case in host-1 simulated-1 simulated-2 host-2 host-traced simulated-traced; do
-            unset BATMON_HWMON_BASE BATMON_POWER_SUPPLY_BASE
-            if [[ "$case" == simulated-* ]]; then
-              export BATMON_HWMON_BASE="$fixtures/hwmon"
-              export BATMON_POWER_SUPPLY_BASE="$fixtures/supplies"
-            fi
-            command=("$CADENCE_TEST_BINARY")
-            if [[ "$case" == *-traced ]]; then
-              command=(strace -f -tt -T -yy -s 80 -o "diagnostics/$case.strace" "${command[@]}")
-            fi
-            # timeout signals the whole test process group, including child daemons.
-            status=0
-            timeout --kill-after=5s 45s "${command[@]}" > "diagnostics/$case.log" 2>&1 || status=$?
-            printf '%s\t%s\n' "$case" "$status" >> diagnostics/results.tsv
-            if [[ "$status" != 0 ]]; then failed=1; fi
+          for scope in suite isolated; do
+            for case in host-1 simulated-1 simulated-2 host-2 host-traced simulated-traced; do
+              label="$scope-$case"
+              unset BATMON_HWMON_BASE BATMON_POWER_SUPPLY_BASE
+              if [[ "$case" == simulated-* ]]; then
+                export BATMON_HWMON_BASE="$fixtures/hwmon"
+                export BATMON_POWER_SUPPLY_BASE="$fixtures/supplies"
+              fi
+              command=("$CADENCE_TEST_BINARY")
+              if [[ "$scope" == isolated ]]; then
+                command+=(daemon_ticks_stay_on_a_one_second_cadence --exact --test-threads=1)
+              fi
+              if [[ "$case" == *-traced ]]; then
+                command=(strace -f -tt -T -yy -s 80 -o "diagnostics/$label.strace" "${command[@]}")
+              fi
+              # timeout signals the whole test process group, including child daemons.
+              status=0
+              timeout --kill-after=5s 45s "${command[@]}" > "diagnostics/$label.log" 2>&1 || status=$?
+              printf '%s\t%s\n' "$label" "$status" >> diagnostics/results.tsv
+              if [[ "$status" != 0 ]]; then failed=1; fi
+            done
           done
           cat diagnostics/results.tsv >> "$GITHUB_STEP_SUMMARY"
           exit "$failed"

@@ -196,15 +196,21 @@ gh workflow run diagnose-cadence.yml -f source_ref=v0.9.0
 It builds the CLI tests once, then compares host sensors with a simulated hwmon
 sensor and empty power-supply tree on the same runner. Both cases disable D-Bus;
 the existing tests provide temporary batteries and database homes. CPU, DRM,
-and procfs reads still use the runner. Each case runs twice without tracing,
-in reversed order, then once under `strace`. All cases run even after failures,
+and procfs reads still use the runner. The comparison runs both the full CLI
+suite (preserving concurrent reads from the release tests) and the exact
+`daemon_ticks_stay_on_a_one_second_cadence` test alone with one test thread.
+Within each scope, each case runs twice without tracing, in reversed order,
+then once under `strace`. Compare scopes to investigate whether concurrent
+test processes contribute to delays; isolated success alone does not reproduce
+the original release conditions. All twelve cases run even after failures,
 with bounded execution and process-group termination on timeout.
 
 Download the `cadence-diagnostics-*` artifact for exit statuses, test logs,
 system-call durations and paths, source SHA, toolchain, and runner details.
 Tracing adds overhead: use untraced runs to judge cadence and traces to locate
-slow operations. A simulated-only success narrows the cause to the replaced
-inputs; it does not prove which sensor blocked. Neither case reproduces D-Bus
+slow operations. A simulated-only success suggests the replaced inputs may
+contribute, but transient runner load or scheduling can also explain differences.
+Shared CPU, DRM, and procfs inputs are not ruled out. Neither case reproduces D-Bus
 behavior from the original release run. Different manual runs may land on
 different cloud providers; retain their runner setup logs when comparing them.
 
