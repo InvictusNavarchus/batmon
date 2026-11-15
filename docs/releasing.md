@@ -47,8 +47,11 @@ refuses otherwise.
 Run `sh scripts/validate.sh` locally. The release workflow and cargo-release's
 pre-release hook use this same entry point; a failure stops local release
 preparation before the release commit and tag. Dry-run previews also validate.
-The changelog check runs first. Validation may leave version/changelog edits
-from release preparation when it fails; inspect them before retrying.
+The cargo-release hook checks the changelog before validation. In GitHub Actions,
+the changelog check runs during tag-triggered publishing, after validation and
+builds; manual workflow runs skip publishing and that check. Validation may leave
+version/changelog edits from release preparation when it fails; inspect them
+before retrying.
 
 Install rustup/Cargo and uv 0.13.1. Rust is pinned in `rust-toolchain.toml`;
 uv provisions managed Python 3.11 and uses `scripts/validate.py.lock` for test
