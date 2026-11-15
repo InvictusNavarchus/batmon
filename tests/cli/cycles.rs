@@ -33,21 +33,7 @@ fn fixture(identified: bool) -> (TempDir, TempDir, Sample) {
 }
 
 fn record(home: &TempDir, battery: &TempDir) {
-    let supplies = battery.path().join("power_supply");
-    let hwmon = battery.path().join("hwmon");
-    std::fs::create_dir_all(&supplies).unwrap();
-    std::fs::create_dir_all(&hwmon).unwrap();
     let output = batmon(home.path(), battery.path())
-        .env("BATMON_POWER_SUPPLY_BASE", supplies)
-        .env("BATMON_HWMON_BASE", hwmon)
-        .env(
-            "DBUS_SYSTEM_BUS_ADDRESS",
-            format!("unix:path={}/no-system-bus", battery.path().display()),
-        )
-        .env(
-            "DBUS_SESSION_BUS_ADDRESS",
-            format!("unix:path={}/no-session-bus", battery.path().display()),
-        )
         .arg("--oneshot")
         .output()
         .unwrap();

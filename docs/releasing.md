@@ -193,6 +193,11 @@ available on the default branch, run it from Actions or with:
 gh workflow run diagnose-cadence.yml -f source_ref=v0.9.0
 ```
 
+Use the original `v0.9.0` tag to reproduce host-sensor contention. Newer CLI
+tests explicitly isolate hwmon, power-supply inputs, and D-Bus in their shared
+command helper; those overrides take precedence over the diagnostic workflow's
+inherited environment, so newer refs no longer provide a real-host comparison.
+
 It builds the CLI tests once, then compares host sensors with a simulated hwmon
 sensor and empty power-supply tree on the same runner. Both cases disable D-Bus;
 the existing tests provide temporary batteries and database homes. CPU, DRM,

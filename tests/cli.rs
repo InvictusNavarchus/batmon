@@ -5,9 +5,9 @@
 //! and the one-shot path — and the only thing that proves the artefact the
 //! installer runs actually works.
 //!
-//! The battery is a fixture pointed at by `BATMON_SYSFS_PATH`, so results do not
-//! depend on the hardware running the tests. `/proc` is the real one, since
-//! every machine has a usable one.
+//! Battery, power-supply, and hwmon inputs are fixtures, and D-Bus is disabled.
+//! Concurrent test processes must not contend on the host's physical sensors.
+//! `/proc`, CPU sysfs, and DRM sysfs still use the host's readers.
 
 // Values are read straight back out of SQLite, so exact comparison is the
 // assertion rather than a floating-point hazard.
@@ -50,10 +50,25 @@ fn environment() -> (TempDir, TempDir) {
 }
 
 fn batmon(home: &Path, battery: &Path) -> Command {
+    let supplies = home.join("power_supply");
+    let hwmon = home.join("hwmon");
+    std::fs::create_dir_all(&supplies).unwrap();
+    std::fs::create_dir_all(&hwmon).unwrap();
+
     let mut command = Command::new(BATMON);
     command
         .env("HOME", home)
         .env("BATMON_SYSFS_PATH", battery)
+        .env("BATMON_POWER_SUPPLY_BASE", supplies)
+        .env("BATMON_HWMON_BASE", hwmon)
+        .env(
+            "DBUS_SYSTEM_BUS_ADDRESS",
+            format!("unix:path={}/no-system-bus", home.display()),
+        )
+        .env(
+            "DBUS_SESSION_BUS_ADDRESS",
+            format!("unix:path={}/no-session-bus", home.display()),
+        )
         .env("BATMON_LOG", "batmon=info");
     command
 }
@@ -137,6 +152,15 @@ fn oneshot_creates_both_databases_and_records_one_sample() {
 
     assert_eq!(query::<i64>(&historical, "SELECT count(*) FROM samples"), 1);
     assert_eq!(query::<i64>(&debug, "SELECT count(*) FROM samples"), 1);
+    // Empty sensor and supply fixtures must not leak host readings into samples.
+    assert_eq!(
+        query::<i64>(
+            &debug,
+            "SELECT cpu_temp_c IS NULL AND gpu_temp_c IS NULL AND nvme_temp_c IS NULL
+             AND gpu_power_w IS NULL AND ac_online IS NULL FROM samples"
+        ),
+        1
+    );
 }
 
 #[test]
