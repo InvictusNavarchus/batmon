@@ -26,10 +26,12 @@ elif name == "systemctl":
     if action in ("show", "disable"):
         unit = args[-1]
         path = pathlib.Path(os.environ["TEST_USER_HOME"]) / ".config/systemd/user" / unit
+        if unit == "batmon.timer" and os.environ.get("MOCK_TIMER_PATH"):
+            path = pathlib.Path(os.environ["MOCK_TIMER_PATH"])
         load = os.environ.get("MOCK_SERVICE_LOAD_STATE") if unit == "batmon.service" else None
         load = load or ("loaded" if path.exists() or path.is_symlink() else "not-found")
         active = "active" if unit == "batmon.service" and os.environ.get("MOCK_ACTIVE") else "inactive"
-        if action == "show": print(f"LoadState={load}\nActiveState={active}")
+        if action == "show": print(f"LoadState={load}\nActiveState={active}\nFragmentPath={path if load != 'not-found' else ''}")
         elif load == "not-found" and active == "inactive": sys.exit(1)
     if action == "is-active": sys.exit(0 if os.environ.get("MOCK_ACTIVE") else 3)
     if action == "is-enabled":
@@ -170,6 +172,25 @@ class Installation(unittest.TestCase):
         self.run_script(ok=False)
         self.assertEqual(binary.read_text(), "old binary")
         self.assertEqual((units / "batmon.timer").read_text(), "old schedule")
+
+    def test_legacy_timer_in_another_search_path_requires_cutover(self):
+        timer = self.home / ".local/share/systemd/user/batmon.timer"
+        timer.parent.mkdir(parents=True)
+        timer.write_text("legacy schedule")
+        binary = self.home / ".local/bin/batmon"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("old binary")
+        result = self.run_script(env=dict(self.env, MOCK_TIMER_PATH=str(timer)), ok=False)
+        self.assertIn("Legacy batmon.timer", result.stderr)
+        self.assertEqual(binary.read_text(), "old binary")
+        self.assertEqual(timer.read_text(), "legacy schedule")
+
+    def test_timer_query_failure_prevents_replacement(self):
+        binary = self.home / ".local/bin/batmon"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("old binary")
+        self.run_script(env=dict(self.env, MOCK_CTL_FAIL="show"), ok=False)
+        self.assertEqual(binary.read_text(), "old binary")
 
     def test_restart_failure_is_reported_without_false_success(self):
         result = self.run_script(env=dict(self.env, MOCK_ACTIVE="1", MOCK_CTL_FAIL="try-restart"), ok=False)

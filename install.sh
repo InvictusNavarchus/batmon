@@ -207,8 +207,12 @@ main() {
   fi
 
   # Legacy timer installations need an explicit cutover, not silent activation.
-  if [ -e "$SYSTEMD_DIR/batmon.timer" ] || [ -L "$SYSTEMD_DIR/batmon.timer" ]; then
+  local timer_state
+  timer_state=$(systemctl --user show --property=LoadState,ActiveState,FragmentPath batmon.timer)
+  if [[ "$timer_state" != *"LoadState=not-found"* || "$timer_state" != *"ActiveState=inactive"* ]] \
+      || [ -e "$SYSTEMD_DIR/batmon.timer" ] || [ -L "$SYSTEMD_DIR/batmon.timer" ]; then
     echo "ERROR: Legacy batmon.timer found. Retire it explicitly before installing the daemon service." >&2
+    printf '%s\n' "$timer_state" >&2
     exit 1
   fi
 

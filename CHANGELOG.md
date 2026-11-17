@@ -19,7 +19,8 @@ release notes; v0.3.0 and earlier had none.
   Boot/logout recording uses explicitly configured user lingering; installers and
   uninstallers never change this account-wide setting.
 - Legacy timer installations require an explicit cutover before installing the
-  daemon. Removal reports service-stop failures before deleting installed files.
+  daemon, including timers in other user-unit search directories. Removal
+  reports service-stop failures before deleting installed files.
   Confirmed absent, inactive units do not block removal of legacy or partial
   installations; manager-query and genuine stop failures still abort cleanup.
 

@@ -333,7 +333,10 @@ timer and daemon scheduling paths together.
 
 For a legacy Bun-era `batmon.timer`, inspect and retire its schedule before
 installing the daemon service. The installer stops before replacement if the old
-timer file is present. Preserve the old unit outside systemd's search path, then
+timer is known to the user manager or its local unit file is present. Check
+`systemctl --user show -p FragmentPath batmon.timer` for its actual location;
+the commands below assume the usual configuration directory. Preserve the old
+unit outside systemd's search path, then
 explicitly activate the daemon when ready:
 
 ```bash
