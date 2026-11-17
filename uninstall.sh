@@ -12,10 +12,14 @@ SYSTEMD_DIR="$HOME/.config/systemd/user"
 
 echo "==> batmon uninstaller"
 
-systemctl --user disable --now batmon.service
-if [ -e "$SYSTEMD_DIR/batmon.timer" ] || [ -L "$SYSTEMD_DIR/batmon.timer" ]; then
-  systemctl --user disable --now batmon.timer
-fi
+for unit in batmon.timer batmon.service; do
+  state=$(systemctl --user show --property=LoadState,ActiveState "$unit")
+  # Missing files do not prove the manager has no running collector.
+  if [[ "$state" == *"LoadState=not-found"* && "$state" == *"ActiveState=inactive"* ]]; then
+    continue
+  fi
+  systemctl --user disable --now "$unit"
+done
 rm -f "$SYSTEMD_DIR/batmon.service" "$SYSTEMD_DIR/batmon.timer"
 systemctl --user daemon-reload
 

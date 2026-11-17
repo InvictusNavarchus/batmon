@@ -13,10 +13,15 @@ trap cleanup EXIT
 
 # Saved with its installation paths so removal works without this checkout.
 uninstall() {
-  systemctl --user disable --now batmon.service
-  if [ -e "$SYSTEMD_DIR/batmon.timer" ] || [ -L "$SYSTEMD_DIR/batmon.timer" ]; then
-    systemctl --user disable --now batmon.timer
-  fi
+  local unit state
+  for unit in batmon.timer batmon.service; do
+    state=$(systemctl --user show --property=LoadState,ActiveState "$unit")
+    # Missing files do not prove the manager has no running collector.
+    if [[ "$state" == *"LoadState=not-found"* && "$state" == *"ActiveState=inactive"* ]]; then
+      continue
+    fi
+    systemctl --user disable --now "$unit"
+  done
   rm -f "$SYSTEMD_DIR/batmon.service" "$SYSTEMD_DIR/batmon.timer"
   systemctl --user daemon-reload
   rm -f "$BIN_DIR/batmon" "$BIN_DIR/batmon-plot" "$BIN_DIR/batmon-uninstall"

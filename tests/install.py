@@ -23,6 +23,14 @@ elif name == "stat": print("ext4")
 elif name == "systemctl":
     action = args[1]
     if os.environ.get("MOCK_CTL_FAIL") == action: sys.exit(1)
+    if action in ("show", "disable"):
+        unit = args[-1]
+        path = pathlib.Path(os.environ["TEST_USER_HOME"]) / ".config/systemd/user" / unit
+        load = os.environ.get("MOCK_SERVICE_LOAD_STATE") if unit == "batmon.service" else None
+        load = load or ("loaded" if path.exists() or path.is_symlink() else "not-found")
+        active = "active" if unit == "batmon.service" and os.environ.get("MOCK_ACTIVE") else "inactive"
+        if action == "show": print(f"LoadState={load}\nActiveState={active}")
+        elif load == "not-found" and active == "inactive": sys.exit(1)
     if action == "is-active": sys.exit(0 if os.environ.get("MOCK_ACTIVE") else 3)
     if action == "is-enabled":
         state = os.environ.get("MOCK_UNIT_STATE", "disabled")
@@ -172,6 +180,45 @@ class Installation(unittest.TestCase):
         self.run_script(script="uninstall.sh", env=dict(self.env, MOCK_CTL_FAIL="disable"), ok=False)
         self.assertTrue((self.home / ".local/bin/batmon").exists())
         self.assertTrue((self.home / ".config/systemd/user/batmon.service").exists())
+
+    def test_uninstall_query_failure_retains_installed_files(self):
+        self.run_script()
+        self.run_script(script="uninstall.sh", env=dict(self.env, MOCK_CTL_FAIL="show"), ok=False)
+        self.assertTrue((self.home / ".local/bin/batmon").exists())
+        self.assertTrue((self.home / ".config/systemd/user/batmon.service").exists())
+
+    def test_generated_uninstaller_accepts_confirmed_absence(self):
+        self.run_script()
+        (self.home / ".config/systemd/user/batmon.service").unlink()
+        self.log.unlink()
+        self.run_script(script="uninstall.sh")
+        self.assertFalse((self.home / ".local/bin/batmon").exists())
+        self.assertFalse(any(c[:3] == ["systemctl", "--user", "disable"] for c in self.commands()))
+
+    def test_uninstall_stops_a_running_collector_even_without_its_unit_file(self):
+        self.run_script()
+        (self.home / ".config/systemd/user/batmon.service").unlink()
+        self.log.unlink()
+        self.run_script(script="uninstall.sh", env=dict(self.env, MOCK_ACTIVE="1"))
+        self.assertIn(["systemctl", "--user", "disable", "--now", "batmon.service"], self.commands())
+
+    def test_uninstall_stops_a_masked_active_collector(self):
+        units = self.home / ".config/systemd/user"
+        units.mkdir(parents=True)
+        (units / "batmon.service").symlink_to("/dev/null")
+        env = dict(self.env, MOCK_UNIT_STATE="masked", MOCK_SERVICE_LOAD_STATE="masked", MOCK_ACTIVE="1")
+        self.run_script(env=env)
+        self.log.unlink()
+        self.run_script(script="uninstall.sh", env=env)
+        self.assertIn(["systemctl", "--user", "disable", "--now", "batmon.service"], self.commands())
+
+    def test_legacy_timer_only_uninstall(self):
+        units = self.home / ".config/systemd/user"
+        units.mkdir(parents=True)
+        (units / "batmon.timer").write_text("legacy schedule")
+        self.run_script(script="uninstall.sh")
+        self.assertFalse((units / "batmon.timer").exists())
+        self.assertIn(["systemctl", "--user", "disable", "--now", "batmon.timer"], self.commands())
 
     def test_verified_download_installs_each_supported_architecture(self):
         for arch in ("x86_64", "aarch64"):
