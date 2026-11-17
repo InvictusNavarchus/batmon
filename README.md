@@ -14,7 +14,9 @@ It operates as a high-frequency flight recorder, capturing hardware metrics ever
 curl -fsSL https://raw.githubusercontent.com/InvictusNavarchus/batmon/master/install.sh | bash
 ```
 
-The installer automatically detects your architecture (`x86_64` or `aarch64`), downloads the pre-compiled static binary to `~/.local/bin/batmon`, configures and starts the `systemd` user service, and verifies the installation.
+The installer automatically detects your architecture (`x86_64` or `aarch64`), downloads the pre-compiled static binary to `~/.local/bin/batmon`, installs the `systemd` user service, and verifies the executable without recording a sample. On a fresh install it then enables and starts the service, so recording begins immediately.
+
+To install without activating, pass `--no-enable` (`bash -s -- --no-enable` when piping the installer) and start it later with `systemctl --user enable --now batmon.service`. Lingering is never changed; see [Recording at boot and after logout](#recording-at-boot-and-after-logout). No root privileges are needed.
 
 Releases also include the optional `batmon-plot` helper, installed beside the
 binary. Plotting requires [uv](https://docs.astral.sh/uv/getting-started/installation/);
@@ -27,8 +29,11 @@ changing an existing installation. Missing or invalid checksums stop the update.
 ### Updating
 
 Run the same installation command again to update to the latest stable release.
-Your databases are preserved; the installer stops the old service, installs the
-verified binary, and starts the updated service. No checkout or Rust compiler is
+Your databases are preserved; the installer verifies the artifact, atomically
+replaces the executable, and restarts an already-active service. Updates never
+re-enable a service you disabled: inactive services stay inactive, enabled/disabled
+state is unchanged, and masks and drop-ins are preserved. Pass `--enable` to enable
+and start it again (it refuses a masked service). No checkout or Rust compiler is
 needed. From a checkout, `./install.sh` also downloads a release; only
 `./install.sh --build` compiles local source.
 
@@ -296,8 +301,53 @@ cd batmon
 ./install.sh --build
 ```
 
-Upgrading from a Bun-based installation is handled automatically: the superseded
-TypeScript sources are removed and **your existing databases are kept and continued**.
+Upgrading from a Bun-based installation removes superseded TypeScript sources
+and **keeps your existing databases**. Retire a legacy timer explicitly using the
+steps below before installing the daemon service.
+
+### Recording at boot and after logout
+
+Batmon remains a user service because ordinary user permissions are sufficient
+for its telemetry. To record before login and after logout, explicitly enable
+lingering for the account that runs Batmon:
+
+```bash
+loginctl enable-linger "$USER"
+loginctl show-user "$USER" -p Linger
+systemctl --user enable --now batmon.service
+```
+
+Local authorization policy may require administrator approval for the lingering
+change. Lingering keeps the entire user manager available: other enabled user
+services and timers can also run while logged out. It does not create a desktop;
+notifications are delivered when the notification server is available, and alerts
+remain in the journal otherwise. Recording starts once the user manager, required
+storage, and sources are ready; it does not cover the earliest boot stages or
+suspend. The installer and uninstaller never change lingering.
+
+Use `systemctl --user edit batmon.service` for persistent customizations. The
+installer regenerates the base unit but retains drop-ins. Never run the old
+timer and daemon scheduling paths together.
+
+For a legacy Bun-era `batmon.timer`, inspect and retire its schedule before
+installing the daemon service. The installer stops before replacement if the old
+timer is known to the user manager or its local unit file is present. Check
+`systemctl --user show -p FragmentPath batmon.timer` for its actual location;
+the commands below assume the usual configuration directory. Preserve the old
+unit outside systemd's search path, then
+explicitly activate the daemon when ready:
+
+```bash
+systemctl --user cat batmon.timer
+systemctl --user disable --now batmon.timer
+mkdir -p ~/.local/share/batmon
+mv -i ~/.config/systemd/user/batmon.timer ~/.local/share/batmon/legacy-batmon.timer
+bash install.sh --enable
+```
+
+If the unit came from a different location, inspect its `FragmentPath` and retire
+that owned installation explicitly. Preserve intentional disabled/masked choices
+instead of enabling the replacement automatically.
 
 ### Managing the Service
 
@@ -308,7 +358,8 @@ systemctl --user status batmon.service
 # View live logs
 journalctl --user -u batmon.service -f
 
-# Run a one-off diagnostic sample
+# A one-off sample writes databases and evaluates alerts; use an isolated
+# development environment when testing. The installer does not run this command.
 batmon --oneshot
 
 # Raise log verbosity (standard tracing filter syntax)
@@ -388,6 +439,9 @@ batmon-uninstall
 ```
 No checkout is needed. If the binary directory is not on your PATH, run
 `bash ~/.local/share/batmon/uninstall.sh`. Existing databases are preserved.
+Removal stops/disables the user service and removes the owned commands and base
+unit. Drop-ins and account-wide lingering are retained. A service-stop failure
+leaves installed files in place and exits unsuccessfully.
 For older installations without a stored uninstaller, run `./uninstall.sh` from
 a source checkout; supply `BIN_DIR` if it used a custom location.
 

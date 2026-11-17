@@ -20,6 +20,24 @@ with open(os.environ["COMMAND_LOG"], "a") as log:
     log.write(json.dumps([name, *args]) + "\n")
 if name == "uname": print("Linux" if args == ["-s"] else os.environ.get("MOCK_ARCH", "x86_64"))
 elif name == "stat": print("ext4")
+elif name == "systemctl":
+    action = args[1]
+    if os.environ.get("MOCK_CTL_FAIL") in (action, f"{action}:{args[-1]}"): sys.exit(1)
+    if action in ("show", "disable"):
+        unit = args[-1]
+        path = pathlib.Path(os.environ["TEST_USER_HOME"]) / ".config/systemd/user" / unit
+        if unit == "batmon.timer" and os.environ.get("MOCK_TIMER_PATH"):
+            path = pathlib.Path(os.environ["MOCK_TIMER_PATH"])
+        load = os.environ.get("MOCK_SERVICE_LOAD_STATE") if unit == "batmon.service" else None
+        load = load or ("loaded" if path.exists() or path.is_symlink() else "not-found")
+        active = "active" if unit == "batmon.service" and os.environ.get("MOCK_ACTIVE") else "inactive"
+        if action == "show": print(f"LoadState={load}\nActiveState={active}\nFragmentPath={path if load != 'not-found' else ''}")
+        elif load == "not-found" and active == "inactive": sys.exit(1)
+    if action == "is-active": sys.exit(0 if os.environ.get("MOCK_ACTIVE") else 3)
+    if action == "is-enabled":
+        state = os.environ.get("MOCK_UNIT_STATE", "disabled")
+        print(state)
+        sys.exit(0 if state == "enabled" else 1)
 elif name == "cargo":
     if os.environ.get("MOCK_BUILD_FAIL"): sys.exit(1)
     target = pathlib.Path(os.environ["SOURCE_TARGET"])
@@ -57,7 +75,7 @@ class Installation(unittest.TestCase):
         self.home.mkdir()
         self.bin = self.root / "bin"
         self.bin.mkdir()
-        for name in ("uname", "curl", "systemctl", "stat", "cargo"):
+        for name in ("uname", "curl", "systemctl", "stat", "cargo", "loginctl"):
             command = self.bin / name
             command.write_text(MOCK)
             command.chmod(0o755)
@@ -91,6 +109,157 @@ class Installation(unittest.TestCase):
                                 env=env or self.env, text=True, capture_output=True)
         self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
         return result
+
+    def test_fresh_install_activates_without_changing_lingering(self):
+        result = self.run_script()
+        self.assertIn(["systemctl", "--user", "enable", "--now", "batmon.service"], self.commands())
+        self.assertFalse(any(c[0] == "loginctl" for c in self.commands()))
+        self.assertIn("loginctl enable-linger", result.stdout)
+
+    def test_no_enable_leaves_fresh_install_inactive(self):
+        self.run_script("--no-enable")
+        actions = [c[2] for c in self.commands() if c[0] == "systemctl"]
+        self.assertNotIn("enable", actions)
+        self.assertNotIn("try-restart", actions)
+        self.assertTrue((self.home / ".config/systemd/user/batmon.service").is_file())
+
+    def test_conflicting_activation_options_fail_before_changes(self):
+        self.run_script("--enable", "--no-enable", ok=False)
+        self.assertEqual(self.commands(), [])
+
+    def test_help_has_no_effects(self):
+        self.run_script("--help")
+        self.assertEqual(self.commands(), [])
+        self.assertFalse((self.home / ".local/share/batmon").exists())
+
+    def test_manager_failure_preserves_binary(self):
+        binary = self.home / ".local/bin/batmon"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("old binary")
+        self.run_script(env=dict(self.env, MOCK_CTL_FAIL="show-environment"), ok=False)
+        self.assertEqual(binary.read_text(), "old binary")
+
+    def test_explicit_enable_starts_the_service(self):
+        self.run_script("--enable")
+        self.assertIn(["systemctl", "--user", "enable", "--now", "batmon.service"], self.commands())
+
+    def test_update_preserves_enablement_independently_from_activity(self):
+        unit = self.home / ".config/systemd/user/batmon.service"
+        unit.parent.mkdir(parents=True)
+        unit.write_text("installed unit")
+        for active, state in [(False, "enabled"), (False, "disabled"), (True, "disabled"), (True, "enabled")]:
+            self.log.unlink(missing_ok=True)
+            env = dict(self.env, MOCK_UNIT_STATE=state)
+            if active: env["MOCK_ACTIVE"] = "1"
+            self.run_script(env=env)
+            actions = [c[2] for c in self.commands() if c[0] == "systemctl"]
+            self.assertNotIn("enable", actions)
+            self.assertNotIn("disable", actions)
+            self.assertEqual("try-restart" in actions, active)
+            self.assertNotIn("stop", actions)
+
+    def test_mask_and_dropins_survive_updates_and_enable_refuses_mask(self):
+        units = self.home / ".config/systemd/user"
+        units.mkdir(parents=True)
+        unit = units / "batmon.service"
+        unit.symlink_to("/dev/null")
+        dropin = units / "batmon.service.d/override.conf"
+        dropin.parent.mkdir()
+        dropin.write_text("[Service]\nNice=15\n")
+        self.run_script(env=dict(self.env, MOCK_UNIT_STATE="masked"))
+        self.assertEqual(os.readlink(unit), "/dev/null")
+        self.assertEqual(dropin.read_text(), "[Service]\nNice=15\n")
+        self.log.unlink()
+        self.run_script("--enable", env=dict(self.env, MOCK_UNIT_STATE="masked"), ok=False)
+        self.assertFalse(any(c[:3] == ["systemctl", "--user", "enable"] for c in self.commands()))
+
+    def test_legacy_timer_requires_explicit_cutover_before_binary_replacement(self):
+        units = self.home / ".config/systemd/user"
+        units.mkdir(parents=True)
+        (units / "batmon.timer").write_text("old schedule")
+        binary = self.home / ".local/bin/batmon"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("old binary")
+        self.run_script(ok=False)
+        self.assertEqual(binary.read_text(), "old binary")
+        self.assertEqual((units / "batmon.timer").read_text(), "old schedule")
+
+    def test_legacy_timer_in_another_search_path_requires_cutover(self):
+        timer = self.home / ".local/share/systemd/user/batmon.timer"
+        timer.parent.mkdir(parents=True)
+        timer.write_text("legacy schedule")
+        binary = self.home / ".local/bin/batmon"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("old binary")
+        result = self.run_script(env=dict(self.env, MOCK_TIMER_PATH=str(timer)), ok=False)
+        self.assertIn("Legacy batmon.timer", result.stderr)
+        self.assertEqual(binary.read_text(), "old binary")
+        self.assertEqual(timer.read_text(), "legacy schedule")
+
+    def test_timer_query_failure_prevents_replacement(self):
+        binary = self.home / ".local/bin/batmon"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("old binary")
+        self.run_script(env=dict(self.env, MOCK_CTL_FAIL="show"), ok=False)
+        self.assertEqual(binary.read_text(), "old binary")
+
+    def test_service_query_failure_aborts_before_replacement(self):
+        binary = self.home / ".local/bin/batmon"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("old binary")
+        result = self.run_script(env=dict(self.env, MOCK_CTL_FAIL="show:batmon.service"), ok=False)
+        self.assertEqual(binary.read_text(), "old binary")
+        self.assertNotIn("Installation complete", result.stdout)
+        self.assertFalse(any(c[:3] == ["systemctl", "--user", "enable"] for c in self.commands()))
+
+    def test_restart_failure_is_reported_without_false_success(self):
+        result = self.run_script(env=dict(self.env, MOCK_ACTIVE="1", MOCK_CTL_FAIL="try-restart"), ok=False)
+        self.assertNotIn("Installation complete", result.stdout)
+
+    def test_uninstall_stop_failure_retains_installed_files(self):
+        self.run_script()
+        self.run_script(script="uninstall.sh", env=dict(self.env, MOCK_CTL_FAIL="disable"), ok=False)
+        self.assertTrue((self.home / ".local/bin/batmon").exists())
+        self.assertTrue((self.home / ".config/systemd/user/batmon.service").exists())
+
+    def test_uninstall_query_failure_retains_installed_files(self):
+        self.run_script()
+        self.run_script(script="uninstall.sh", env=dict(self.env, MOCK_CTL_FAIL="show"), ok=False)
+        self.assertTrue((self.home / ".local/bin/batmon").exists())
+        self.assertTrue((self.home / ".config/systemd/user/batmon.service").exists())
+
+    def test_generated_uninstaller_accepts_confirmed_absence(self):
+        self.run_script()
+        (self.home / ".config/systemd/user/batmon.service").unlink()
+        self.log.unlink()
+        self.run_script(script="uninstall.sh")
+        self.assertFalse((self.home / ".local/bin/batmon").exists())
+        self.assertFalse(any(c[:3] == ["systemctl", "--user", "disable"] for c in self.commands()))
+
+    def test_uninstall_stops_a_running_collector_even_without_its_unit_file(self):
+        self.run_script()
+        (self.home / ".config/systemd/user/batmon.service").unlink()
+        self.log.unlink()
+        self.run_script(script="uninstall.sh", env=dict(self.env, MOCK_ACTIVE="1"))
+        self.assertIn(["systemctl", "--user", "disable", "--now", "batmon.service"], self.commands())
+
+    def test_uninstall_stops_a_masked_active_collector(self):
+        units = self.home / ".config/systemd/user"
+        units.mkdir(parents=True)
+        (units / "batmon.service").symlink_to("/dev/null")
+        env = dict(self.env, MOCK_UNIT_STATE="masked", MOCK_SERVICE_LOAD_STATE="masked", MOCK_ACTIVE="1")
+        self.run_script(env=env)
+        self.log.unlink()
+        self.run_script(script="uninstall.sh", env=env)
+        self.assertIn(["systemctl", "--user", "disable", "--now", "batmon.service"], self.commands())
+
+    def test_legacy_timer_only_uninstall(self):
+        units = self.home / ".config/systemd/user"
+        units.mkdir(parents=True)
+        (units / "batmon.timer").write_text("legacy schedule")
+        self.run_script(script="uninstall.sh")
+        self.assertFalse((units / "batmon.timer").exists())
+        self.assertIn(["systemctl", "--user", "disable", "--now", "batmon.timer"], self.commands())
 
     def test_verified_download_installs_each_supported_architecture(self):
         for arch in ("x86_64", "aarch64"):

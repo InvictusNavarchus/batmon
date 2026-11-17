@@ -2,7 +2,9 @@
 set -euo pipefail
 
 TMP_DIR=""
+INSTALL_STAGE=""
 cleanup() {
+  if [ -n "${INSTALL_STAGE:-}" ]; then rm -rf -- "$INSTALL_STAGE"; fi
   if [ -n "${TMP_DIR:-}" ] && [ -d "${TMP_DIR:-}" ]; then
     rm -rf "$TMP_DIR"
   fi
@@ -11,8 +13,15 @@ trap cleanup EXIT
 
 # Saved with its installation paths so removal works without this checkout.
 uninstall() {
-  systemctl --user disable --now batmon.service 2>/dev/null || true
-  systemctl --user disable --now batmon.timer 2>/dev/null || true
+  local unit state
+  for unit in batmon.timer batmon.service; do
+    state=$(systemctl --user show --property=LoadState,ActiveState "$unit")
+    # Missing files do not prove the manager has no running collector.
+    if [[ "$state" == *"LoadState=not-found"* && "$state" == *"ActiveState=inactive"* ]]; then
+      continue
+    fi
+    systemctl --user disable --now "$unit"
+  done
   rm -f "$SYSTEMD_DIR/batmon.service" "$SYSTEMD_DIR/batmon.timer"
   systemctl --user daemon-reload
   rm -f "$BIN_DIR/batmon" "$BIN_DIR/batmon-plot" "$BIN_DIR/batmon-uninstall"
@@ -36,19 +45,29 @@ main() {
   fi
 
   local force_build=0
+  local enable_service=0 no_enable=0
   for arg in "$@"; do
     case "$arg" in
       --build | -b) force_build=1 ;;
+      --enable) enable_service=1 ;;
+      --no-enable) no_enable=1 ;;
       --help | -h)
-        echo "Usage: bash install.sh [--build]"
+        echo "Usage: bash install.sh [--build] [--enable | --no-enable]"
         echo "Installs or updates to the latest verified release by default."
         echo "--build compiles a local checkout; BIN_DIR selects the installation directory."
         echo "BATMON_VERSION=vX.Y.Z selects a release."
+        echo "A fresh install enables and starts the user service; --no-enable leaves it inactive."
+        echo "Updates preserve enablement, masks, and inactive state; --enable re-enables and starts it."
+        echo "Lingering is never changed; see README for boot/logout recording."
         return
         ;;
       *) echo "ERROR: Unknown option '$arg'. Use --help for usage." >&2; exit 1 ;;
     esac
   done
+  if [ "$enable_service" -eq 1 ] && [ "$no_enable" -eq 1 ]; then
+    echo "ERROR: --enable and --no-enable are mutually exclusive." >&2
+    exit 1
+  fi
 
   if [[ "$BIN_DIR" =~ [[:cntrl:]] ]]; then
     echo "ERROR: BIN_DIR must not contain control characters." >&2
@@ -167,16 +186,57 @@ main() {
     exit 1
   fi
 
-  # ── stop running service ────────────────────────────────────────────
-  if systemctl --user is-active --quiet batmon.service 2>/dev/null; then
-    echo "==> Stopping active batmon service…"
-    systemctl --user stop batmon.service 2>/dev/null || true
+  # Verify without recording samples or touching the user's databases.
+  "$binary" --version
+  systemctl --user show-environment >/dev/null
+  local service_was_active=0 service_masked=0 service_state
+  service_state=$(systemctl --user is-enabled batmon.service 2>/dev/null || true)
+  case "$service_state" in masked|masked-runtime) service_masked=1 ;; esac
+  if [ -L "$SYSTEMD_DIR/batmon.service" ]; then
+    if [ "$(readlink "$SYSTEMD_DIR/batmon.service")" = /dev/null ]; then
+      service_masked=1
+    else
+      echo "ERROR: Refusing to replace a symlink unit: $SYSTEMD_DIR/batmon.service" >&2
+      exit 1
+    fi
+  elif [ -e "$SYSTEMD_DIR/batmon.service" ] && [ ! -f "$SYSTEMD_DIR/batmon.service" ]; then
+    echo "ERROR: Refusing to replace a non-regular service unit." >&2
+    exit 1
+  fi
+  if [ "$enable_service" -eq 1 ] && [ "$service_masked" -eq 1 ]; then
+    echo "ERROR: batmon.service is masked; unmask it explicitly before using --enable." >&2
+    exit 1
+  fi
+  if systemctl --user is-active --quiet batmon.service; then
+    service_was_active=1
+  fi
+  # A unit unknown to the manager in every search path is a first install.
+  # Recording is batmon's whole purpose, so activate it unless opted out.
+  # Plain assignment so set -e aborts on a failed query instead of reading it as an upgrade.
+  local fresh_install=0 service_load
+  service_load=$(systemctl --user show --property=LoadState batmon.service)
+  if [ "$service_was_active" -eq 0 ] && [[ "$service_load" == *"LoadState=not-found"* ]]; then
+    fresh_install=1
+    [ "$no_enable" -eq 1 ] || enable_service=1
+  fi
+
+  # Legacy timer installations need an explicit cutover, not silent activation.
+  local timer_state
+  timer_state=$(systemctl --user show --property=LoadState,ActiveState,FragmentPath batmon.timer)
+  if [[ "$timer_state" != *"LoadState=not-found"* || "$timer_state" != *"ActiveState=inactive"* ]] \
+      || [ -e "$SYSTEMD_DIR/batmon.timer" ] || [ -L "$SYSTEMD_DIR/batmon.timer" ]; then
+    echo "ERROR: Legacy batmon.timer found. Retire it explicitly before installing the daemon service." >&2
+    printf '%s\n' "$timer_state" >&2
+    exit 1
   fi
 
   # ── install binary ──────────────────────────────────────────────────
   mkdir -p "$BIN_DIR"
   BIN_DIR=$(cd "$BIN_DIR" && pwd -P)
-  install -m 755 "$binary" "$BIN_DIR/batmon"
+  # Replace the executable inode without stopping a working collector first.
+  INSTALL_STAGE=$(mktemp -d "$BIN_DIR/.batmon-install.XXXXXX")
+  install -m 755 "$binary" "$INSTALL_STAGE/batmon"
+  mv -fT "$INSTALL_STAGE/batmon" "$BIN_DIR/batmon"
   echo "    binary → $BIN_DIR/batmon"
   if [ -n "$plot_script" ]; then
     install -m 755 "$plot_script" "$BIN_DIR/batmon-plot"
@@ -218,12 +278,9 @@ main() {
   # ── install systemd unit ────────────────────────────────────────────
   mkdir -p "$SYSTEMD_DIR"
 
-  systemctl --user disable --now batmon.timer 2>/dev/null || true
-  rm -f "$SYSTEMD_DIR/batmon.timer"
-
   local service_binary
   service_binary=$(printf '%s' "$BIN_DIR/batmon" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/%/%%/g')
-  cat > "$SYSTEMD_DIR/batmon.service" <<EOF
+  cat > "$INSTALL_STAGE/batmon.service" <<EOF
 [Unit]
 Description=batmon – battery health monitor & flight recorder (sysfs → SQLite)
 Documentation=https://github.com/InvictusNavarchus/batmon
@@ -239,25 +296,32 @@ Nice=10
 WantedBy=default.target
 EOF
 
-  echo "    service → $SYSTEMD_DIR/batmon.service"
+  if [ "$service_masked" -eq 0 ]; then
+    install -m 644 "$INSTALL_STAGE/batmon.service" "$SYSTEMD_DIR/batmon.service"
+  fi
+  echo "    service → $SYSTEMD_DIR/batmon.service (existing masks and drop-ins preserved)"
   systemctl --user daemon-reload
 
-  # ── verify ──────────────────────────────────────────────────────────
-  echo ""
-  echo "==> Running sample verification…"
-  if "$BIN_DIR/batmon" --oneshot; then
-    echo "    ✓ sample stored"
+  # First installs activate by default; upgrades retain operator choices.
+  if [ "$enable_service" -eq 1 ]; then
+    systemctl --user enable --now batmon.service
+    if [ "$service_was_active" -eq 1 ]; then
+      systemctl --user try-restart batmon.service
+    fi
+    echo "    service → enabled and started"
+    if [ "$fresh_install" -eq 1 ]; then
+      echo "    note: to record before login and after logout, enable lingering yourself:"
+      echo "      loginctl enable-linger \"\$USER\""
+    fi
+  elif [ "$service_was_active" -eq 1 ] && [ "$service_masked" -eq 0 ]; then
+    systemctl --user try-restart batmon.service
+    echo "    service → active collector updated; enablement unchanged"
   else
-    echo "    ✗ test run failed – check your system configuration"
-    exit 1
+    echo "    service → activation unchanged; use --enable to enable and start"
   fi
-
-  # ── enable & start service ──────────────────────────────────────────
-  systemctl --user enable --now batmon.service
   if [ -n "$previous_bin_dir" ] && [ "$previous_bin_dir" != "$BIN_DIR" ]; then
     rm -f "$previous_bin_dir/batmon" "$previous_bin_dir/batmon-plot" "$previous_bin_dir/batmon-uninstall"
   fi
-  echo "    service → enabled & started (1s flight recorder + 60s history)"
   echo ""
   echo "    Check historical data (if sqlite3 CLI is installed):"
   echo "      sqlite3 $DATA_DIR/battery.db 'SELECT * FROM samples ORDER BY id DESC LIMIT 1;'"
@@ -271,7 +335,7 @@ EOF
   echo "    View logs:"
   echo "      journalctl --user -u batmon -f"
   echo ""
-  echo "==> Done. Battery health monitoring and flight recording are active."
+  echo "==> Installation complete. Check service status to confirm recording."
 }
 
 main "$@"

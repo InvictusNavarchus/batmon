@@ -11,6 +11,21 @@ release notes; v0.3.0 and earlier had none.
 
 ## [Unreleased]
 
+### Changed
+
+- Updates no longer re-enable and start the service on every run: they preserve
+  enablement, masks, drop-ins, and inactive state, and restart only an active
+  collector. A fresh install still enables and starts recording; pass
+  `--no-enable` to skip that, or `--enable` to re-enable a disabled service.
+  Verification no longer writes a sample to live databases. Boot/logout recording
+  uses explicitly configured user lingering; installers and uninstallers never
+  change this account-wide setting.
+- Legacy timer installations require an explicit cutover before installing the
+  daemon, including timers in other user-unit search directories. Removal
+  reports service-stop failures before deleting installed files.
+  Confirmed absent, inactive units do not block removal of legacy or partial
+  installations; manager-query and genuine stop failures still abort cleanup.
+
 ### Added
 
 - `batmon --version` includes the build's Git commit and marks builds with
