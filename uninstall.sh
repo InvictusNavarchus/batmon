@@ -12,8 +12,10 @@ SYSTEMD_DIR="$HOME/.config/systemd/user"
 
 echo "==> batmon uninstaller"
 
-systemctl --user disable --now batmon.service 2>/dev/null || true
-systemctl --user disable --now batmon.timer 2>/dev/null || true
+systemctl --user disable --now batmon.service
+if [ -e "$SYSTEMD_DIR/batmon.timer" ] || [ -L "$SYSTEMD_DIR/batmon.timer" ]; then
+  systemctl --user disable --now batmon.timer
+fi
 rm -f "$SYSTEMD_DIR/batmon.service" "$SYSTEMD_DIR/batmon.timer"
 systemctl --user daemon-reload
 
