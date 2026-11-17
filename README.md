@@ -320,6 +320,10 @@ BATMON_LOG=batmon=debug batmon
 ## 🧪 Development & Testing
 
 ```bash
+# Complete release validation, shared with GitHub Actions and cargo-release
+# Requires rustup/Cargo and uv 0.13.1; provisions Python 3.11 and locked test packages
+sh scripts/validate.sh
+
 # Run the full test suite (unit, property, and end-to-end binary tests)
 cargo test
 

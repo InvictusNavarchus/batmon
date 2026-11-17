@@ -1,6 +1,6 @@
 """Plotting regressions with synthetic SQLite databases and a headless renderer.
 
-Run: uv run --with 'matplotlib>=3.10,<4' --with 'seaborn>=0.13.2,<0.14' python -B tests/plot.py
+Release validation (including these tests): sh scripts/validate.sh
 """
 
 from contextlib import closing, redirect_stderr, redirect_stdout

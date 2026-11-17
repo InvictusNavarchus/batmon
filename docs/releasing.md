@@ -42,6 +42,31 @@ already published release.
 Releases are cut from `master` with a clean working tree; cargo-release
 refuses otherwise.
 
+## Shared validation
+
+Run `sh scripts/validate.sh` locally. The release workflow and cargo-release's
+pre-release hook use this same entry point; a failure stops local release
+preparation before the release commit and tag. Dry-run previews also validate.
+The cargo-release hook checks the changelog before validation. In GitHub Actions,
+the changelog check runs during tag-triggered publishing, after validation and
+builds; manual workflow runs skip publishing and that check. Validation may leave
+version/changelog edits from release preparation when it fails; inspect them
+before retrying.
+
+Install rustup/Cargo and uv 0.13.1. Rust is pinned in `rust-toolchain.toml`;
+uv provisions managed Python 3.11 and uses `scripts/validate.py.lock` for test
+packages. Initial runs require network access for tools and dependencies.
+The gate runs locked Rust tests, isolated installer tests, and headless plotting
+tests in order, stopping on failure. It never changes the live installation.
+Lefthook remains a separate commit-time check, not the release gate.
+
+Update Python test dependencies intentionally with
+`uv lock --script scripts/validate.py --upgrade` and commit the resulting lockfile.
+Keep the uv version in the script and workflow aligned when upgrading it.
+The Python minor version and dependency graph are controlled; Python patch
+versions, OS, drivers, and system libraries may still differ. CI independently
+builds both release targets; local validation does not cross-compile them.
+
 ## 2. What happens behind the steps
 
 ### The changelog rolls over inside the release commit
