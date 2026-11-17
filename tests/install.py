@@ -22,7 +22,7 @@ if name == "uname": print("Linux" if args == ["-s"] else os.environ.get("MOCK_AR
 elif name == "stat": print("ext4")
 elif name == "systemctl":
     action = args[1]
-    if os.environ.get("MOCK_CTL_FAIL") == action: sys.exit(1)
+    if os.environ.get("MOCK_CTL_FAIL") in (action, f"{action}:{args[-1]}"): sys.exit(1)
     if action in ("show", "disable"):
         unit = args[-1]
         path = pathlib.Path(os.environ["TEST_USER_HOME"]) / ".config/systemd/user" / unit
@@ -202,6 +202,15 @@ class Installation(unittest.TestCase):
         binary.write_text("old binary")
         self.run_script(env=dict(self.env, MOCK_CTL_FAIL="show"), ok=False)
         self.assertEqual(binary.read_text(), "old binary")
+
+    def test_service_query_failure_aborts_before_replacement(self):
+        binary = self.home / ".local/bin/batmon"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("old binary")
+        result = self.run_script(env=dict(self.env, MOCK_CTL_FAIL="show:batmon.service"), ok=False)
+        self.assertEqual(binary.read_text(), "old binary")
+        self.assertNotIn("Installation complete", result.stdout)
+        self.assertFalse(any(c[:3] == ["systemctl", "--user", "enable"] for c in self.commands()))
 
     def test_restart_failure_is_reported_without_false_success(self):
         result = self.run_script(env=dict(self.env, MOCK_ACTIVE="1", MOCK_CTL_FAIL="try-restart"), ok=False)

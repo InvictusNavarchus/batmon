@@ -212,9 +212,10 @@ main() {
   fi
   # A unit unknown to the manager in every search path is a first install.
   # Recording is batmon's whole purpose, so activate it unless opted out.
-  local fresh_install=0
-  if [ "$service_was_active" -eq 0 ] \
-      && [[ "$(systemctl --user show --property=LoadState batmon.service)" == *"LoadState=not-found"* ]]; then
+  # Plain assignment so set -e aborts on a failed query instead of reading it as an upgrade.
+  local fresh_install=0 service_load
+  service_load=$(systemctl --user show --property=LoadState batmon.service)
+  if [ "$service_was_active" -eq 0 ] && [[ "$service_load" == *"LoadState=not-found"* ]]; then
     fresh_install=1
     [ "$no_enable" -eq 1 ] || enable_service=1
   fi
