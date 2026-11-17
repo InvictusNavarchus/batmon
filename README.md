@@ -14,13 +14,9 @@ It operates as a high-frequency flight recorder, capturing hardware metrics ever
 curl -fsSL https://raw.githubusercontent.com/InvictusNavarchus/batmon/master/install.sh | bash
 ```
 
-The installer automatically detects your architecture (`x86_64` or `aarch64`), downloads the pre-compiled static binary to `~/.local/bin/batmon`, installs the `systemd` user service, and verifies the executable without recording a sample. First-time activation is explicit:
+The installer automatically detects your architecture (`x86_64` or `aarch64`), downloads the pre-compiled static binary to `~/.local/bin/batmon`, installs the `systemd` user service, and verifies the executable without recording a sample. On a fresh install it then enables and starts the service, so recording begins immediately.
 
-```bash
-systemctl --user enable --now batmon.service
-```
-
-Alternatively, pass `--enable` to `bash install.sh` (or `bash -s -- --enable` when piping the installer). Without it, installation preserves enablement and restarts only an already-active collector. Masks and service drop-ins are preserved; `--enable` refuses a masked service. No root privileges are needed.
+To install without activating, pass `--no-enable` (`bash -s -- --no-enable` when piping the installer) and start it later with `systemctl --user enable --now batmon.service`. Lingering is never changed; see [Recording at boot and after logout](#recording-at-boot-and-after-logout). No root privileges are needed.
 
 Releases also include the optional `batmon-plot` helper, installed beside the
 binary. Plotting requires [uv](https://docs.astral.sh/uv/getting-started/installation/);
@@ -34,8 +30,10 @@ changing an existing installation. Missing or invalid checksums stop the update.
 
 Run the same installation command again to update to the latest stable release.
 Your databases are preserved; the installer verifies the artifact, atomically
-replaces the executable, and restarts an already-active service. Inactive services
-stay inactive, and enabled/disabled state is unchanged unless `--enable` is supplied. No checkout or Rust compiler is
+replaces the executable, and restarts an already-active service. Updates never
+re-enable a service you disabled: inactive services stay inactive, enabled/disabled
+state is unchanged, and masks and drop-ins are preserved. Pass `--enable` to enable
+and start it again (it refuses a masked service). No checkout or Rust compiler is
 needed. From a checkout, `./install.sh` also downloads a release; only
 `./install.sh --build` compiles local source.
 

@@ -45,24 +45,29 @@ main() {
   fi
 
   local force_build=0
-  local enable_service=0
+  local enable_service=0 no_enable=0
   for arg in "$@"; do
     case "$arg" in
       --build | -b) force_build=1 ;;
       --enable) enable_service=1 ;;
+      --no-enable) no_enable=1 ;;
       --help | -h)
-        echo "Usage: bash install.sh [--build] [--enable]"
+        echo "Usage: bash install.sh [--build] [--enable | --no-enable]"
         echo "Installs or updates to the latest verified release by default."
         echo "--build compiles a local checkout; BIN_DIR selects the installation directory."
         echo "BATMON_VERSION=vX.Y.Z selects a release."
-        echo "--enable explicitly enables and starts the user service."
-        echo "Otherwise new installs stay inactive; updates preserve activation state."
+        echo "A fresh install enables and starts the user service; --no-enable leaves it inactive."
+        echo "Updates preserve enablement, masks, and inactive state; --enable re-enables and starts it."
         echo "Lingering is never changed; see README for boot/logout recording."
         return
         ;;
       *) echo "ERROR: Unknown option '$arg'. Use --help for usage." >&2; exit 1 ;;
     esac
   done
+  if [ "$enable_service" -eq 1 ] && [ "$no_enable" -eq 1 ]; then
+    echo "ERROR: --enable and --no-enable are mutually exclusive." >&2
+    exit 1
+  fi
 
   if [[ "$BIN_DIR" =~ [[:cntrl:]] ]]; then
     echo "ERROR: BIN_DIR must not contain control characters." >&2
@@ -205,6 +210,14 @@ main() {
   if systemctl --user is-active --quiet batmon.service; then
     service_was_active=1
   fi
+  # A unit unknown to the manager in every search path is a first install.
+  # Recording is batmon's whole purpose, so activate it unless opted out.
+  local fresh_install=0
+  if [ "$service_was_active" -eq 0 ] \
+      && [[ "$(systemctl --user show --property=LoadState batmon.service)" == *"LoadState=not-found"* ]]; then
+    fresh_install=1
+    [ "$no_enable" -eq 1 ] || enable_service=1
+  fi
 
   # Legacy timer installations need an explicit cutover, not silent activation.
   local timer_state
@@ -288,13 +301,17 @@ EOF
   echo "    service → $SYSTEMD_DIR/batmon.service (existing masks and drop-ins preserved)"
   systemctl --user daemon-reload
 
-  # Activation is explicit on first install; upgrades retain operator choices.
+  # First installs activate by default; upgrades retain operator choices.
   if [ "$enable_service" -eq 1 ]; then
     systemctl --user enable --now batmon.service
     if [ "$service_was_active" -eq 1 ]; then
       systemctl --user try-restart batmon.service
     fi
     echo "    service → enabled and started"
+    if [ "$fresh_install" -eq 1 ]; then
+      echo "    note: to record before login and after logout, enable lingering yourself:"
+      echo "      loginctl enable-linger \"\$USER\""
+    fi
   elif [ "$service_was_active" -eq 1 ] && [ "$service_masked" -eq 0 ]; then
     systemctl --user try-restart batmon.service
     echo "    service → active collector updated; enablement unchanged"

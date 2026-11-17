@@ -110,14 +110,22 @@ class Installation(unittest.TestCase):
         self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
         return result
 
-    def test_default_install_does_not_activate_or_change_lingering(self):
-        self.run_script()
+    def test_fresh_install_activates_without_changing_lingering(self):
+        result = self.run_script()
+        self.assertIn(["systemctl", "--user", "enable", "--now", "batmon.service"], self.commands())
+        self.assertFalse(any(c[0] == "loginctl" for c in self.commands()))
+        self.assertIn("loginctl enable-linger", result.stdout)
+
+    def test_no_enable_leaves_fresh_install_inactive(self):
+        self.run_script("--no-enable")
         actions = [c[2] for c in self.commands() if c[0] == "systemctl"]
         self.assertNotIn("enable", actions)
-        self.assertNotIn("start", actions)
         self.assertNotIn("try-restart", actions)
-        self.assertNotIn("stop", actions)
-        self.assertFalse(any(c[0] == "loginctl" for c in self.commands()))
+        self.assertTrue((self.home / ".config/systemd/user/batmon.service").is_file())
+
+    def test_conflicting_activation_options_fail_before_changes(self):
+        self.run_script("--enable", "--no-enable", ok=False)
+        self.assertEqual(self.commands(), [])
 
     def test_help_has_no_effects(self):
         self.run_script("--help")
@@ -136,6 +144,9 @@ class Installation(unittest.TestCase):
         self.assertIn(["systemctl", "--user", "enable", "--now", "batmon.service"], self.commands())
 
     def test_update_preserves_enablement_independently_from_activity(self):
+        unit = self.home / ".config/systemd/user/batmon.service"
+        unit.parent.mkdir(parents=True)
+        unit.write_text("installed unit")
         for active, state in [(False, "enabled"), (False, "disabled"), (True, "disabled"), (True, "enabled")]:
             self.log.unlink(missing_ok=True)
             env = dict(self.env, MOCK_UNIT_STATE=state)
