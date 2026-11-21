@@ -9,6 +9,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 
 use batmon::alerts::{AlertEngine, Notifier};
+use batmon::backup;
 use batmon::config::{Schedule, Thresholds};
 use batmon::daemon::Daemon;
 use batmon::db::{Database, Store, needs_migration};
@@ -87,7 +88,14 @@ fn run(cli: &Cli) -> Result<()> {
 }
 
 /// Open both databases, applying migrations.
+///
+/// Callers either hold the daemon lock or have established that nothing needs
+/// migrating. If anything does, both databases are backed up first, and a
+/// failed backup stops the run before either is changed: recording pauses
+/// until the cause (usually disk space) is fixed, but the data stays safe.
 fn stores(paths: &Paths) -> Result<(Store, Store)> {
+    backup::before_migration(paths).context("backing up the databases before migrating them")?;
+
     let debug = Store::open(&paths.debug_db_path(), Database::Debug)
         .with_context(|| format!("opening {}", paths.debug_db_path().display()))?;
     let historical = Store::open(&paths.db_path(), Database::Historical)
