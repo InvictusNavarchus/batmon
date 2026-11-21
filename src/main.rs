@@ -9,11 +9,12 @@ use anyhow::{Context, Result};
 use clap::Parser;
 
 use batmon::alerts::{AlertEngine, Notifier};
+use batmon::backup;
 use batmon::config::{Schedule, Thresholds};
 use batmon::daemon::Daemon;
-use batmon::db::{Database, Store};
+use batmon::db::{Database, Store, needs_migration};
 use batmon::dbus::{DesktopNotifier, UPower};
-use batmon::lock::LockOutcome;
+use batmon::lock::{LockHandle, LockOutcome};
 use batmon::paths::Paths;
 use batmon::telemetry::{Sampler, TelemetrySource};
 
@@ -87,7 +88,14 @@ fn run(cli: &Cli) -> Result<()> {
 }
 
 /// Open both databases, applying migrations.
+///
+/// Callers either hold the daemon lock or have established that nothing needs
+/// migrating. If anything does, both databases are backed up first, and a
+/// failed backup stops the run before either is changed: recording pauses
+/// until the cause (usually disk space) is fixed, but the data stays safe.
 fn stores(paths: &Paths) -> Result<(Store, Store)> {
+    backup::before_migration(paths).context("backing up the databases before migrating them")?;
+
     let debug = Store::open(&paths.debug_db_path(), Database::Debug)
         .with_context(|| format!("opening {}", paths.debug_db_path().display()))?;
     let historical = Store::open(&paths.db_path(), Database::Historical)
@@ -163,6 +171,40 @@ fn watch_for_termination() -> Result<Arc<AtomicBool>> {
     Ok(running)
 }
 
+/// Take the daemon lock for a one-shot run, or establish that the run can do
+/// without it.
+///
+/// A one-shot is a diagnostic that may run beside the service, so a held lock is
+/// normally fine: the run only appends a sample. Migrating is different. A
+/// one-shot from a newer binary would otherwise migrate the databases under a
+/// running daemon that still writes the old schema, so only the lock holder may
+/// migrate. Holding the lock while opening also stops a daemon from starting and
+/// migrating concurrently; one that tries exits and is restarted by systemd.
+fn oneshot_lock(paths: &Paths) -> Result<Option<LockHandle>> {
+    let pid = match LockOutcome::acquire(&paths.lock_path())? {
+        LockOutcome::Acquired(handle) => return Ok(Some(handle)),
+        LockOutcome::AlreadyRunning { pid } => pid,
+    };
+
+    for (path, database) in [
+        (paths.db_path(), Database::Historical),
+        (paths.debug_db_path(), Database::Debug),
+    ] {
+        let pending = needs_migration(&path, database)
+            .with_context(|| format!("reading the schema version of {}", path.display()))?;
+        if pending {
+            let pid_info = pid.map(|p| format!(" (PID {p})")).unwrap_or_default();
+            anyhow::bail!(
+                "{} needs a schema migration, but batmon is already running{pid_info}; \
+                 restart it so it migrates the databases (systemctl --user restart batmon), \
+                 then retry",
+                path.display()
+            );
+        }
+    }
+    Ok(None)
+}
+
 /// Record one sample and exit.
 ///
 /// Used by the installer to prove the whole path works on this machine, and
@@ -183,6 +225,7 @@ fn oneshot(paths: &Paths) -> Result<()> {
         return Ok(());
     };
 
+    let _lock = oneshot_lock(paths)?;
     let (debug, historical) = stores(paths)?;
 
     // Integrate once against the densest evidence: history may still have an

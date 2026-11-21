@@ -25,12 +25,27 @@ release notes; v0.3.0 and earlier had none.
   reports service-stop failures before deleting installed files.
   Confirmed absent, inactive units do not block removal of legacy or partial
   installations; manager-query and genuine stop failures still abort cleanup.
+- **Behaviour change:** `batmon --oneshot` refuses to run while the service is
+  active if the databases need a schema migration, and asks you to restart the
+  service first. Before this, it could migrate the databases under a running
+  daemon still writing the old schema. With nothing to migrate, it records
+  beside the service as before.
 
 ### Added
 
 - `batmon --version` includes the build's Git commit and marks builds with
   changes to tracked files as dirty, distinguishing local development builds
   that share a package version. Builds without Git metadata report `unknown`.
+- Before any schema migration, both databases are copied together to
+  `~/.local/share/batmon/backups/pre-migration/`; the newest three copies are
+  kept, and manual backups elsewhere are never touched. If the copy fails, for
+  example because the disk is full, batmon stops without migrating and records
+  nothing until the cause is fixed. The README describes how to restore a copy.
+
+### Fixed
+
+- A migration step that failed partway could leave a partly changed schema
+  behind. Each step now applies completely or not at all.
 
 ## [0.9.0] - 2026-11-14
 

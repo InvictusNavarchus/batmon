@@ -121,7 +121,7 @@ updates can use the normal installation command without repeating `BIN_DIR`.
 
 * Auto-detects `energy_*` (µWh) vs `charge_*` (µAh) battery drivers.
 * **Low-Overhead Native Reads:** All CPU, memory, clock, GPU, thermal, and process metrics are gathered directly via Linux kernel VFS interfaces (`/proc` and `/sys`) and standard POSIX process accounting (~12 ms per sample cycle) with **zero child processes**. UPower and desktop notifications are spoken to over D-Bus directly rather than by spawning `busctl` and `notify-send`. Resident memory is ~6.6 MB (median over a 12-hour dual-daemon run spanning a reboot). See empirical evaluations on [Kernel VFS vs. Glances](docs/empirical-glances-vs-native-comparison.md), [Sysfs Hwmon vs. lm-sensors](docs/empirical-lm-sensors-vs-native-hwmon.md), and [TypeScript vs. Rust parity](docs/empirical-typescript-vs-rust-parity.md) for detailed benchmark results.
-* **Automatic Migrations:** Database schema updates and column additions are handled seamlessly and automatically on startup using SQLite's native `user_version` tracking with zero manual migration steps required.
+* **Automatic Migrations:** Database schema updates and column additions are handled seamlessly and automatically on startup using SQLite's native `user_version` tracking with zero manual migration steps required. Each step applies atomically, and both databases are backed up before any migration (see [Pre-migration backups](#pre-migration-backups)).
 
 Battery read failures do not interrupt system recording. Unavailable battery
 measurements are stored as SQL `NULL`; alerts preserve their latches on missing
@@ -360,11 +360,60 @@ journalctl --user -u batmon.service -f
 
 # A one-off sample writes databases and evaluates alerts; use an isolated
 # development environment when testing. The installer does not run this command.
+# It records beside a running service, but refuses if its databases need a
+# schema migration: restart the service so the daemon migrates them first.
 batmon --oneshot
 
 # Raise log verbosity (standard tracing filter syntax)
 BATMON_LOG=batmon=debug batmon
 ```
+
+### Pre-migration backups
+
+When an upgrade brings a schema migration, batmon copies both databases before
+changing either:
+
+```text
+~/.local/share/batmon/backups/pre-migration/
+  20261121T190400Z-battery-v11-debug-v9/
+    battery.db
+    debug.db
+```
+
+The name records the UTC time and each database's schema version at the time
+of the copy. Copies are taken through SQLite, include recently committed data,
+and pass an integrity check before they are published. Both databases are
+copied together because each keeps its own cycle ledger; restore them as a
+pair.
+
+- **Nothing to migrate:** no copy is taken.
+- **Backup fails** (for example, the disk is full): batmon stops before
+  migrating and logs the reason; the service retries every few seconds.
+  Recording pauses until the cause is fixed.
+- **Migration fails and is retried:** the existing copy of the same versions is
+  kept rather than replaced.
+- **Retention:** the newest three snapshots are kept. Only timestamped
+  directories inside `pre-migration/` are pruned, so manual backups elsewhere,
+  including directly in `backups/`, are never touched.
+
+These copies sit on the same disk as the databases. They protect against a
+faulty migration, not against losing the drive.
+
+To restore a snapshot, stop the service first. Restarting the same batmon
+version would simply migrate the restored copy again, so either install the
+previous release first or restore only once a fixed release is available:
+
+```bash
+systemctl --user stop batmon.service
+cd ~/.local/share/batmon
+mkdir -p rollback && mv battery.db* debug.db* rollback/   # keep the current pair, WAL files included
+cp backups/pre-migration/<snapshot>/battery.db backups/pre-migration/<snapshot>/debug.db .
+systemctl --user start batmon.service
+```
+
+To inspect a snapshot without migrating it, read it with
+`batmon-plot --database` or `sqlite3`; running `batmon` against it would
+migrate it.
 
 ---
 

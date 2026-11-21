@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, OptionalExtension, Row, named_params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, named_params};
 
 use crate::cycles::compute_estimated_cycles;
 use crate::migrations::{DEBUG_MIGRATIONS, HISTORICAL_MIGRATIONS, Migration, migrate};
@@ -44,6 +44,40 @@ impl Database {
             Self::Debug => DEBUG_MIGRATIONS,
         }
     }
+
+    /// The schema version this build migrates the database to.
+    #[must_use]
+    pub fn latest_version(self) -> u32 {
+        self.migrations()
+            .last()
+            .map_or(0, |migration| migration.version)
+    }
+}
+
+/// The schema version recorded in an existing database file.
+///
+/// Opens read-only, so it never creates, migrates, or otherwise changes the
+/// file. [`None`] when there is no file at `path`.
+pub fn recorded_version(path: &Path) -> Result<Option<u32>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let conn = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    Ok(Some(conn.pragma_query_value(
+        None,
+        "user_version",
+        |row| row.get(0),
+    )?))
+}
+
+/// Whether [`Store::open`] would migrate an existing database at `path`.
+///
+/// A missing file is not a migration: opening it creates a fresh database.
+pub fn needs_migration(path: &Path, database: Database) -> Result<bool> {
+    Ok(recorded_version(path)?.is_some_and(|version| version < database.latest_version()))
 }
 
 /// Every column written by [`Store::insert`], in schema order.

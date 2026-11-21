@@ -490,3 +490,34 @@ fn legacy_missing_cycle_baselines_resume_after_identity_migration() {
         assert_eq!(next.estimated_cycle_count, None);
     }
 }
+
+#[test]
+fn recorded_version_reads_without_creating_or_migrating() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("battery.db");
+
+    assert_eq!(recorded_version(&path).unwrap(), None);
+    assert!(!path.exists(), "reading a version must not create the file");
+
+    let older = Database::Historical.latest_version() - 1;
+    {
+        let conn = Connection::open(&path).unwrap();
+        crate::migrations::migrate(&conn, &HISTORICAL_MIGRATIONS[..older as usize]).unwrap();
+    }
+
+    assert_eq!(recorded_version(&path).unwrap(), Some(older));
+    assert!(needs_migration(&path, Database::Historical).unwrap());
+    // Reading is not migrating.
+    assert_eq!(recorded_version(&path).unwrap(), Some(older));
+
+    Store::open(&path, Database::Historical).unwrap();
+    assert!(!needs_migration(&path, Database::Historical).unwrap());
+}
+
+#[test]
+fn a_missing_database_does_not_need_migration() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    for database in [Database::Historical, Database::Debug] {
+        assert!(!needs_migration(&tmp.path().join("absent.db"), database).unwrap());
+    }
+}
