@@ -413,3 +413,87 @@ fn daemon_ticks_stay_on_a_one_second_cadence() {
         "median interval {median} ms is not a one-second cadence: {gaps:?}"
     );
 }
+
+/// Hold the daemon lock in this test process, as a running daemon would.
+fn hold_daemon_lock(home: &Path) -> batmon::lock::LockHandle {
+    match batmon::lock::LockOutcome::acquire(&database_dir(home).join("batmon.lock")).unwrap() {
+        batmon::lock::LockOutcome::Acquired(handle) => handle,
+        batmon::lock::LockOutcome::AlreadyRunning { .. } => panic!("lock already held"),
+    }
+}
+
+#[test]
+fn oneshot_refuses_to_migrate_under_a_running_daemon() {
+    use batmon::migrations::{HISTORICAL_MIGRATIONS, migrate};
+
+    let (home, battery) = environment();
+    let historical = database_dir(home.path()).join("battery.db");
+    std::fs::create_dir_all(database_dir(home.path())).unwrap();
+    let older = HISTORICAL_MIGRATIONS.len() - 1;
+    migrate(
+        &Connection::open(&historical).unwrap(),
+        &HISTORICAL_MIGRATIONS[..older],
+    )
+    .unwrap();
+
+    let lock = hold_daemon_lock(home.path());
+    let output = batmon(home.path(), battery.path())
+        .arg("--oneshot")
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success(), "must not migrate under a daemon");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("needs a schema migration"), "{stderr}");
+    assert!(
+        stderr.contains(&format!("PID {}", std::process::id())),
+        "{stderr}"
+    );
+    assert_eq!(
+        query::<i64>(&historical, "PRAGMA user_version"),
+        i64::try_from(older).unwrap()
+    );
+    assert_eq!(query::<i64>(&historical, "SELECT count(*) FROM samples"), 0);
+
+    // Once the daemon is gone, the one-shot takes the lock and migrates.
+    drop(lock);
+    let output = batmon(home.path(), battery.path())
+        .arg("--oneshot")
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        query::<i64>(&historical, "PRAGMA user_version"),
+        i64::try_from(HISTORICAL_MIGRATIONS.len()).unwrap()
+    );
+    assert_eq!(query::<i64>(&historical, "SELECT count(*) FROM samples"), 1);
+}
+
+#[test]
+fn oneshot_still_records_beside_a_running_daemon_when_nothing_needs_migrating() {
+    let (home, battery) = environment();
+    let first = batmon(home.path(), battery.path())
+        .arg("--oneshot")
+        .output()
+        .unwrap();
+    assert!(first.status.success());
+
+    let _lock = hold_daemon_lock(home.path());
+    let output = batmon(home.path(), battery.path())
+        .arg("--oneshot")
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let debug = database_dir(home.path()).join("debug.db");
+    assert_eq!(query::<i64>(&debug, "SELECT count(*) FROM samples"), 2);
+}

@@ -360,6 +360,8 @@ journalctl --user -u batmon.service -f
 
 # A one-off sample writes databases and evaluates alerts; use an isolated
 # development environment when testing. The installer does not run this command.
+# It records beside a running service, but refuses if its databases need a
+# schema migration: restart the service so the daemon migrates them first.
 batmon --oneshot
 
 # Raise log verbosity (standard tracing filter syntax)
