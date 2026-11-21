@@ -403,13 +403,24 @@ pub const DEBUG_MIGRATIONS: &[Migration] = &[
 /// in one transaction, so a failure half way leaves the completed steps applied
 /// and recorded and the next start resumes rather than repeating work that
 /// already succeeded.
+///
+/// Within a step, the body and its version bump share one transaction. Several
+/// steps run more than one statement, and without the transaction a failure
+/// between them left a partly changed schema at the old version, safe only
+/// because every helper happens to tolerate being re-run. SQLite rolls back
+/// table DDL and `user_version` with the transaction; a step must not rely on
+/// statements that are not transactional, such as `PRAGMA foreign_keys`.
 pub fn migrate(conn: &Connection, migrations: &[Migration]) -> Result<()> {
     let current: u32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
 
     for migration in migrations {
         if migration.version > current {
-            (migration.up)(conn)?;
-            conn.pragma_update(None, "user_version", migration.version)?;
+            // Unchecked because `migrate` takes a shared connection; nothing else
+            // holds a transaction on it while the store is being opened.
+            let step = conn.unchecked_transaction()?;
+            (migration.up)(&step)?;
+            step.pragma_update(None, "user_version", migration.version)?;
+            step.commit()?;
         }
     }
     Ok(())

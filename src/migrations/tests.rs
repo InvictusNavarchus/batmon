@@ -350,3 +350,34 @@ fn identity_migration_preserves_existing_observed_totals() {
         assert_eq!(totals, vec![7.5, 0.0]);
     }
 }
+
+#[test]
+fn a_step_that_fails_part_way_leaves_no_trace() {
+    let ladder = [
+        Migration {
+            version: 1,
+            name: "base",
+            up: |conn| conn.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY);"),
+        },
+        Migration {
+            version: 2,
+            name: "fails after its first statement",
+            up: |conn| {
+                conn.execute_batch("ALTER TABLE t ADD COLUMN added TEXT;")?;
+                conn.execute_batch("CREATE TABLE extra (id INTEGER);")?;
+                conn.execute_batch("INSERT INTO no_such_table VALUES (1);")
+            },
+        },
+    ];
+    let conn = memory();
+
+    assert!(migrate(&conn, &ladder).is_err());
+
+    // The completed step stays recorded; the failed one left nothing behind.
+    assert_eq!(user_version(&conn), 1);
+    assert_eq!(columns(&conn, "t"), ["id"]);
+    assert!(!has_table(&conn, "extra").unwrap());
+
+    // The connection is usable again, so the next start can retry.
+    conn.execute_batch("SELECT 1;").unwrap();
+}
